@@ -1,4 +1,4 @@
-name: Client Mobile CI
+name: Client App - Production APK
 
 on:
   push:
@@ -23,18 +23,25 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Inject Production API URLs
+        run: |
+          sed -i "s|http://localhost:3001|https://api.taxitot.com|g" \
+            client-portal/mobile/src/services/api.js
+          sed -i "s|http://localhost:3004|https://driver-api.taxitot.com|g" \
+            client-portal/mobile/src/services/socket.js
+
       - name: Install Dependencies
         working-directory: client-portal/mobile
         run: npm install --legacy-peer-deps
 
-      - name: Build Android APK
+      - name: Build Production APK (arm64-v8a only)
         working-directory: client-portal/mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
 
-      - name: Upload APK
+      - name: Upload Production APK
         uses: actions/upload-artifact@v4
         with:
-          name: client-app-debug
-          path: client-portal/mobile/android/app/build/outputs/apk/debug/app-debug.apk
+          name: client-app-production
+          path: client-portal/mobile/android/app/build/outputs/apk/release/*.apk

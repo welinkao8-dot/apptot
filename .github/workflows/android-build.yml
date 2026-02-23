@@ -1,4 +1,4 @@
-name: Android Build
+name: Driver App - Production APK
 
 on:
   push:
@@ -25,21 +25,26 @@ jobs:
           cache: 'npm'
           cache-dependency-path: 'driver-portal/mobile/package-lock.json'
 
+      - name: Inject Production API URL
+        run: |
+          sed -i "s|http://localhost:3004|https://driver-api.taxitot.com|g" \
+            driver-portal/mobile/src/context/AuthContext.js
+
       - name: Install Dependencies
         working-directory: driver-portal/mobile
         run: npm install
 
-      - name: Build Android App
+      - name: Build Production APK (arm64-v8a only)
         working-directory: driver-portal/mobile/android
         env:
           MAPBOX_DOWNLOADS_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN }}
         run: |
           echo "MAPBOX_DOWNLOADS_TOKEN=$MAPBOX_DOWNLOADS_TOKEN" >> gradle.properties
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon --stacktrace --info
+          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a
 
-      - name: Upload APK
+      - name: Upload Production APK
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug
-          path: driver-portal/mobile/android/app/build/outputs/apk/debug/*.apk
+          name: driver-app-production
+          path: driver-portal/mobile/android/app/build/outputs/apk/release/*.apk
