@@ -1,0 +1,90 @@
+.driver-dashboard-container {
+    min-height: 100vh;
+    background: #ffffff;
+}
+
+.driver-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background: white;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.logo-small {
+    color: #E91E63;
+    margin: 0;
+    font-weight: 900;
+}
+
+.status-pill {
+    background: #f1f5f9;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.status-pill.active {
+    background: #4ade80;
+    color: white;
+}
+
+.driver-content {
+    padding: 20px;
+}
+
+.welcome-section h2 {
+    margin-bottom: 4px;
+}
+
+.welcome-section p {
+    color: #64748b;
+    margin-top: 0;
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    margin-top: 30px;
+}
+
+.stat-card {
+    background: #f8fafc;
+    padding: 20px;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+}
+
+.stat-card .label {
+    font-size: 12px;
+    color: #94a3b8;
+    text-transform: uppercase;
+    font-weight: 700;
+}
+
+.stat-card .value {
+    font-size: 20px;
+    font-weight: 800;
+    margin-top: 4px;
+}
+
+.stat-card .value.pink {
+    color: #E91E63;
+}
+
+.btn-logout-floating {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    padding: 16px;
+    background: #f1f5f9;
+    border: none;
+    border-radius: 12px;
+    color: #64748b;
+    font-weight: 600;
+}

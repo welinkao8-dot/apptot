@@ -1,0 +1,2016 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    TouchableOpacity,
+    SafeAreaView,
+    StatusBar,
+    Animated,
+    Dimensions,
+    FlatList,
+    Image,
+    ScrollView,
+    TextInput,
+    Platform,
+    PermissionsAndroid
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Geolocation from 'react-native-geolocation-service';
+import {
+    Menu,
+    Search,
+    Navigation,
+    MapPin,
+    Clock,
+    Package,
+    Bike,
+    Car,
+    ChevronRight,
+    Star,
+    Shield,
+    CheckCircle,
+    X,
+    Heart,
+    User,
+    ArrowLeft,
+    Truck,
+    Smartphone,
+    CreditCard
+} from 'lucide-react-native';
+import colors from '../theme/colors';
+import socket from '../services/socket';
+import api from '../services/api';
+import hereService from '../services/hereService';
+import hereRoutingService from '../services/hereRoutingService'; // [NEW]
+import HereMap from '../components/HereMap'; // [NEW]
+import { useAuth } from '../context/AuthContext';
+import Toast from 'react-native-toast-message';
+
+const { width, height } = Dimensions.get('window');
+
+export default function DashboardScreen({ navigation }) {
+    const { user, signOut } = useAuth();
+    const [step, setStep] = useState('home');
+    const [loading, setLoading] = useState(false);
+    const [destination, setDestination] = useState(null); // { name, address, lat, lng }
+    const [pickupAddress, setPickupAddress] = useState('Luanda, Angola');
+    const [pickupCoords, setPickupCoords] = useState({ lat: -8.839, lng: 13.289 });
+    const [selectedService, setSelectedService] = useState(null); // { id, name, price, ... }
+    const [selectedCategory, setSelectedCategory] = useState(null);
+    const [availableServices, setAvailableServices] = useState([]);
+    const [calculatedServices, setCalculatedServices] = useState([]);
+    const [tripId, setTripId] = useState(null);
+    const [acceptedDriver, setAcceptedDriver] = useState(null);
+    const [currentFare, setCurrentFare] = useState(0);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [deliveryInfo, setDeliveryInfo] = useState({
+        recipientName: '',
+        recipientPhone: '',
+        packageDescription: '',
+    });
+    const [mapReady, setMapReady] = useState(false);
+
+    const mapRef = useRef(null); // [NEW]
+    const watchId = useRef(null); // [NEW] Para rastreamento contínuo
+    const lastGeocodeCoords = useRef(null); // [NEW] Para evitar geocoding excessivo
+    const radarAnim = useRef(new Animated.Value(0)).current;
+    const paymentAnim = useRef(new Animated.Value(0)).current;
+    const searchInputRef = useRef(null); // [NEW] Para controle de foco do teclado
+
+    useEffect(() => {
+        const delayDebounceFn = setTimeout(async () => {
+            if (searchQuery.length >= 3) {
+                const results = await hereService.fetchSuggestions(searchQuery, pickupCoords);
+                setSearchResults(results);
+            } else {
+                setSearchResults([]);
+            }
+        }, 500);
+
+        return () => clearTimeout(delayDebounceFn);
+    }, [searchQuery]);
+
+    // --- Real GPS Location Effect ---
+    useEffect(() => {
+        const startLocationTracking = async () => {
+            const hasPermission = await requestLocationPermission();
+            if (hasPermission) {
+                // Obter posição inicial rapidamente
+                Geolocation.getCurrentPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        const coords = { lat: latitude, lng: longitude };
+                        setPickupCoords(coords);
+                    },
+                    (error) => console.log('GPS Initial Error:', error),
+                    { enableHighAccuracy: true, timeout: 10000 }
+                );
+
+                // Iniciar observação contínua (watchPosition)
+                watchId.current = Geolocation.watchPosition(
+                    async (position) => {
+                        const { latitude, longitude } = position.coords;
+                        const coords = { lat: latitude, lng: longitude };
+
+                        // 1. Atualizar coordenadas BRUTAS imediatamente (para o pino no mapa)
+                        setPickupCoords(coords);
+                        console.log('📍 [GPS-LIVE] Coordenadas:', coords.lat, coords.lng);
+
+                        // 2. Geocoding inteligente: Apenas se moveu mais de 30 metros ou se é a primeira vez
+                        const shouldUpdateAddress = !lastGeocodeCoords.current ||
+                            haversine(lastGeocodeCoords.current.lat, lastGeocodeCoords.current.lng, latitude, longitude) > 0.03;
+
+                        if (shouldUpdateAddress) {
+                            lastGeocodeCoords.current = coords;
+                            const address = await hereService.reverseGeocode(latitude, longitude);
+                            if (address) {
+                                console.log('🏠 [GPS-LIVE] Endereço Atualizado:', address);
+                                setPickupAddress(address);
+                            }
+                        }
+                    },
+                    (error) => {
+                        console.error('❌ [GPS] Erro no rastreamento:', error.code, error.message);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        distanceFilter: 5, // Notificar a cada 5 metros
+                        interval: 3000,
+                        fastestInterval: 1000
+                    }
+                );
+            }
+        };
+
+        startLocationTracking();
+
+        return () => {
+            if (watchId.current !== null) {
+                Geolocation.clearWatch(watchId.current);
+            }
+        };
+    }, []);
+
+    const requestLocationPermission = async () => {
+        if (Platform.OS === 'ios') return true;
+
+        try {
+            const granted = await PermissionsAndroid.request(
+                PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+                {
+                    title: "Permissão de Localização",
+                    message: "O TOT precisa acessar sua localização para encontrar motoristas próximos.",
+                    buttonNeutral: "Perguntar Depois",
+                    buttonNegative: "Cancelar",
+                    buttonPositive: "OK"
+                }
+            );
+            return granted === PermissionsAndroid.RESULTS.GRANTED;
+        } catch (err) {
+            console.warn(err);
+            return false;
+        }
+    };
+
+    // --- User Location Sync Effect ---
+    useEffect(() => {
+        if (mapReady && pickupCoords && !destination) {
+            mapRef.current?.setUserLocation(pickupCoords);
+        }
+    }, [mapReady, pickupCoords?.lat, pickupCoords?.lng, destination]);
+
+    useEffect(() => {
+        if (step === 'requesting') {
+            Animated.loop(
+                Animated.sequence([
+                    Animated.timing(radarAnim, {
+                        toValue: 1,
+                        duration: 1500,
+                        useNativeDriver: false
+                    }),
+                    Animated.timing(radarAnim, {
+                        toValue: 0,
+                        duration: 0,
+                        useNativeDriver: false
+                    })
+                ])
+            ).start();
+        } else {
+            radarAnim.setValue(0);
+        }
+
+        if (step === 'waiting_payment') {
+            Animated.loop(
+                Animated.timing(paymentAnim, {
+                    toValue: 1,
+                    duration: 2000,
+                    useNativeDriver: false
+                })
+            ).start();
+        } else {
+            paymentAnim.setValue(0);
+        }
+    }, [step]);
+
+    const loadServices = async () => {
+        try {
+            const response = await api.getServices();
+            setAvailableServices(response.data);
+        } catch (error) {
+            console.error('Error loading services:', error);
+            Toast.show({ type: 'error', text1: 'Erro', text2: 'Não foi possível carregar os serviços' });
+        }
+    };
+
+    // --- Cache Persistence Logic ---
+    const saveTripCache = async (data) => {
+        try {
+            await AsyncStorage.setItem('active_trip', JSON.stringify({
+                ...data,
+                timestamp: new Date().getTime()
+            }));
+        } catch (e) { console.error('Error saving cache:', e); }
+    };
+
+    const loadTripCache = async () => {
+        try {
+            const cached = await AsyncStorage.getItem('active_trip');
+            if (cached) {
+                const trip = JSON.parse(cached);
+                // Only restore if less than 2 hours old
+                if (new Date().getTime() - trip.timestamp < 7200000) {
+                    console.log('📦 [CACHE] Restoring from local storage:', trip);
+                    if (trip.tripId) setTripId(trip.tripId);
+                    if (trip.step) setStep(trip.step);
+                    if (trip.category) setSelectedCategory(trip.category);
+                    if (trip.destination) setDestination(trip.destination);
+                    if (trip.pickupCoords) setPickupCoords(trip.pickupCoords);
+                    if (trip.pickupAddress) setPickupAddress(trip.pickupAddress);
+                    if (trip.currentFare) setCurrentFare(trip.currentFare);
+                    if (trip.acceptedDriver) setAcceptedDriver(trip.acceptedDriver);
+                    if (trip.deliveryInfo) setDeliveryInfo(trip.deliveryInfo);
+                }
+            }
+        } catch (e) { console.error('Error loading cache:', e); }
+    };
+
+    const clearTripCache = async () => {
+        try {
+            await AsyncStorage.removeItem('active_trip');
+        } catch (e) { console.error('Error clearing cache:', e); }
+    };
+
+    useEffect(() => {
+        loadTripCache();
+        loadServices();
+    }, []);
+
+    // Socket Setup
+    useEffect(() => {
+        socket.connect();
+
+        socket.on('connect', () => {
+            console.log('📡 [FRONTEND] Conectado ao servidor Socket na porta 3004');
+            socket.emit('join', { userId: user.id, role: 'client' });
+        });
+
+        socket.on('connect_error', (error) => {
+            console.error('❌ [FRONTEND] Erro de conexão Socket:', error);
+            Toast.show({ type: 'error', text1: 'Erro de Conexão', text2: 'Não foi possível conectar ao servidor de viagens.' });
+        });
+
+        socket.on('error', (error) => {
+            console.error('❌ [FRONTEND] Erro Geral Socket:', error);
+        });
+
+        socket.on('trip_created', (data) => {
+            console.log('✅ [FRONTEND] Viagem CONFIRMADA pelo servidor:', JSON.stringify(data, null, 2));
+            setTripId(data.tripId);
+            setStep('requesting');
+            setLoading(false);
+        });
+
+        socket.on('trip_error', (data) => {
+            console.log('❌ [FRONTEND] Erro do Servidor:', data.message);
+            setLoading(false);
+            setStep('service_selection');
+            Toast.show({ type: 'error', text1: 'Erro ao solicitar', text2: data.message || 'Não foi possível processar seu pedido' });
+        });
+
+        socket.on('restore_trip', (trip) => {
+            console.log('🔄 [SOCKET] Restoring trip state:', trip);
+            setTripId(trip.id);
+            if (trip.category) setSelectedCategory(trip.category);
+
+            // Restore Destination if available
+            if (trip.dest_address) {
+                setDestination({
+                    name: trip.dest_address,
+                    address: trip.dest_address,
+                    lat: parseFloat(trip.dest_lat),
+                    lng: parseFloat(trip.dest_lng)
+                });
+            }
+
+            // Restore Pickup if available
+            if (trip.origin_address) {
+                setPickupAddress(trip.origin_address);
+            }
+            if (trip.origin_lat && trip.origin_lng) {
+                setPickupCoords({ lat: parseFloat(trip.origin_lat), lng: parseFloat(trip.origin_lng) });
+            }
+
+            if (trip.status === 'requested') {
+                setStep('requesting');
+                if (trip.price || trip.estimated_fare) setCurrentFare(trip.price || trip.estimated_fare);
+            } else if (trip.status === 'accepted') {
+                setStep('accepted');
+                setAcceptedDriver({
+                    id: trip.driver_id,
+                    name: trip.driver_name,
+                    phone: trip.driver_phone,
+                    vehicle: trip.vehicle_model
+                });
+                if (trip.current_fare) setCurrentFare(trip.current_fare);
+            } else if (trip.status === 'ongoing') {
+                setStep('ongoing');
+                setAcceptedDriver({
+                    id: trip.driver_id,
+                    name: trip.driver_name,
+                    phone: trip.driver_phone,
+                    vehicle: trip.vehicle_model
+                });
+                if (trip.current_fare) setCurrentFare(trip.current_fare);
+            } else if (trip.status === 'waiting_payment') {
+                setStep('waiting_payment');
+                if (trip.final_fare || trip.current_fare) setCurrentFare(trip.final_fare || trip.current_fare);
+            }
+
+            // Restore Map state (Handled in onMapReady too, but trigger here if already ready)
+            if (trip.dest_lat && trip.dest_lng) {
+                const dest = { lat: parseFloat(trip.dest_lat), lng: parseFloat(trip.dest_lng) };
+                const pickup = trip.origin_lat ? { lat: parseFloat(trip.origin_lat), lng: parseFloat(trip.origin_lng) } : pickupCoords;
+
+                mapRef.current?.setMarkers(pickup, dest);
+                hereRoutingService.getRoute(pickup, dest).then(route => {
+                    if (route) mapRef.current?.drawRoute(route.rawPolyline || route.geometry);
+                });
+            }
+        });
+
+        socket.on('trip_accepted', (data) => {
+            console.log('Trip accepted:', data);
+            setAcceptedDriver(data.driver);
+            setStep('accepted');
+            setLoading(false);
+            Toast.show({ type: 'success', text1: 'Motorista encontrado!', text2: `${data.driver.name} está a caminho` });
+
+            // [MAP] Show driver
+            if (data.driver.lat && data.driver.lng) {
+                mapRef.current?.setDriverPosition({ lat: data.driver.lat, lng: data.driver.lng });
+            }
+        });
+
+        socket.on('ride_started', () => {
+            setStep('ongoing');
+            Toast.show({ type: 'info', text1: 'Viagem iniciada', text2: 'Tenha uma boa viagem!' });
+        });
+
+        socket.on('trip_update', (data) => {
+            if (data.currentFare !== undefined) {
+                setCurrentFare(data.currentFare);
+            }
+
+            // [MAP] Update driver position & Pulsing animation
+            if (data.driverLat && data.driverLng) {
+                const driverPos = { lat: data.driverLat, lng: data.driverLng };
+
+                // Detection: Are we close to destination or pickup?
+                // For simplicity, we use the backend 'isArriving' if available, or a distance check
+                const isArriving = data.isArriving || false;
+                mapRef.current?.setDriverPosition(driverPos, isArriving);
+
+                // Option: Auto-center on driver if ongoing
+                if (step === 'ongoing') {
+                    // mapRef.current?.centerOn(driverPos); // Keep it subtle
+                }
+            }
+        });
+
+        socket.on('ride_finished', (data) => {
+            setStep('waiting_payment');
+            setCurrentFare(data.finalFare);
+            // [MAP] Limpar a rota e restaurar foco no usuário
+            if (mapRef.current) {
+                mapRef.current.clearMap();
+                mapRef.current.setUserLocation(pickupCoords);
+            }
+        });
+
+        socket.on('payment_confirmed', (data) => {
+            setStep('finished');
+            if (data.finalFare) setCurrentFare(data.finalFare);
+            Toast.show({ type: 'success', text1: 'Pagamento Confirmado', text2: 'Sua viagem foi concluída com sucesso.' });
+        });
+
+        socket.on('trip_cancelled_confirmed', () => {
+            resetFlow();
+            Toast.show({ type: 'success', text1: 'Corrida cancelada!', text2: 'A sua solicitação foi cancelada com sucesso.' });
+        });
+
+        socket.on('trip_cancelled', () => {
+            resetFlow();
+            Toast.show({ type: 'error', text1: 'Viagem Cancelada', text2: 'O motorista cancelou a viagem' });
+        });
+
+        socket.on('trip_timeout', () => {
+            resetFlow();
+            Toast.show({ type: 'warning', text1: 'Sem motoristas', text2: 'Não encontramos motoristas no momento' });
+        });
+
+        socket.on('trip_error', (data) => {
+            setLoading(false);
+            setStep('service_selection');
+            Toast.show({ type: 'error', text1: 'Erro ao solicitar', text2: data.message || 'Não foi possível processar seu pedido' });
+        });
+
+        return () => {
+            socket.off('restore_trip');
+            socket.off('trip_created');
+            socket.off('trip_accepted');
+            socket.off('ride_started');
+            socket.off('trip_update');
+            socket.off('ride_finished');
+            socket.off('payment_confirmed');
+            socket.off('trip_cancelled');
+            socket.off('trip_cancelled_confirmed');
+            socket.off('trip_timeout');
+            socket.disconnect();
+        };
+    }, []);
+
+    const resetFlow = () => {
+        setStep('home');
+        setTripId(null);
+        setAcceptedDriver(null);
+        setLoading(false);
+        setDestination(null);
+        setSelectedService(null);
+        setCurrentFare(0);
+
+        // Clear Local Cache
+        clearTripCache();
+
+        // [MAP] Clear everything and restore user center
+        if (mapRef.current) {
+            mapRef.current.clearMap();
+            mapRef.current.setUserLocation(pickupCoords);
+        }
+    };
+
+    const handleCancelRide = () => {
+        if (tripId) {
+            console.log('Cancelling trip:', tripId);
+            socket.emit('cancel_trip', { tripId });
+        } else {
+            resetFlow();
+        }
+    };
+
+    const handleSelectDestination = (dest) => {
+        setDestination(dest);
+        setSearchQuery(dest.address || dest.name);
+
+        // Update markers on map
+        mapRef.current?.setMarkers(pickupCoords, { lat: dest.lat, lng: dest.lng });
+
+        if (selectedCategory === 'delivery') {
+            setStep('delivery_details');
+        } else {
+            setStep('home');
+        }
+    };
+
+    const haversine = (lat1, lon1, lat2, lon2) => {
+        const R = 6371; // Radius of the earth in km
+        const dLat = (lat2 - lat1) * Math.PI / 180;
+        const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c; // Distance in km
+    };
+
+    const calculateFares = async (destLat, destLng, category) => {
+        const originLat = pickupCoords.lat;
+        const originLng = pickupCoords.lng;
+
+        // Use real routing service instead of Haversine for 100% consistency with Web
+        const route = await hereRoutingService.getRoute(
+            { lat: originLat, lng: originLng },
+            { lat: destLat, lng: destLng }
+        );
+
+        if (!route) {
+            Toast.show({ type: 'error', text1: 'Erro de Rota', text2: 'Não conseguimos calcular o trajeto real.' });
+            return;
+        }
+
+        // Draw route on map
+        mapRef.current?.drawRoute(route.rawPolyline || route.geometry);
+
+        const distKm = parseFloat(route.distanceKm);
+        const durMin = route.durationMin;
+
+        const calculated = availableServices
+            .filter(service => service.category === category)
+            .map(service => {
+                const base = parseFloat(service.base_fare || 0);
+                const pKm = parseFloat(service.price_per_km || 0);
+                const pMin = parseFloat(service.price_per_min || 0);
+                const minFare = parseFloat(service.min_fare || 0);
+
+                let total = base + (distKm * pKm) + (durMin * pMin);
+                total = Math.max(total, minFare);
+
+                return {
+                    ...service,
+                    estimatedPrice: Math.round(total),
+                    estimatedTime: Math.ceil(durMin)
+                };
+            });
+        setCalculatedServices(calculated);
+    };
+
+    const handleCategorySelect = (categoryId) => {
+        setSelectedCategory(categoryId);
+        if (!destination) {
+            setStep('searching_address');
+            Toast.show({ type: 'info', text1: 'Defina o destino', text2: 'Para continuar, escolha o destino primeiro' });
+        } else {
+            if (categoryId === 'delivery') {
+                setStep('delivery_details');
+            } else {
+                // Calculate fares before showing list for rides
+                const destLat = destination.lat || -8.840;
+                const destLng = destination.lng || 13.290;
+                calculateFares(destLat, destLng, categoryId);
+                setStep('service_selection');
+            }
+        }
+    };
+
+    const handleConfirmDeliveryDetails = () => {
+        if (!deliveryInfo.recipientName || !deliveryInfo.recipientPhone || !deliveryInfo.packageDescription) {
+            Toast.show({ type: 'error', text1: 'Dados incompletos', text2: 'Por favor preencha todos os campos da entrega' });
+            return;
+        }
+        setStep('service_selection');
+    };
+
+    const handleServiceSelect = (service) => {
+        setSelectedService(service);
+        setCurrentFare(service.estimatedPrice || 0); // Pre-fill fare with estimate
+    };
+
+    const handleRequestTrip = () => {
+        try {
+            console.log('🔵 [FRONTEND] Botão CONTINUAR clicado. Iniciando handleRequestTrip...');
+            if (!destination || !selectedService) {
+                const msg = '⚠️ [FRONTEND] Falha: Destino ou Serviço não selecionado.';
+                console.log(msg, { destination, selectedService });
+                Toast.show({ type: 'error', text1: 'Erro', text2: 'Selecione o destino e o serviço primeiro.' });
+                return;
+            }
+
+            const tripPayload = {
+                clientId: user.id,
+                userName: user.full_name,
+                originAddress: pickupAddress,
+                destAddress: destination.name,
+                originLat: pickupCoords.lat,
+                originLng: pickupCoords.lng,
+                destLat: destination.lat || -8.840,
+                destLng: destination.lng || 13.290,
+                category: selectedCategory || 'ride',
+                price: Number(selectedService.estimatedPrice),
+                estimatedFare: Number(selectedService.estimatedPrice),
+                serviceConfigId: Number(selectedService.id),
+                serviceId: Number(selectedService.id),
+                deliveryInfo: selectedCategory === 'delivery' ? deliveryInfo : null
+            };
+
+            console.log('🔵 [DEBUG] Payload preparado:', JSON.stringify(tripPayload, null, 2));
+
+            if (!socket.connected) {
+                console.log('📡 [FRONTEND] Socket desconectado! Tentando reconectar...');
+                socket.connect();
+            }
+
+            socket.emit('request_trip', tripPayload);
+            console.log('🚀 [FRONTEND] Evento request_trip emitido com sucesso!');
+
+            setStep('requesting');
+            setLoading(true);
+        } catch (error) {
+            console.error('❌ [FRONTEND] ERRO FATAL no handleRequestTrip:', error);
+            Toast.show({ type: 'error', text1: 'Erro Fatal', text2: error.message });
+        }
+    };
+
+    const renderHeader = () => (
+        <View style={styles.headerFloating}>
+            <TouchableOpacity style={styles.iconCircle} onPress={() => navigation.openDrawer()}>
+                <Menu size={24} color={colors.text} />
+            </TouchableOpacity>
+            {step === 'home' && (
+                <View style={styles.userInfo}>
+                    <Text style={styles.welcomeText}>Olá, {user?.full_name?.split(' ')[0]}</Text>
+                    <Text style={styles.locationLabel} numberOfLines={1} ellipsizeMode="tail">
+                        {pickupAddress ? pickupAddress.split(' ').slice(0, 4).join(' ') : 'Obtendo localização...'}
+                    </Text>
+                </View>
+            )}
+            <TouchableOpacity style={styles.iconCircle}>
+                <Search size={24} color={colors.text} />
+            </TouchableOpacity>
+        </View>
+    );
+
+    const renderStepContent = () => {
+        switch (step) {
+            case 'home':
+                return (
+                    <View style={styles.bottomSheet}>
+                        <Text style={styles.sheetTitle}>Para onde vamos hoje?</Text>
+                        <TouchableOpacity
+                            style={[styles.searchBar, destination && styles.searchBarActive]}
+                            onPress={() => setStep('searching_address')}
+                        >
+                            {!destination ? (
+                                <>
+                                    <MapPin size={20} color={colors.primary} />
+                                    <Text style={styles.searchText}>Digite seu destino...</Text>
+                                </>
+                            ) : (
+                                <>
+                                    <View style={styles.destinationDot} />
+                                    <Text style={styles.searchTextActive}>{destination.name}</Text>
+                                    <TouchableOpacity
+                                        style={{ marginLeft: 'auto', padding: 10 }}
+                                        onPress={() => {
+                                            setDestination(null);
+                                            setSearchQuery('');
+                                            if (mapRef.current) {
+                                                mapRef.current.clearMap();
+                                                // Re-adiciona a localização do usuário para manter o contexto
+                                                mapRef.current.setUserLocation(pickupCoords);
+                                            }
+                                        }}
+                                    >
+                                        <X size={18} color={colors.textSecondary} />
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                        </TouchableOpacity>
+
+                        <View style={styles.quickChoices}>
+                            {[
+                                { id: 'ride', icon: Car, label: 'Viagem', color: '#FDF2F5' },
+                                { id: 'delivery', icon: Package, label: 'Entrega', color: '#EFF6FF' }
+                            ].map(item => (
+                                <TouchableOpacity
+                                    key={item.id}
+                                    style={[styles.choiceBtn, { backgroundColor: item.color }]}
+                                    onPress={() => handleCategorySelect(item.id)}
+                                >
+                                    <item.icon size={32} color={item.id === 'ride' ? colors.primary : colors.secondary} />
+                                    <Text style={styles.choiceLabel}>{item.label}</Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </View>
+                );
+
+            case 'requesting':
+                return (
+                    <View style={styles.overlay}>
+                        <View style={styles.radarContainer}>
+                            <Animated.View
+                                style={[
+                                    styles.radarRing,
+                                    {
+                                        transform: [{ scale: radarAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.5] }) }],
+                                        opacity: radarAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 0] })
+                                    }
+                                ]}
+                            />
+                            <Navigation size={40} color="#FFF" />
+                        </View>
+                        <Text style={styles.overlayTitle}>Procurando motorista...</Text>
+                        <Text style={styles.overlaySub}>Estamos conectando você aos melhores da TOT</Text>
+                        <TouchableOpacity style={styles.cancelBtn} onPress={handleCancelRide}>
+                            <Text style={styles.cancelText}>Cancelar Pedido</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+
+            case 'accepted':
+                return (
+                    <View style={isDeliveryActive ? styles.deliveryWrapper : undefined}>
+                        <View style={styles.bottomSheet}>
+                            {!isDeliveryActive && <View style={styles.handleBar} />}
+                            <View style={styles.acceptedHeader}>
+                                <View style={styles.driverAvatarLarge}>
+                                    <Text style={styles.avatarText}>{acceptedDriver?.name?.[0] || 'D'}</Text>
+                                </View>
+                                <Text style={styles.acceptedTitle}>Motorista a caminho!</Text>
+                                <Text style={styles.acceptedSubtitle}>{acceptedDriver?.name} aceitou o seu pedido</Text>
+                            </View>
+
+                            {selectedCategory === 'delivery' && (
+                                <View style={styles.deliverySummaryCard}>
+                                    <Text style={styles.deliverySummaryTitle}>DADOS DA ENTREGA</Text>
+                                    <View style={styles.deliverySummaryRow}>
+                                        <User size={16} color={colors.textSecondary} />
+                                        <View style={{ marginLeft: 8 }}>
+                                            <Text style={styles.deliverySummaryLabel}>A entregar para:</Text>
+                                            <Text style={styles.deliverySummaryText}>{deliveryInfo.recipientName}</Text>
+                                        </View>
+                                    </View>
+                                    <View style={styles.deliverySummaryRow}>
+                                        <Package size={16} color={colors.textSecondary} />
+                                        <View style={{ marginLeft: 8 }}>
+                                            <Text style={styles.deliverySummaryLabel}>Conteúdo do pacote:</Text>
+                                            <Text style={styles.deliverySummaryText}>{deliveryInfo.packageDescription}</Text>
+                                        </View>
+                                    </View>
+                                </View>
+                            )}
+
+                            <View style={styles.actionButtons}>
+                                <TouchableOpacity style={styles.actionBtn}>
+                                    <Text style={styles.actionBtnText}>Mensagem</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#FEE2E2' }]} onPress={handleCancelRide}>
+                                    <Text style={[styles.actionBtnText, { color: '#EF4444' }]}>Cancelar</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                );
+
+            case 'ongoing':
+                return (
+                    <View style={isDeliveryActive ? styles.deliveryWrapper : undefined}>
+                        <View style={styles.bottomSheet}>
+                            {!isDeliveryActive && <View style={styles.handleBar} />}
+                            <View style={styles.ongoingHeader}>
+                                <View style={styles.statusBadge}>
+                                    <Text style={styles.statusBadgeText}>
+                                        {selectedCategory === 'delivery' ? 'ENTREGA EM CURSO' : 'VIAGEM EM CURSO'}
+                                    </Text>
+                                </View>
+                                <Text style={styles.ongoingPrice}>{currentFare.toLocaleString()} Kz</Text>
+                            </View>
+
+                            {selectedCategory === 'delivery' && (
+                                <View style={styles.deliveryTrackingBox}>
+                                    <Text style={styles.trackingStatusText}>Seu pacote está sendo entregue</Text>
+                                    <View style={[styles.deliveryDetailBox, { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={styles.deliveryDetailLabel}>DESTINATÁRIO</Text>
+                                            <Text style={styles.deliveryDetailValue}>{deliveryInfo.recipientName}</Text>
+                                            <Text style={styles.deliveryDetailLabel}>TELEFONE</Text>
+                                            <Text style={styles.deliveryDetailValue}>{deliveryInfo.recipientPhone}</Text>
+                                        </View>
+                                        <Package size={40} color={colors.primary} style={{ opacity: 0.8 }} />
+                                    </View>
+                                </View>
+                            )}
+
+                            <View style={styles.driverMinimalCard}>
+                                <View style={styles.driverAvatarSmall}>
+                                    <Text style={styles.avatarTextSmall}>{acceptedDriver?.name?.[0] || 'D'}</Text>
+                                </View>
+                                <View style={styles.driverMinimalDetails}>
+                                    <Text style={styles.driverNameSmall}>{acceptedDriver?.name}</Text>
+                                    <Text style={styles.driverCarSmall}>Toyota Corolla • ABC-123-LD</Text>
+                                </View>
+                                <TouchableOpacity style={styles.chatIconBtn}>
+                                    <Smartphone size={20} color={colors.primary} />
+                                </TouchableOpacity>
+                            </View>
+
+                            {!isDeliveryActive && (
+                                <View style={styles.progressPlaceholder}>
+                                    <View style={styles.progressBar}>
+                                        <Animated.View style={[styles.progressFill, {
+                                            width: radarAnim.interpolate({
+                                                inputRange: [0, 1],
+                                                outputRange: ['40%', '85%']
+                                            })
+                                        }]} />
+                                    </View>
+                                    <View style={styles.etaBox}>
+                                        <Clock size={16} color={colors.primary} />
+                                        <Text style={styles.etaText}>Chegada prevista em <Text style={{ fontWeight: '900', color: colors.primary }}>8 min</Text></Text>
+                                    </View>
+                                </View>
+                            )}
+                        </View>
+                    </View>
+                );
+
+            case 'waiting_payment':
+                return (
+                    <View style={styles.overlay}>
+                        <View style={styles.paymentCard}>
+                            <View style={styles.paymentIconBox}>
+                                <CreditCard size={40} color={colors.primary} />
+                            </View>
+                            <Text style={styles.paymentTitle}>Pagamento Pendente</Text>
+                            <Text style={styles.paymentSub}>Aguardando o motorista confirmar o recebimento do valor.</Text>
+
+                            <View style={styles.finalFareBox}>
+                                <Text style={styles.finalFareLabel}>Valor Total</Text>
+                                <Text style={styles.finalFareValue}>Kz {currentFare.toLocaleString()}</Text>
+                            </View>
+
+                            <View style={styles.loadingSpinnerSmall}>
+                                <Animated.View style={[styles.spinnerIcon, {
+                                    transform: [{
+                                        rotate: paymentAnim.interpolate({
+                                            inputRange: [0, 1],
+                                            outputRange: ['0deg', '360deg']
+                                        })
+                                    }]
+                                }]}>
+                                    <Clock size={20} color={colors.primary} />
+                                </Animated.View>
+                                <Text style={styles.waitingText}>Processando...</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity style={styles.helpBtnMinimal}>
+                            <Text style={styles.helpTextMinimal}>Precisa de ajuda?</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+
+            case 'finished':
+                return (
+                    <View style={styles.overlay}>
+                        <View style={styles.successIcon}>
+                            <CheckCircle size={80} color={colors.success} />
+                        </View>
+                        <Text style={styles.overlayTitle}>Viagem Concluída!</Text>
+                        <Text style={styles.overlaySub}>O valor final foi de Kz {currentFare.toLocaleString()}</Text>
+                        <TouchableOpacity style={styles.primaryBtn} onPress={resetFlow}>
+                            <Text style={styles.primaryBtnText}>Concluído</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+
+            case 'searching_address':
+                return (
+                    <View style={styles.searchContainer}>
+                        <SafeAreaView style={{ backgroundColor: '#FFF' }}>
+                            <View style={styles.searchHeader}>
+                                <TouchableOpacity onPress={() => setStep('home')} style={styles.closeBtn}>
+                                    <X size={28} color={colors.text} />
+                                </TouchableOpacity>
+                                <Text style={styles.headerTitlePink}>PARA ONDE VAIS?</Text>
+                                <View style={{ width: 28 }} />
+                            </View>
+
+                            <View style={styles.inputsWrapper}>
+                                <View style={styles.timelineContainer}>
+                                    <View style={styles.blueDot} />
+                                    <View style={styles.dottedLine} />
+                                    <View style={styles.pinkDot} />
+                                </View>
+                                <View style={styles.inputsColumn}>
+                                    <View style={styles.inputBox}>
+                                        <Text style={styles.inputTextStatic}>{pickupAddress}</Text>
+                                    </View>
+                                    <View style={styles.inputDivider} />
+                                    <TouchableOpacity
+                                        style={styles.inputBoxActive}
+                                        onPress={() => searchInputRef.current?.focus()}
+                                        activeOpacity={1}
+                                    >
+                                        <TextInput
+                                            ref={searchInputRef}
+                                            style={styles.inputTextActive}
+                                            placeholder="Para onde vais?"
+                                            placeholderTextColor={colors.textSecondary}
+                                            value={searchQuery}
+                                            onChangeText={setSearchQuery}
+                                            autoFocus
+                                        />
+                                        {searchQuery.length > 0 && (
+                                            <TouchableOpacity
+                                                onPress={() => {
+                                                    setSearchQuery('');
+                                                    setDestination(null);
+                                                    if (mapRef.current) {
+                                                        mapRef.current.clearMap();
+                                                        mapRef.current.setUserLocation(pickupCoords);
+                                                    }
+                                                }}
+                                                style={{ padding: 5 }}
+                                            >
+                                                <X size={18} color={colors.primary} />
+                                            </TouchableOpacity>
+                                        )}
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        </SafeAreaView>
+
+                        <ScrollView style={styles.resultsList} showsVerticalScrollIndicator={false}>
+                            {searchResults.map((item) => (
+                                <TouchableOpacity
+                                    key={item.id}
+                                    style={styles.resultItem}
+                                    onPress={() => handleSelectDestination(item)}
+                                >
+                                    <View style={styles.resultIconBox}>
+                                        <MapPin size={24} color={colors.primary} />
+                                    </View>
+                                    <View style={styles.resultInfo}>
+                                        <Text style={styles.resultName}>{item.name}</Text>
+                                        <Text style={styles.resultAddress}>{item.address}</Text>
+                                    </View>
+                                    <Heart size={20} color="#E2E8F0" />
+                                </TouchableOpacity>
+                            ))}
+
+                            <TouchableOpacity style={styles.resultItem} onPress={() => setStep('home')}>
+                                <View style={styles.resultIconBox}>
+                                    <MapPin size={24} color={colors.primary} />
+                                </View>
+                                <View style={styles.resultInfo}>
+                                    <Text style={styles.resultName}>Definir no mapa</Text>
+                                    <Text style={styles.resultAddress}>Escolher localização manualmente</Text>
+                                </View>
+                            </TouchableOpacity>
+                        </ScrollView>
+                    </View>
+                );
+
+            case 'delivery_details':
+                return (
+                    <View style={styles.bottomSheet}>
+                        <View style={styles.handleBar} />
+                        <View style={styles.selectionHeader}>
+                            <Text style={styles.sheetTitleCallback}>DETALHES DA ENTREGA</Text>
+                            <TouchableOpacity onPress={() => setStep('home')} style={styles.backBtn}>
+                                <ArrowLeft size={20} color={colors.primary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        <Text style={styles.inputLabel}>Para quem enviamos?</Text>
+                        <TextInput
+                            style={styles.deliveryInput}
+                            placeholder="Nome do Destinatário"
+                            placeholderTextColor={colors.textSecondary}
+                            value={deliveryInfo.recipientName}
+                            onChangeText={(val) => setDeliveryInfo({ ...deliveryInfo, recipientName: val })}
+                        />
+
+                        <Text style={styles.inputLabel}>Telemóvel do Destinatário</Text>
+                        <TextInput
+                            style={styles.deliveryInput}
+                            placeholder="Terminal do Destinatário"
+                            placeholderTextColor={colors.textSecondary}
+                            keyboardType="phone-pad"
+                            value={deliveryInfo.recipientPhone}
+                            onChangeText={(val) => setDeliveryInfo({ ...deliveryInfo, recipientPhone: val })}
+                        />
+
+                        <Text style={styles.inputLabel}>O que está dentro?</Text>
+                        <TextInput
+                            style={[styles.deliveryInput, { height: 80, textAlignVertical: 'top' }]}
+                            placeholder="Descreva o pacote (Ex: Documentos, Comida)"
+                            placeholderTextColor={colors.textSecondary}
+                            multiline
+                            value={deliveryInfo.packageDescription}
+                            onChangeText={(val) => setDeliveryInfo({ ...deliveryInfo, packageDescription: val })}
+                        />
+
+                        <TouchableOpacity
+                            style={[styles.primaryBtn, { backgroundColor: colors.primary }]}
+                            onPress={() => {
+                                // Calculate fares for delivery category before proceeding
+                                const destLat = destination.lat || -8.840;
+                                const destLng = destination.lng || 13.290;
+                                calculateFares(destLat, destLng, 'delivery');
+                                setStep('service_selection');
+                            }}
+                        >
+                            <Text style={[styles.primaryBtnText, { color: '#FFF' }]}>Escolher Serviço</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+
+            case 'service_selection':
+                return (
+                    <View style={styles.bottomSheet}>
+                        <View style={styles.handleBar} />
+
+                        <View style={styles.selectionHeader}>
+                            <Text style={styles.sheetTitleCallback}>SELECIONE UMA OFERTA</Text>
+                            <TouchableOpacity onPress={() => setStep('home')} style={styles.backBtn}>
+                                <ArrowLeft size={20} color={colors.primary} />
+                            </TouchableOpacity>
+                        </View>
+
+                        {calculatedServices.map((service) => {
+                            // Dynamic Icon Logic based on DB vehicle_category (moto, car, van, truck)
+                            const vc = (service.vehicle_category || '').toLowerCase();
+                            let ServiceIcon = Car;
+                            let vehicleLabel = 'Carro';
+
+                            if (vc.includes('moto') || vc.includes('bike')) {
+                                ServiceIcon = Bike;
+                                vehicleLabel = 'Mota';
+                            } else if (vc.includes('van') || vc.includes('carrinha') || vc.includes('truck')) {
+                                ServiceIcon = Truck;
+                                vehicleLabel = 'Carrinha';
+                            }
+
+                            return (
+                                <TouchableOpacity
+                                    key={service.id}
+                                    style={[styles.serviceItem, selectedService?.id === service.id && styles.serviceItemActive]}
+                                    onPress={() => handleServiceSelect(service)}
+                                >
+                                    <View style={styles.serviceLeft}>
+                                        <View style={styles.serviceIconBox}>
+                                            <ServiceIcon size={32} color={colors.text} />
+                                        </View>
+                                        <View>
+                                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                                                <Text style={styles.serviceName}>{service.name}</Text>
+                                                <User size={12} color={colors.textSecondary} />
+                                                <Text style={styles.serviceCapacity}>4</Text>
+                                            </View>
+                                            <Text style={styles.serviceType}>{vehicleLabel}</Text>
+                                        </View>
+                                    </View>
+                                    <Text style={styles.servicePrice}>{service.estimatedPrice.toLocaleString()} Kz</Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+
+                        <TouchableOpacity
+                            style={[
+                                styles.primaryBtn,
+                                !selectedService
+                                    ? { backgroundColor: '#E2E8F0' } // Disabled / Default
+                                    : { backgroundColor: colors.primary } // Selected (Pink)
+                            ]}
+                            onPress={handleRequestTrip}
+                            disabled={!selectedService}
+                        >
+                            <Text style={[
+                                styles.primaryBtnText,
+                                !selectedService
+                                    ? { color: '#94A3B8' } // Disabled Text
+                                    : { color: '#FFF' } // Selected Text (White)
+                            ]}>Continuar</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+            default:
+                return null;
+        }
+    };
+
+    // --- Persistence & Map Synchronization Effect ---
+    // 1. Save state to cache on changes
+    useEffect(() => {
+        if (tripId || destination || step !== 'home') {
+            saveTripCache({
+                tripId, step, selectedCategory, destination,
+                pickupCoords, pickupAddress, currentFare, acceptedDriver, deliveryInfo
+            });
+        }
+    }, [tripId, step, selectedCategory, destination, pickupCoords, currentFare, acceptedDriver, deliveryInfo]);
+
+    // 2. Watch for changes to update map automatically
+    useEffect(() => {
+        if (!mapReady) return;
+
+        if (destination && pickupCoords) {
+            console.log('🗺️ [SYNC] Updating map with destination:', destination.name);
+            const dest = { lat: parseFloat(destination.lat), lng: parseFloat(destination.lng) };
+
+            // Limpar apenas se o destino mudou (opcional, mas seguro para rota animada)
+            mapRef.current?.clearMap();
+            mapRef.current?.setMarkers(pickupCoords, dest);
+
+            hereRoutingService.getRoute(pickupCoords, dest).then(route => {
+                if (route) {
+                    // Prioridade para a string bruta (rawPolyline) que o SDK descodifica melhor
+                    mapRef.current?.drawRoute(route.rawPolyline || route.geometry);
+                }
+            }).catch(err => console.error('Error drawing sync route:', err));
+        } else if (!destination && mapReady) {
+            // Se não há destino, apenas garantimos que o marcador do usuário está atualizado e visível
+            // SEM limpar o mapa todo para não causar cintilação
+            if (mapRef.current) {
+                mapRef.current.setUserLocation(pickupCoords);
+            }
+        }
+    }, [mapReady, destination?.lat, destination?.lng, pickupCoords?.lat, pickupCoords?.lng]);
+
+    const isDeliveryActive = selectedCategory === 'delivery' && ['accepted', 'ongoing', 'waiting_payment'].includes(step);
+
+    return (
+        <SafeAreaView style={styles.container}>
+            <StatusBar barStyle="dark-content" backgroundColor="#FFF" />
+
+            {/* Show Map for both Rides and Deliveries to maintain visual context */}
+            <View style={[styles.mapPlaceholder, { overflow: 'hidden' }]}>
+                <HereMap
+                    ref={mapRef}
+                    initialCenter={pickupCoords}
+                    onMapTap={(coords) => {
+                        if (step !== 'home' && step !== 'searching_address') return;
+
+                        console.log('📍 [MAP_TAP] User tapped at:', coords);
+
+                        // Perform Reverse Geocoding to get address for the input
+                        hereService.reverseGeocode(coords.lat, coords.lng).then(address => {
+                            if (address) {
+                                const newDest = {
+                                    name: address.split(',')[0], // Use first part as name
+                                    address: address,
+                                    lat: coords.lat,
+                                    lng: coords.lng
+                                };
+
+                                setDestination(newDest);
+                                setSearchQuery(address); // Pre-fill the input field
+
+                                if (step === 'searching_address') {
+                                    setStep('home'); // Go back to home to see the confirmation
+                                }
+
+                                // Trigger category selection or direct service selection
+                                // For better UX, if we have a destination, we can guide the user to category select if not already there
+                                // handleCategorySelect('ride'); // or just set the destination and let them choose
+                            }
+                        });
+                    }}
+                    onMapReady={() => {
+                        console.log('✅ [MOBILE] HereMap READY');
+                        // Mostrar localização do usuário imediatamente
+                        mapRef.current?.setUserLocation(pickupCoords);
+
+                        setMapReady(true);
+                        if (destination) {
+                            const dest = { lat: destination.lat, lng: destination.lng };
+                            mapRef.current?.setMarkers(pickupCoords, dest);
+
+                            // Restore Route as well
+                            hereRoutingService.getRoute(pickupCoords, dest).then(route => {
+                                if (route) mapRef.current?.drawRoute(route.rawPolyline || route.geometry);
+                            });
+                        }
+                    }}
+                />
+            </View>
+
+            {renderStepContent()}
+            {renderHeader()}
+        </SafeAreaView>
+    );
+}
+
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#FFF',
+    },
+    mapPlaceholder: {
+        flex: 1,
+        backgroundColor: '#F1F5F9',
+    },
+    headerFloating: {
+        position: 'absolute',
+        top: 50,
+        left: 20,
+        right: 20,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    iconCircle: {
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#FFF',
+        justifyContent: 'center',
+        alignItems: 'center',
+        ...colors.shadow,
+    },
+    userInfo: {
+        alignItems: 'center',
+    },
+    welcomeText: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: colors.text,
+    },
+    locationLabel: {
+        fontSize: 12,
+        color: colors.primary,
+        fontWeight: '700',
+    },
+    bottomSheet: {
+        backgroundColor: '#FFF',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        padding: 30,
+        ...colors.shadow,
+    },
+    fullScreenSheet: {
+        // Deprecated/Removed in favor of deliveryWrapper + bottomSheet combination
+    },
+    deliveryWrapper: {
+        flex: 1,
+        justifyContent: 'flex-end',
+        backgroundColor: '#F8FAFC', // Light background to contrast with the white sheet
+    },
+    sheetTitle: {
+        fontSize: 22,
+        fontWeight: '900',
+        color: colors.text,
+        marginBottom: 20,
+    },
+    searchBar: {
+        height: 60,
+        backgroundColor: '#F8FAFC',
+        borderRadius: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 20,
+        borderWidth: 1.5,
+        borderColor: '#F1F5F9',
+        marginBottom: 25,
+    },
+    searchText: {
+        marginLeft: 12,
+        fontSize: 15,
+        color: colors.textSecondary,
+        fontWeight: '600',
+    },
+    quickChoices: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 10,
+    },
+    choiceBtn: {
+        width: (width - 80) / 2,
+        height: 120,
+        borderRadius: 24,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    choiceLabel: {
+        marginTop: 10,
+        fontSize: 16,
+        fontWeight: '800',
+        color: colors.text,
+    },
+    fabRequest: {
+        position: 'absolute',
+        bottom: 240,
+        right: 20,
+        width: 64,
+        height: 64,
+        borderRadius: 32,
+        backgroundColor: colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        ...colors.shadow,
+        shadowColor: colors.primary,
+    },
+    overlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(233, 30, 99, 0.95)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 30,
+    },
+    radarContainer: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 30,
+    },
+    radarRing: {
+        position: 'absolute',
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        borderWidth: 2,
+        borderColor: 'rgba(255,255,255,0.3)',
+    },
+    overlayTitle: {
+        fontSize: 28,
+        fontWeight: '950',
+        color: '#FFF',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    overlaySub: {
+        fontSize: 16,
+        color: 'rgba(255,255,255,0.8)',
+        textAlign: 'center',
+        marginBottom: 40,
+    },
+    cancelText: {
+        color: '#FFF',
+        fontWeight: '800',
+    },
+    cancelBtnMinimal: {
+        paddingVertical: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    cancelTextMinimalDark: {
+        color: colors.textSecondary,
+        fontSize: 14,
+        fontWeight: '700',
+        textDecorationLine: 'underline',
+    },
+    driverCard: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 25,
+    },
+    driverInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    avatarBox: {
+        width: 60,
+        height: 60,
+        borderRadius: 24,
+        backgroundColor: '#F1F5F9',
+        overflow: 'hidden',
+    },
+    avatar: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: colors.border,
+    },
+    driverDetails: {
+        marginLeft: 15,
+    },
+    driverName: {
+        fontSize: 18,
+        fontWeight: '900',
+        color: colors.text,
+    },
+    ratingRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        marginTop: 4,
+    },
+    ratingText: {
+        fontSize: 13,
+        color: colors.textSecondary,
+        fontWeight: '600',
+    },
+    carBadge: {
+        backgroundColor: '#F1F5F9',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        borderRadius: 12,
+    },
+    plateNumber: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: colors.text,
+    },
+    actionBtn: {
+        flex: 1,
+        backgroundColor: colors.primary,
+        height: 50,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        // Removed shadow for cleaner look
+    },
+    actionBtnText: {
+        color: '#FFF',
+        fontSize: 18,
+        fontWeight: '800',
+    },
+    ongoingHeader: {
+        width: '100%',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 30,
+    },
+    statusBadge: {
+        backgroundColor: '#DCFCE7', // Brand Green Light
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        borderRadius: 12,
+        marginBottom: 8,
+    },
+    statusBadgeText: {
+        color: '#166534', // Brand Green Dark
+        fontSize: 11,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+    },
+    ongoingPrice: {
+        fontSize: 40,
+        fontWeight: '900',
+        color: colors.text,
+        letterSpacing: -1.5,
+        lineHeight: 48,
+    },
+    fareRow: {
+        alignItems: 'center',
+        marginBottom: 25,
+    },
+    fareLabel: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: colors.textSecondary,
+        textTransform: 'uppercase',
+    },
+    fareValue: {
+        fontSize: 36,
+        fontWeight: '950',
+        color: colors.text,
+        marginTop: 5,
+    },
+    progressPlaceholder: {
+        marginBottom: 10,
+    },
+    progressBar: {
+        height: 8,
+        backgroundColor: '#F1F5F9',
+        borderRadius: 4,
+        overflow: 'hidden',
+    },
+    progressFill: {
+        height: '100%',
+        backgroundColor: colors.primary,
+    },
+    etaText: {
+        textAlign: 'center',
+        fontSize: 13,
+        fontWeight: '700',
+        color: colors.textSecondary,
+    },
+    successIcon: {
+        marginBottom: 30,
+    },
+    primaryBtn: {
+        backgroundColor: '#FFF',
+        width: '100%',
+        height: 50,
+        borderRadius: 14,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginTop: 20,
+    },
+    primaryBtnText: {
+        color: colors.primary,
+        fontSize: 18,
+        fontWeight: '900',
+    },
+    // Search Screen Styles
+    searchContainer: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: '#FFF',
+        zIndex: 100,
+    },
+    searchHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingVertical: 15,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F8FAFC',
+    },
+    closeBtn: {
+        padding: 5,
+    },
+    headerTitlePink: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: colors.primary,
+        textTransform: 'uppercase',
+    },
+    inputsWrapper: {
+        flexDirection: 'row',
+        padding: 20,
+        backgroundColor: '#FFF',
+        ...colors.shadow,
+        paddingBottom: 25,
+    },
+    timelineContainer: {
+        alignItems: 'center',
+        marginRight: 15,
+        paddingVertical: 12,
+    },
+    blueDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#3B82F6',
+    },
+    dottedLine: {
+        flex: 1,
+        width: 1,
+        backgroundColor: '#E2E8F0',
+        marginVertical: 4,
+    },
+    pinkDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: colors.primary,
+        borderWidth: 2,
+        borderColor: colors.primary,
+    },
+    inputsColumn: {
+        flex: 1,
+    },
+    inputBox: {
+        height: 44,
+        justifyContent: 'center',
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9',
+        marginBottom: 4,
+    },
+    inputBoxActive: {
+        height: 44,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#FDF2F5',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        marginTop: 4,
+    },
+    inputTextStatic: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: colors.text,
+    },
+    inputTextActive: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: colors.text,
+    },
+    inputDivider: {
+        height: 1,
+    },
+    resultsList: {
+        flex: 1,
+        backgroundColor: '#FFF',
+        paddingHorizontal: 20,
+        paddingTop: 10,
+    },
+    resultItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#F8FAFC',
+    },
+    resultIconBox: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#FDF2F5',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 15,
+    },
+    resultInfo: {
+        flex: 1,
+    },
+    resultName: {
+        fontSize: 16,
+        fontWeight: '800',
+        color: colors.text,
+        marginBottom: 2,
+    },
+    resultAddress: {
+        fontSize: 13,
+        color: colors.textSecondary,
+        fontWeight: '500',
+    },
+    resultAddress: {
+        fontSize: 13,
+        color: colors.textSecondary,
+        fontWeight: '500',
+    },
+    // Service Selection Styles
+    handleBar: {
+        width: 40,
+        height: 5,
+        backgroundColor: '#E2E8F0',
+        borderRadius: 2.5,
+        alignSelf: 'center',
+        marginBottom: 20,
+    },
+    sheetTitleCallback: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: colors.primary,
+        textTransform: 'uppercase',
+    },
+    selectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    backBtn: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: '#FDF2F5', // Light Pink
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    serviceItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 15,
+        borderRadius: 20,
+        backgroundColor: '#F8FAFC',
+        marginBottom: 10,
+        borderWidth: 2,
+        borderColor: 'transparent',
+    },
+    serviceItemActive: {
+        backgroundColor: '#FDF2F5',
+        borderColor: colors.primary,
+    },
+    serviceLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    serviceIconBox: {
+        marginRight: 15,
+    },
+    serviceName: {
+        fontSize: 16,
+        fontWeight: '900',
+        color: colors.text,
+    },
+    serviceCapacity: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: colors.textSecondary,
+    },
+    serviceType: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        marginTop: 2,
+    },
+    servicePrice: {
+        fontSize: 18,
+        fontWeight: '950',
+        color: colors.text,
+    },
+    searchBarActive: {
+        borderColor: colors.primary, // Highlight input when destination is set
+        backgroundColor: '#FFF',
+    },
+    destinationDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: colors.primary,
+        marginRight: 12,
+    },
+    searchTextActive: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: colors.text,
+    },
+    // Enhanced Ongoing & Payment Styles
+    statusRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    liveFareBadge: {
+        backgroundColor: '#FDF2F5',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 12,
+    },
+    liveFareText: {
+        fontSize: 14,
+        fontWeight: '900',
+        color: colors.primary,
+    },
+    driverMinimalCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#F8FAFC',
+        padding: 15,
+        borderRadius: 20,
+        marginBottom: 20,
+    },
+    avatarBoxSmall: {
+        width: 44,
+        height: 44,
+        borderRadius: 18,
+        backgroundColor: '#E2E8F0',
+        overflow: 'hidden',
+    },
+    avatarSmall: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: colors.border,
+    },
+    driverMinimalDetails: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    driverNameSmall: {
+        fontSize: 15,
+        fontWeight: '900',
+        color: colors.text,
+    },
+    driverCarSmall: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        fontWeight: '600',
+        marginTop: 2,
+    },
+    chatIconBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#FFF',
+        justifyContent: 'center',
+        alignItems: 'center',
+        ...colors.shadow,
+    },
+    etaBox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 8,
+        marginTop: 15,
+        backgroundColor: '#FDF2F5',
+        paddingVertical: 10,
+        paddingHorizontal: 20,
+        borderRadius: 20,
+        alignSelf: 'center',
+    },
+    paymentCard: {
+        backgroundColor: '#FFF',
+        width: '100%',
+        borderRadius: 32,
+        padding: 30,
+        alignItems: 'center',
+        ...colors.shadow,
+    },
+    paymentIconBox: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#FDF2F5',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    paymentTitle: {
+        fontSize: 22,
+        fontWeight: '900',
+        color: colors.text,
+        marginBottom: 10,
+    },
+    paymentSub: {
+        fontSize: 14,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        fontWeight: '600',
+        lineHeight: 20,
+        marginBottom: 25,
+    },
+    finalFareBox: {
+        backgroundColor: '#F8FAFC',
+        width: '100%',
+        padding: 20,
+        borderRadius: 20,
+        alignItems: 'center',
+        marginBottom: 25,
+    },
+    finalFareLabel: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: colors.textSecondary,
+        textTransform: 'uppercase',
+    },
+    finalFareValue: {
+        fontSize: 30,
+        fontWeight: '950',
+        color: colors.text,
+        marginTop: 5,
+    },
+    loadingSpinnerSmall: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    spinnerIcon: {
+        // Handled by animation transform
+    },
+    waitingText: {
+        fontSize: 14,
+        fontWeight: '800',
+        color: colors.primary,
+    },
+    helpBtnMinimal: {
+        marginTop: 30,
+    },
+    helpTextMinimal: {
+        color: 'rgba(255,255,255,0.8)',
+        fontSize: 14,
+        fontWeight: '700',
+        textDecorationLine: 'underline',
+    },
+    // Delivery Flow Styles
+    fullScreenSheet: {
+        height: height * 0.9,
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+        marginTop: 0,
+    },
+    inputLabel: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: colors.textSecondary,
+        marginBottom: 8,
+        marginTop: 15,
+        textTransform: 'uppercase',
+    },
+    deliveryInput: {
+        backgroundColor: '#F8FAFC',
+        borderRadius: 16,
+        paddingHorizontal: 15,
+        paddingVertical: 12,
+        fontSize: 15,
+        color: colors.text,
+        borderWidth: 1.5,
+        borderColor: '#F1F5F9',
+        fontWeight: '600',
+        marginBottom: 10,
+    },
+    deliverySummaryCard: {
+        width: '100%', // Ensure it respects parent padding
+        backgroundColor: '#F8FAFC',
+        borderRadius: 24,
+        padding: 20,
+        marginVertical: 15,
+        borderWidth: 1,
+        borderColor: '#F1F5F9',
+    },
+    deliverySummaryTitle: {
+        fontSize: 12,
+        fontWeight: '800',
+        color: colors.textSecondary,
+        marginBottom: 15,
+        letterSpacing: 1,
+    },
+    deliverySummaryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    deliverySummaryLabel: {
+        fontSize: 12,
+        color: colors.textSecondary,
+        fontWeight: '600',
+    },
+    deliverySummaryText: {
+        fontSize: 14,
+        color: colors.text,
+        fontWeight: '700',
+    },
+    acceptedHeader: {
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    driverAvatarLarge: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 15,
+        ...colors.shadow,
+    },
+    avatarText: {
+        fontSize: 32,
+        fontWeight: '900',
+        color: '#FFF',
+    },
+    acceptedTitle: {
+        fontSize: 24,
+        fontWeight: '950',
+        color: colors.text,
+        textAlign: 'center',
+    },
+    acceptedSubtitle: {
+        fontSize: 15,
+        color: colors.textSecondary,
+        textAlign: 'center',
+        marginTop: 5,
+        fontWeight: '600',
+    },
+    actionButtons: {
+        flexDirection: 'row',
+        gap: 15,
+        marginTop: 10,
+    },
+    deliveryTrackingBox: {
+        width: '100%', // Ensure it takes full width of parent (which has padding)
+        alignItems: 'center',
+        paddingVertical: 20,
+    },
+    deliveryIconCircle: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: '#FDF2F5',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    trackingStatusText: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: colors.text,
+        textAlign: 'center',
+        marginBottom: 20,
+    },
+    deliveryDetailBox: {
+        width: '100%',
+        backgroundColor: '#F8FAFC', // Match deliverySummaryCard
+        borderRadius: 24, // Match deliverySummaryCard
+        padding: 20,
+        borderWidth: 1,
+        borderColor: '#F1F5F9', // Match deliverySummaryCard
+    },
+    deliveryDetailLabel: {
+        fontSize: 11,
+        fontWeight: '800',
+        color: colors.textSecondary,
+        textTransform: 'uppercase',
+        marginBottom: 4,
+    },
+    deliveryDetailValue: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: colors.text,
+        marginBottom: 15,
+    },
+    driverAvatarSmall: {
+        width: 48,
+        height: 48,
+        borderRadius: 16,
+        backgroundColor: colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    avatarTextSmall: {
+        fontSize: 20,
+        fontWeight: '900',
+        color: '#FFF',
+    },
+});

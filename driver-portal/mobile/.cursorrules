@@ -1,0 +1,24 @@
+# User Preferences and Project Rules
+
+- **LOCAL BUILDS ARE STRICTLY FORBIDDEN.** Do NOT, under any circumstances, attempt to run a build on the local machine. All builds and validations MUST be performed on GitHub Actions (CI). Local environment issues (path encoding, NDK versions) make local results unreliable.
+- **I HATE BUILDS with all my strength.** Never ask for or perform a build unless absolutely, critically necessary and explicitly requested. Think a hundred times before suggesting one. Always assume the build is broken locally and rely on code analysis and CI logs.
+- **Strict Architecture Policy:** ONLY compile for `arm64-v8a`. Remove all other architectures (armeabi-v7a, x86, x86_64) from every configuration file.
+- **Explain the rationale and theory** behind any code changes before implementing them.
+- **USB Priority:** The mobile device is connected via USB. Always use `adb reverse tcp:3004 tcp:3004` when dealing with network/API connectivity issues.
+- **Mapbox v11:** The project uses a manually patched version of `@rnmapbox/maps` 10.2.10 to be compatible with Mapbox Maps SDK v11. Do not overwrite `RNMBXStyleFactory.kt` without re-applying the patch.
+- **Exact GPS:** Prioritize showing exact GPS coordinates over "smoothed" or "snapped" animations when possible.
+- **End-to-End Implementation Rule:** Every new feature MUST be implemented in BOTH the native layer (Mapbox engine, Java/Kotlin logic) AND the UI layer (React Native components, buttons, toggles). A feature is NOT considered done until the driver can see and use it in the app interface. No "hidden" or "partially bridged" functionalities.
+
+# Mapbox Navigation SDK v3 - THE GOLDEN RULES (SIMPLICITY ABOVE ALL)
+1. **CHECK THE VERSION FIRST:** Never blindly copy code from online documentation or "modern" AI examples (like v3.6.0) without verifying if it matches our CURRENT hardcoded version (e.g., v3.1.0). Methods like `.accessToken()` on the Builder DO NOT EXIST in older versions. Verify `build.gradle` first.
+2. **NO GAMBIARRAS (Simplicity):** Use the official, boring, standard implementation.
+   - Do NOT create custom `CameraTransition` classes if `DefaultNavigationCamera` exists.
+   - Do NOT invent complex lifecycle handlers if `mapboxNavigation.onDestroy()` is sufficient.
+   - If you are writing more than 50 lines of boilerplate to do something simple, STOP. You are doing it wrong.
+3. **STRICT LIFECYCLE:** The Native Module MUST respect Android Lifecycle.
+   - `onStart`: `startTripSession()`
+   - `onStop`: `stopTripSession()`
+   - `onDestroy`: `mapboxNavigation.onDestroy()`
+4. **OFFICIAL ARCHITECTURE ONLY:**
+   - Maps SDK (MapView) -> Navigation Core (MapboxNavigation) -> Route Request -> UI.
+   - Do not try to bypass the Core to force UI updates.

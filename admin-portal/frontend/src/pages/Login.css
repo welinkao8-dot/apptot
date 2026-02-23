@@ -1,0 +1,225 @@
+.login-page {
+    display: flex;
+    min-height: 100vh;
+    background: #ffffff;
+    overflow: hidden;
+}
+
+/* Visual Section - Left Side */
+.login-visual-section {
+    flex: 1.2;
+    position: relative;
+    background: linear-gradient(135deg, #e91e63 0%, #c2185b 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 60px;
+    color: white;
+}
+
+.login-visual-section::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: url('https://images.unsplash.com/photo-1557683316-973673baf926?auto=format&fit=crop&q=80') center/cover;
+    opacity: 0.15;
+    mix-blend-mode: overlay;
+}
+
+.visual-content {
+    position: relative;
+    z-index: 2;
+    max-width: 500px;
+}
+
+.brand-badge {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(59, 130, 246, 0.1);
+    padding: 8px 16px;
+    border-radius: 50px;
+    width: fit-content;
+    color: #3b82f6;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 1px;
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    margin-bottom: 30px;
+}
+
+.visual-content h1 {
+    font-size: 48px;
+    font-weight: 900;
+    line-height: 1.1;
+    margin-bottom: 20px;
+    background: linear-gradient(to right, #ffffff, #fce7f3);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.visual-content p {
+    font-size: 18px;
+    color: #94a3b8;
+    line-height: 1.6;
+}
+
+/* Form Section - Right Side */
+.login-form-section {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    background: #f8fafc;
+}
+
+.login-card-v2 {
+    width: 100%;
+    max-width: 420px;
+    padding: 40px;
+}
+
+.form-header {
+    margin-bottom: 40px;
+}
+
+.form-header h2 {
+    font-size: 28px;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 10px;
+}
+
+.form-header p {
+    color: #64748b;
+    font-size: 15px;
+}
+
+.elegant-form {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.input-field {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.input-field label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-icon {
+    position: absolute;
+    left: 15px;
+    color: #94a3b8;
+    transition: color 0.3s ease;
+}
+
+.input-wrapper input {
+    width: 100%;
+    padding: 14px 15px 14px 45px;
+    background: white;
+    border: 2px solid #e2e8f0;
+    border-radius: 12px;
+    font-size: 15px;
+    transition: all 0.3s ease;
+    color: #1e293b;
+}
+
+.input-wrapper input:focus {
+    border-color: #e91e63;
+    outline: none;
+    box-shadow: 0 0 0 4px rgba(233, 30, 99, 0.05);
+}
+
+.input-wrapper input:focus+.input-icon {
+    color: #e91e63;
+}
+
+.btn-elegant {
+    background: #e91e63;
+    color: white;
+    padding: 16px;
+    border-radius: 12px;
+    border: none;
+    font-weight: 700;
+    font-size: 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.3s ease;
+    margin-top: 10px;
+}
+
+.btn-elegant:hover {
+    background: #c2185b;
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.btn-elegant.loading {
+    opacity: 0.7;
+    cursor: not-allowed;
+}
+
+.form-footer {
+    margin-top: 40px;
+    text-align: center;
+}
+
+.form-footer p {
+    font-size: 12px;
+    color: #94a3b8;
+}
+
+/* Responsiveness */
+@media (max-width: 1024px) {
+    .login-visual-section {
+        display: none;
+    }
+
+    .login-form-section {
+        background: #ffffff;
+    }
+
+    .login-card-v2 {
+        max-width: 100%;
+    }
+}
+
+.animate-slide-up {
+    animation: slideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

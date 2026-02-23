@@ -1,0 +1,549 @@
+import { useState, useEffect, useRef } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { Menu, User, DollarSign, Navigation, Clock, Power, CheckCircle, ChevronRight, MapPin, Home, History, LogOut, Play, Square, CreditCard, Phone, MessageSquare, Maximize2, Minimize2, ArrowUp, ArrowLeft, ArrowRight, CornerUpLeft, CornerUpRight, RotateCcw, Crosshair } from 'lucide-react'
+import { toast } from 'react-hot-toast'
+import axios from 'axios'
+import { useNavigate, Link } from 'react-router-dom'
+import { io } from 'socket.io-client'
+import HereMap from '../components/HereMap'
+import { hereRoutingService } from '../services/hereRoutingService'
+import './Dashboard.css'
+
+// Helper para ícones de manobra
+const getManeuverIcon = (action) => {
+    switch (action) {
+        case 'turn-left': return <CornerUpLeft size={32} color="white" />;
+        case 'turn-right': return <CornerUpRight size={32} color="white" />;
+        case 'uturn-left':
+        case 'uturn-right': return <RotateCcw size={32} color="white" />;
+        case 'sharp-left': return <ArrowLeft size={32} color="white" />;
+        case 'sharp-right': return <ArrowRight size={32} color="white" />;
+        default: return <ArrowUp size={32} color="white" />;
+    }
+}
+
+const translateInstruction = (instruction) => {
+    if (!instruction) return ''
+    return instruction
+        .replace(/Go for /gi, '')
+        .replace(/Head/gi, 'Siga')
+        .replace(/Turn left/gi, 'Vire à esquerda')
+        .replace(/Turn right/gi, 'Vire à direita')
+        .replace(/Keep left/gi, 'Mantenha-se à esquerda')
+        .replace(/Keep right/gi, 'Mantenha-se à direita')
+        .replace(/Take the exit/gi, 'Pegue a saída')
+        .replace(/Arrive at/gi, 'Chegando em')
+        .replace(/onto/gi, 'na')
+        .replace(/towards/gi, 'em direção a')
+        .replace(/street/gi, 'Rua')
+        .replace(/avenue/gi, 'Avenida')
+}
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3004'
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || API_URL.replace('/auth', '')
+
+export default function Dashboard() {
+    const { user, signOut } = useAuth()
+    const navigate = useNavigate()
+    const [isOnline, setIsOnline] = useState(false)
+    const [stats, setStats] = useState({ rides: 0, earnings: 0 })
+    const [requests, setRequests] = useState([])
+
+    const [activeRide, setActiveRide] = useState(() => {
+        const saved = localStorage.getItem('tot_active_ride')
+        return saved ? JSON.parse(saved).ride : null
+    })
+    const [rideStatus, setRideStatus] = useState(() => {
+        const saved = localStorage.getItem('tot_active_ride')
+        return saved ? JSON.parse(saved).status : 'idle'
+    })
+
+    const [fare, setFare] = useState(0)
+    const [isModalMinimized, setIsModalMinimized] = useState(false)
+    const [navigationInstructions, setNavigationInstructions] = useState([])
+    const [currentManeuver, setCurrentManeuver] = useState(null)
+    const [rideStats, setRideStats] = useState({ distance: '...', time: '...' })
+    const [forceRouteUpdate, setForceRouteUpdate] = useState(0)
+    const [isFollowing, setIsFollowing] = useState(true) // FOLLOW MODE
+
+    const socketRef = useRef(null)
+    const fareInterval = useRef(null)
+    const currentRouteRef = useRef(null)
+    const isRecalculating = useRef(false)
+    const lastProgressIndex = useRef(0)
+
+    // Refs para polylines e markers
+    const completedPolylineRef = useRef(null)
+    const remainingPolylineRef = useRef(null)
+    const transitionPolylineRef = useRef(null)
+    const mainPolylineRef = useRef(null)
+    const mapInstance = useRef(null)
+    const driverMarker = useRef(null)
+    const latestCoords = useRef({ lat: -8.84, lng: 13.29 })
+    const lastMarkerPos = useRef(null)
+    const animationFrameRef = useRef(null)
+
+    const isRideActive = activeRide && ['accepted', 'ongoing', 'finished', 'paid'].includes(rideStatus)
+
+    const fetchStats = async () => {
+        try {
+            if (!user) return
+            const res = await axios.get(`${API_URL}/trips/stats/${user.id}`)
+            if (res.data) setStats(res.data)
+        } catch (error) { console.error('Error fetching stats:', error) }
+    }
+
+    const fetchPendingTrips = async (currentStatus = isOnline) => {
+        if (!currentStatus) return
+        try {
+            const res = await axios.get(`${API_URL}/trips/pending`)
+            if (res.data) setRequests(res.data)
+        } catch (error) { console.error('❌ Erro no fallback HTTP:', error) }
+    }
+
+    // GPS WATCHER
+    useEffect(() => {
+        let watchId = null
+        if (isOnline && socketRef.current) {
+            if ('geolocation' in navigator) {
+                watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords
+                        latestCoords.current = { lat: latitude, lng: longitude }
+
+                        updateDriverMarker(latitude, longitude)
+
+                        if (isRideActive) {
+                            checkRouteDeviation(latitude, longitude)
+                            updateNavigationState(latitude, longitude)
+
+                            if (currentRouteRef.current) {
+                                const progress = calculateRouteProgress(currentRouteRef.current, { lat: latitude, lng: longitude })
+                                if (progress && progress.index > lastProgressIndex.current + 2) {
+                                    updateProgressiveRoute(progress)
+                                    lastProgressIndex.current = progress.index
+                                }
+                            }
+                        }
+
+                        const payload = {
+                            driverId: user.id || user.driver_id,
+                            lat: latitude,
+                            lng: longitude,
+                            activeClientId: activeRide ? activeRide.clientId : null
+                        }
+                        socketRef.current.emit('update_location', payload)
+                    },
+                    (err) => console.error(err),
+                    { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+                )
+            }
+        }
+        return () => { if (watchId !== null) navigator.geolocation.clearWatch(watchId) }
+    }, [isOnline, isRideActive, activeRide, user])
+
+    // PERSISTENCE
+    useEffect(() => {
+        if (activeRide) {
+            localStorage.setItem('tot_active_ride', JSON.stringify({ ride: activeRide, status: rideStatus }))
+        } else {
+            localStorage.removeItem('tot_active_ride')
+        }
+    }, [activeRide, rideStatus])
+
+    // ROUTE CALCULATION
+    useEffect(() => {
+        const calculateAndDrawRoute = async () => {
+            if (!activeRide || !mapInstance.current || !window.H) return
+
+            let start = latestCoords.current
+            let end = null
+
+            if (rideStatus === 'accepted') {
+                end = activeRide.coords || { lat: activeRide.pickupLat, lng: activeRide.pickupLng }
+            } else if (rideStatus === 'ongoing') {
+                end = activeRide.destPos || { lat: activeRide.destLat, lng: activeRide.destLng }
+            }
+
+            if (start && end && typeof end.lat === 'number') {
+                console.log('🛣️ Calculando rota:', start, end)
+                const routeData = await hereRoutingService.getRoute(start, end)
+                if (routeData) {
+                    if (routeData.actions) {
+                        setNavigationInstructions(routeData.actions)
+                        setCurrentManeuver(routeData.actions.find(a => a.action !== 'depart') || routeData.actions[0])
+                    }
+                    if (routeData.distanceKm) {
+                        setRideStats({ distance: routeData.distanceKm + ' km', time: routeData.durationMin + ' min' })
+                    }
+
+                    // LIMPAR MAPA ANTES DE NOVA ROTA
+                    clearAllPolylines()
+                    currentRouteRef.current = routeData.geometry
+                    lastProgressIndex.current = 0
+
+                    // Initial draw (Hidden initially, will be drawn by updateProgressiveRoute)
+                    // Or draw a thin line as background
+                    const lineString = new window.H.geo.LineString()
+                    routeData.geometry.forEach(p => lineString.pushPoint({ lat: p[0], lng: p[1] }))
+                    mainPolylineRef.current = new window.H.map.Polyline(lineString, {
+                        style: { lineWidth: 6, strokeColor: 'rgba(0, 175, 234, 0.2)' }
+                    })
+                    mapInstance.current.addObject(mainPolylineRef.current)
+
+                    // Zoom na rota
+                    mapInstance.current.getViewModel().setLookAtData({
+                        bounds: mainPolylineRef.current.getBoundingBox(),
+                        padding: { top: 120, bottom: 250, left: 50, right: 50 }
+                    })
+
+                    // Add Target Marker
+                    mapInstance.current.getObjects().forEach(obj => { if (obj.getData?.() === 'route-marker') mapInstance.current.removeObject(obj) })
+                    const endIcon = new window.H.map.DomIcon(`<div style="background: ${rideStatus === 'accepted' ? '#00afea' : '#E91E63'}; width: 28px; height: 28px; border-radius: 50%; border: 4px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.4); transform: translate(-14px, -14px);"></div>`)
+                    const endMarker = new window.H.map.DomMarker(end, { icon: endIcon })
+                    endMarker.setData('route-marker')
+                    mapInstance.current.addObject(endMarker)
+
+                    // Trigger first progress update
+                    updateProgressiveRoute({ index: 0 })
+                }
+            }
+        }
+        calculateAndDrawRoute()
+    }, [activeRide, rideStatus, forceRouteUpdate])
+
+    const clearAllPolylines = () => {
+        if (!mapInstance.current) return
+        if (mainPolylineRef.current) mapInstance.current.removeObject(mainPolylineRef.current)
+        if (completedPolylineRef.current) mapInstance.current.removeObject(completedPolylineRef.current)
+        if (remainingPolylineRef.current) mapInstance.current.removeObject(remainingPolylineRef.current)
+        if (transitionPolylineRef.current) mapInstance.current.removeObject(transitionPolylineRef.current)
+        mainPolylineRef.current = null
+        completedPolylineRef.current = null
+        remainingPolylineRef.current = null
+        transitionPolylineRef.current = null
+    }
+
+    const checkRouteDeviation = async (lat, lng) => {
+        if (!currentRouteRef.current || isRecalculating.current) return
+        let minDistance = Infinity
+        for (let i = 0; i < currentRouteRef.current.length; i += 10) {
+            const p = currentRouteRef.current[i]
+            const dist = haversine(lat, lng, p[0], p[1])
+            if (dist < minDistance) minDistance = dist
+        }
+        if (minDistance > 0.1) { // 100m
+            isRecalculating.current = true
+            toast('Recalculando rota...', { icon: '🔄' })
+            setForceRouteUpdate(p => p + 1)
+            isRecalculating.current = false
+        }
+    }
+
+    const updateNavigationState = (lat, lng) => {
+        if (!navigationInstructions.length) return
+        // Simplistic logic for instruction update...
+    }
+
+    const haversine = (lat1, lon1, lat2, lon2) => {
+        const R = 6371; const dLat = (lat2 - lat1) * Math.PI / 180; const dLon = (lon2 - lon1) * Math.PI / 180;
+        const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    const calculateRouteProgress = (routeGeometry, currentPosition) => {
+        if (!routeGeometry?.length) return null
+        let minDistance = Infinity; let closestIndex = 0;
+        routeGeometry.forEach((point, index) => {
+            const dist = haversine(currentPosition.lat, currentPosition.lng, point[0], point[1])
+            if (dist < minDistance) { minDistance = dist; closestIndex = index; }
+        })
+        return { index: closestIndex }
+    }
+
+    const createSparkle = (lat, lng) => {
+        if (!mapInstance.current) return
+        const screenPos = mapInstance.current.geoToScreen({ lat, lng })
+        if (!screenPos) return
+        const sparkle = document.createElement('div')
+        sparkle.className = 'route-sparkle'
+        sparkle.style.left = `${screenPos.x}px`; sparkle.style.top = `${screenPos.y}px`
+        document.body.appendChild(sparkle)
+        setTimeout(() => { if (sparkle.parentNode) sparkle.parentNode.removeChild(sparkle) }, 1000)
+    }
+
+    const updateProgressiveRoute = (progress) => {
+        if (!mapInstance.current || !currentRouteRef.current || !window.H) return
+        const geometry = currentRouteRef.current
+        const splitIndex = progress.index
+
+        if (completedPolylineRef.current) mapInstance.current.removeObject(completedPolylineRef.current)
+        if (remainingPolylineRef.current) mapInstance.current.removeObject(remainingPolylineRef.current)
+
+        const currentCoord = geometry[splitIndex]
+        if (currentCoord) createSparkle(currentCoord[0], currentCoord[1])
+
+        // Completed segment (translucent gray)
+        const lineStringCompleted = new window.H.geo.LineString()
+        geometry.slice(0, splitIndex + 1).forEach(p => lineStringCompleted.pushPoint({ lat: p[0], lng: p[1] }))
+        completedPolylineRef.current = new window.H.map.Polyline(lineStringCompleted, {
+            style: { strokeColor: 'rgba(148, 163, 184, 0.4)', lineWidth: 5 }
+        })
+        mapInstance.current.addObject(completedPolylineRef.current)
+
+        // Remaining segment (bright pink)
+        const lineStringRemaining = new window.H.geo.LineString()
+        geometry.slice(splitIndex).forEach(p => lineStringRemaining.pushPoint({ lat: p[0], lng: p[1] }))
+        remainingPolylineRef.current = new window.H.map.Polyline(lineStringRemaining, {
+            style: { strokeColor: '#E91E63', lineWidth: 6 }
+        })
+        mapInstance.current.addObject(remainingPolylineRef.current)
+    }
+
+    const calculateBearing = (startLat, startLng, destLat, destLng) => {
+        if (!startLat || !destLat) return 0
+        const toRad = deg => deg * Math.PI / 180; const toDeg = rad => rad * 180 / Math.PI
+        const y = Math.sin(toRad(destLng) - toRad(startLng)) * Math.cos(toRad(destLat))
+        const x = Math.cos(toRad(startLat)) * Math.sin(toRad(destLat)) - Math.sin(toRad(startLat)) * Math.cos(toRad(destLat)) * Math.cos(toRad(destLng) - toRad(startLng))
+        return (toDeg(Math.atan2(y, x)) + 360) % 360
+    }
+
+    const updateDriverMarker = (lat, lng) => {
+        if (!mapInstance.current || !window.H) return
+        const newLatLng = { lat, lng }
+
+        if (driverMarker.current) {
+            const startPos = lastMarkerPos.current || driverMarker.current.getGeometry()
+            const bearing = calculateBearing(startPos.lat, startPos.lng, lat, lng)
+
+            if (isRideActive && isFollowing) {
+                mapInstance.current.setCenter(newLatLng, true)
+                mapInstance.current.setHeading(bearing, true)
+            }
+
+            const iconElement = driverMarker.current.getIcon().getElement()
+            if (iconElement) {
+                const svg = iconElement.querySelector('svg')
+                if (svg) {
+                    svg.style.transform = `rotate(${bearing}deg)`
+                    svg.style.transition = 'transform 0.4s ease'
+                }
+            }
+
+            const startTime = performance.now()
+            const animate = (time) => {
+                const elapsed = time - startTime
+                const progress = Math.min(elapsed / 1000, 1)
+                const cLat = startPos.lat + (lat - startPos.lat) * progress
+                const cLng = startPos.lng + (lng - startPos.lng) * progress
+
+                driverMarker.current.setGeometry({ lat: cLat, lng: cLng })
+
+                if (progress < 1) animationFrameRef.current = requestAnimationFrame(animate)
+                else lastMarkerPos.current = newLatLng
+            }
+            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current)
+            animationFrameRef.current = requestAnimationFrame(animate)
+        } else {
+            if (!newLatLng.lat || !newLatLng.lng) return
+
+            // ICON DEFINITION WITH INLINE CENTERING
+            const iconMarkup = `
+                <div class="driver-marker-premium" style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; transform: translate(-24px, -24px);">
+                    <svg width="48" height="48" viewBox="0 0 48 48" style="display: block;">
+                        <defs>
+                            <radialGradient id="pinkGrad" cx="50%" cy="50%" r="50%">
+                                <stop offset="0%" stop-color="#E91E63" />
+                                <stop offset="100%" stop-color="#C2185B" />
+                            </radialGradient>
+                        </defs>
+                        <circle cx="24" cy="24" r="18" fill="white" />
+                        <circle cx="24" cy="24" r="15" fill="url(#pinkGrad)" />
+                        <path d="M24 12 L17 28 L24 25 L31 28 Z" fill="white" />
+                    </svg>
+                </div>
+            `
+            const icon = new window.H.map.DomIcon(iconMarkup)
+            driverMarker.current = new window.H.map.DomMarker(newLatLng, { icon })
+            mapInstance.current.addObject(driverMarker.current)
+            lastMarkerPos.current = newLatLng
+
+            // Focus immediately
+            if (isRideActive && isFollowing) {
+                mapInstance.current.setCenter(newLatLng)
+                mapInstance.current.setZoom(17)
+            }
+        }
+    }
+
+    const resetFollowMode = () => {
+        setIsFollowing(true)
+        if (mapInstance.current && latestCoords.current) {
+            mapInstance.current.setZoom(17, true)
+            mapInstance.current.setCenter(latestCoords.current, true)
+        }
+    }
+
+    // SOCKET & RIDE HANDLERS
+    useEffect(() => {
+        if (!user) return
+        fetchStats()
+        socketRef.current = io(SOCKET_URL)
+        socketRef.current.on('connect', () => socketRef.current.emit('join', { userId: user.id, role: 'driver' }))
+        socketRef.current.on('login_status', (s) => { setIsOnline(s.isOnline); if (s.isOnline) fetchPendingTrips(true) })
+        socketRef.current.on('new_trip_available', (t) => {
+            setRequests(prev => prev.find(r => r.id === t.id) ? prev : [t, ...prev])
+            toast.success('NOVA CORRIDA!', { icon: '🏎️' })
+        })
+        socketRef.current.on('trip_cancelled', () => { toast.error('Corrida cancelada.'); resetToIdle() })
+        socketRef.current.on('restore_ride', (t) => { setActiveRide(t); setRideStatus(t.status === 'accepted' ? 'accepted' : 'ongoing') })
+        return () => socketRef.current?.disconnect()
+    }, [user])
+
+    const handleToggleStatus = () => {
+        if (activeRide) { toast.error('Finalize a corrida primeiro!'); return }
+        const next = !isOnline; setIsOnline(next)
+        if (!next) setRequests([])
+        socketRef.current?.emit('toggle_online', { userId: user.id, isOnline: next })
+    }
+
+    const handleAcceptRide = (req) => {
+        socketRef.current?.emit('accept_trip', { tripId: req.id, driverId: user.id, clientId: req.clientId, driverName: user.full_name }, (res) => {
+            if (res?.success) { setActiveRide(req); setRideStatus('accepted'); setRequests([]); setFare(parseFloat(req.price) || 1500) }
+        })
+    }
+
+    const handleStartRide = () => {
+        socketRef.current?.emit('start_ride', { tripId: activeRide.id, clientId: activeRide.clientId })
+        setRideStatus('ongoing'); startTaximeter()
+    }
+
+    const startTaximeter = () => {
+        if (fareInterval.current) clearInterval(fareInterval.current)
+        fareInterval.current = setInterval(() => {
+            if (!activeRide?.started_at) return
+            const elapsed = (new Date() - new Date(activeRide.started_at)) / 60000
+            const currentFare = Math.ceil((Number(activeRide.base_fare || 500) + (elapsed * Number(activeRide.price_per_min || 50))) / 10) * 10
+            setFare(currentFare)
+            if (new Date().getSeconds() % 10 === 0) socketRef.current?.emit('trip_progress', { tripId: activeRide.id, clientId: activeRide.clientId, currentFare, coords: latestCoords.current })
+        }, 1000)
+    }
+
+    useEffect(() => { if (rideStatus === 'ongoing' && activeRide?.started_at) startTaximeter(); return () => clearInterval(fareInterval.current) }, [rideStatus, activeRide?.started_at])
+
+    const handleCancelRide = () => { socketRef.current?.emit('cancel_trip', { tripId: activeRide.id, userId: user.id, role: 'driver' }); resetToIdle() }
+    const handleFinishRide = () => { socketRef.current?.emit('finish_ride', { tripId: activeRide.id, clientId: activeRide.clientId, finalFare: fare.toString() }); setRideStatus('finished') }
+    const handleConfirmPayment = () => { socketRef.current?.emit('confirm_payment', { tripId: activeRide.id, clientId: activeRide.clientId, receiptData: { id: activeRide.id, driver: user.full_name, total: fare, date: new Date().toLocaleString() } }); setRideStatus('paid') }
+
+    return (
+        <div className="driver-dashboard-mobile">
+            {/* BACKGROUND MAP - PERSISTENT */}
+            <div className="dashboard-map-background">
+                <HereMap
+                    center={latestCoords.current}
+                    zoom={16}
+                    onMapReady={(map) => {
+                        mapInstance.current = map
+                        // Listener para detectar quando o usuário mexe no mapa
+                        map.addEventListener('dragstart', () => setIsFollowing(false))
+                    }}
+                />
+
+                {/* CENTER BUTTON */}
+                <button
+                    className={`map-center-btn ${!isFollowing ? 'visible' : ''}`}
+                    onClick={resetFollowMode}
+                    style={{ bottom: isRideActive ? '280px' : '150px', pointerEvents: !isFollowing ? 'auto' : 'none' }}
+                >
+                    <Crosshair size={26} color="#E91E63" />
+                </button>
+            </div>
+
+            {/* LAYER 1: IDLE UI */}
+            {!isRideActive && (
+                <div className="content-layer main-idle">
+                    <header className="dash-header-premium">
+                        <div className="header-top">
+                            <button className="icon-btn"><Menu size={24} /></button>
+                            <h1 className="logo-text-small">TOT</h1>
+                            <div className="profile-mini"><User size={20} /></div>
+                        </div>
+                        <div className={`status-pill-big ${isOnline ? 'online' : 'offline'}`}>
+                            <span className="status-text">{isOnline ? 'VOCÊ ESTÁ ONLINE' : 'VOCÊ ESTÁ OFFLINE'}</span>
+                            <button className={`toggle-switch ${isOnline ? 'active' : ''}`} onClick={handleToggleStatus}><Power size={22} color={isOnline ? '#fff' : '#94a3b8'} /></button>
+                        </div>
+                    </header>
+                    <main className="dash-body">
+                        <section className="welcome-banner"><h2>Olá, {user?.full_name?.split(' ')[0]}! 👋</h2><p>Bons lucros hoje!</p></section>
+                        <section className="stats-grid-premium">
+                            <div className="stat-card-gradient pink-grad"><Navigation size={22} /><div className="stat-content"><span className="stat-label">Corridas</span><span className="stat-value">{stats.rides}</span></div></div>
+                            <div className="stat-card-gradient purple-grad"><DollarSign size={22} /><div className="stat-content"><span className="stat-label">Ganhos</span><span className="stat-value">Kz {Number(stats.earnings).toLocaleString()}</span></div></div>
+                        </section>
+                        <section className="requests-section">
+                            <div className="section-header"><h3>Solicitações</h3><span className="badge-pulse">{requests.length}</span></div>
+                            <div className="requests-list">
+                                {isOnline ? (requests.length > 0 ? requests.map(req => (
+                                    <div key={req.id} className="request-card shadow-sm">
+                                        <div className="req-header"><div className="user-info-mini"><div className="avatar-letter">{req.userName?.[0]}</div><strong>{req.userName}</strong></div><div className="price-tag-req">Kz {req.price}</div></div>
+                                        <div className="req-route-info"><p>De: {req.pickupAddress}</p><p>Para: {req.destAddress}</p></div>
+                                        <button className="btn-accept" onClick={() => handleAcceptRide(req)}>ACEITAR</button>
+                                    </div>
+                                )) : <div className="empty-state-requests"><p>Procurando...</p></div>) : <div className="offline-state-box"><p>Fique online para receber corridas</p></div>}
+                            </div>
+                        </section>
+                    </main>
+                </div>
+            )}
+
+            {/* LAYER 2: ACTIVE UI */}
+            {isRideActive && (
+                <div className="content-layer active-ride">
+                    <div className="active-ride-nav-card">
+                        <div className="nav-card-icon-box">{currentManeuver ? getManeuverIcon(currentManeuver.action) : <ArrowUp size={30} />}</div>
+                        <div className="nav-card-content">
+                            <div className="nav-distance-main">{currentManeuver ? `${currentManeuver.length}m` : '...'}</div>
+                            <div className="nav-instruction-main">{currentManeuver ? translateInstruction(currentManeuver.instruction) : 'Siga a rota'}</div>
+                        </div>
+                        <div className="nav-card-stats">
+                            <div className="nav-stat-row"><Clock size={14} /><span>{rideStats.time}</span></div>
+                            <div className="nav-stat-row"><Navigation size={14} /><span>{rideStats.distance}</span></div>
+                            <div className="nav-price-tag">{Number(fare).toLocaleString()} Kz</div>
+                        </div>
+                    </div>
+
+                    <div className={`active-ride-bottom-sheet ${isModalMinimized ? 'minimized' : ''}`}>
+                        <div className="sheet-header-row">
+                            <div className="client-info-group">
+                                <div className="client-pic">{activeRide.userName?.[0] || 'U'}</div>
+                                <div className="client-texts">
+                                    <h4>{activeRide.userName}</h4>
+                                    <span>Cliente TOT Premium</span>
+                                </div>
+                            </div>
+                            <button className="btn-minimize-sheet" onClick={() => setIsModalMinimized(true)}><Minimize2 size={20} /></button>
+                        </div>
+                        <div className="destination-info">
+                            <span className="dest-label">
+                                {rideStatus === 'accepted' ? 'BUSCAR O CLIENTE EM:' : 'DESTINO DA VIAGEM:'}
+                            </span>
+                            <div className="info-row">
+                                <MapPin size={18} color="#E91E63" />
+                                <span className="text-truncate">
+                                    {rideStatus === 'accepted' ? activeRide.pickupAddress : activeRide.destAddress}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="sheet-actions-grid"><button className="action-btn-secondary"><Phone size={18} /> Ligar</button><button className="action-btn-secondary"><MessageSquare size={18} /> Chat</button></div>
+                        <div className="main-action-slider">
+                            {rideStatus === 'accepted' && <button className="btn-main-action start" onClick={handleStartRide}><Play size={20} /> INICIAR</button>}
+                            {rideStatus === 'ongoing' && <button className="btn-main-action finish" onClick={handleFinishRide}><Square size={20} /> FINALIZAR</button>}
+                            {rideStatus === 'finished' && <button className="btn-main-action pay" onClick={handleConfirmPayment}><CreditCard size={20} /> RECEBER</button>}
+                            {rideStatus === 'paid' && <button className="btn-main-action start" onClick={resetToIdle}>CONCLUIR</button>}
+                        </div>
+                    </div>
+                    {isModalMinimized && <button className="ride-restore-btn" onClick={() => setIsModalMinimized(false)}><Maximize2 size={24} /></button>}
+                </div>
+            )}
+        </div>
+    )
+}

@@ -1,0 +1,17 @@
+# Dependencies
+node_modules/
+backend-monorepo/node_modules/
+admin-portal/frontend/node_modules/
+client-portal/frontend/node_modules/
+driver-portal/frontend/node_modules/
+dist/
+build/
+
+# Git
+.git/
+
+# Env
+.env
+
+# Logs
+npm-debug.log

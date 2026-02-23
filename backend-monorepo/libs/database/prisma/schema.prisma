@@ -1,0 +1,130 @@
+generator client {
+  provider = "prisma-client-js"
+  binaryTargets = ["native", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model driver_shifts {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driver_id   String?   @db.Uuid
+  start_time  DateTime? @db.Time(6)
+  end_time    DateTime? @db.Time(6)
+  is_active   Boolean?  @default(true)
+  day_of_week Int?
+  profiles    profiles? @relation(fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model drivers {
+  id                 String    @id @db.Uuid
+  full_name          String    @db.VarChar(255)
+  phone              String    @unique @db.VarChar(20)
+  email              String?   @unique @db.VarChar(255)
+  address            String?
+  password           String?   @db.VarChar(255)
+  status             String?   @default("pending") @db.VarChar(50)
+  doc_bi_frente      String?
+  doc_bi_verso       String?
+  doc_carta_conducao String?
+  is_online          Boolean?  @default(false)
+  current_lat        Float?
+  current_lng        Float?
+  last_location_update DateTime? @db.Timestamptz(6)
+  rating             Decimal?  @default(5.00) @db.Decimal(3, 2)
+  created_at         DateTime? @default(now()) @db.Timestamp(6)
+  updated_at         DateTime? @default(now()) @db.Timestamp(6)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model invoices {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  trip_id      String?   @db.Uuid
+  user_id      String?   @db.Uuid
+  pdf_url      String?
+  amount       Decimal   @db.Decimal(10, 2)
+  invoice_type String?
+  created_at   DateTime? @default(now()) @db.Timestamptz(6)
+  trips        trips?    @relation(fields: [trip_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  profiles     profiles? @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model profiles {
+  id                              String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  phone                           String          @unique
+  email                           String?         @unique
+  password_hash                   String?
+  full_name                       String?
+  avatar_url                      String?
+  role                            String?         @default("client")
+  status                          String?         @default("pending")
+  created_at                      DateTime?       @default(now()) @db.Timestamptz(6)
+  updated_at                      DateTime?       @default(now()) @db.Timestamptz(6)
+  driver_shifts                   driver_shifts[]
+  invoices                        invoices[]
+  trips_trips_client_idToprofiles trips[]         @relation("trips_client_idToprofiles")
+  trips_trips_driver_idToprofiles trips[]         @relation("trips_driver_idToprofiles")
+  audit_logs                      audit_logs[]
+}
+
+model audit_logs {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  admin_id    String?  @db.Uuid
+  action      String   @db.VarChar(255)
+  target      String   @db.VarChar(255)
+  target_id   String?  @db.VarChar(255)
+  details     Json?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  profiles    profiles? @relation(fields: [admin_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model service_configs {
+  id                 Int       @id @default(autoincrement())
+  name               String?   @db.VarChar(100)
+  category           String?   @default("ride") @db.VarChar(50)
+  service_type       String?   @db.VarChar(100)
+  vehicle_category   String?   @db.VarChar(100)
+  image_url          String?
+  description        String?
+  base_fare          Decimal   @db.Decimal(10, 2)
+  price_per_km       Decimal   @db.Decimal(10, 2)
+  price_per_min      Decimal   @db.Decimal(10, 2)
+  min_fare           Decimal   @default(0) @db.Decimal(10, 2)
+  platform_fee_type  String?   @db.VarChar(50)
+  platform_fee_value Decimal   @db.Decimal(10, 2)
+  updated_at         DateTime? @default(now()) @db.Timestamptz(6)
+  trips              trips[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model trips {
+  id                                 String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  client_id                          String?          @db.Uuid
+  driver_id                          String?          @db.Uuid
+  service_config_id                  Int?
+  category                           String?          @default("ride") @db.VarChar(50)
+  status                             String?          @default("requested")
+  origin_address                     String?
+  origin_lat                         Float?
+  origin_lng                         Float?
+  dest_address                       String?
+  dest_lat                           Float?
+  dest_lng                           Float?
+  estimated_fare                     Decimal?         @db.Decimal(10, 2)
+  final_fare                         Decimal?         @db.Decimal(10, 2)
+  payment_method                     String?
+  created_at                         DateTime?        @default(now()) @db.Timestamptz(6)
+  accepted_at                        DateTime?        @db.Timestamptz(6)
+  started_at                         DateTime?        @db.Timestamptz(6)
+  completed_at                       DateTime?        @db.Timestamptz(6)
+  delivery_info                      Json?
+  updated_at                         DateTime?        @default(now()) @db.Timestamp(6)
+  invoices                           invoices[]
+  profiles_trips_client_idToprofiles profiles?        @relation("trips_client_idToprofiles", fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  profiles_trips_driver_idToprofiles profiles?        @relation("trips_driver_idToprofiles", fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  service_configs                    service_configs? @relation(fields: [service_config_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}

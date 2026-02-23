@@ -1,0 +1,127 @@
+import { useState, useEffect } from 'react'
+import {
+    Search,
+    User,
+    Phone,
+    Calendar,
+    ArrowLeft,
+    History,
+    Star,
+    MoreHorizontal,
+    CreditCard
+} from 'lucide-react'
+import axios from 'axios'
+import toast from 'react-hot-toast'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+
+export default function Clients({ onBack }) {
+    const [clients, setClients] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [searchTerm, setSearchTerm] = useState('')
+
+    useEffect(() => {
+        fetchClients()
+    }, [])
+
+    const fetchClients = async () => {
+        try {
+            setLoading(true)
+            const res = await axios.get(`${API_URL}/admin/clients`)
+            console.log('🔍 CLIENTS API RESPONSE:', res.data)
+            console.log('🔍 Is Array?', Array.isArray(res.data))
+            console.log('🔍 Length:', res.data?.length)
+            setClients(Array.isArray(res.data) ? res.data : [])
+        } catch (error) {
+            console.error('❌ Error fetching clients:', error)
+            toast.error('Erro ao carregar clientes')
+            setClients([])
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const filteredClients = (Array.isArray(clients) ? clients : []).filter(c =>
+        c.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        c.phone?.includes(searchTerm)
+    )
+
+    return (
+        <div className="clients-module animate-fade-in">
+            <div className="module-header-nav">
+                <div className="flex items-center gap-4">
+                    <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
+                    <div className="title-area">
+                        <h2>Explorador de Clientes</h2>
+                        <p>{filteredClients.length} utilizadores registados</p>
+                    </div>
+                </div>
+
+                <div className="header-actions">
+                    <div className="search-bar-premium">
+                        <Search size={18} />
+                        <input
+                            type="text"
+                            placeholder="Buscar por nome ou telefone..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="drivers-table-grid mt-6">
+                {loading ? (
+                    [1, 2, 3].map(i => <div key={i} className="driver-card-premium horizontal skeleton h-32"></div>)
+                ) : filteredClients.length > 0 ? (
+                    filteredClients.map(client => (
+                        <div key={client.id} className="driver-card-premium horizontal animate-fade-in">
+                            <div className="card-left-section">
+                                <div className="avatar-box">
+                                    <User size={24} />
+                                </div>
+                                <div className="info-group">
+                                    <h3>{client.full_name || 'Cliente sem nome'}</h3>
+                                    <p>{client.phone}</p>
+                                </div>
+                                <div className="actions-inline">
+                                    <button className="btn-pill-sm primary">
+                                        <History size={14} />
+                                        <span>Histórico</span>
+                                    </button>
+                                    <button className="btn-pill-sm outline text-pink-500">
+                                        <User size={14} />
+                                        <span>Perfil</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="card-right-section">
+                                <div className="flex flex-col items-end gap-2">
+                                    <div className="flex items-center gap-4">
+                                        <div className="flex items-center gap-1 text-[11px] font-bold text-slate-500">
+                                            <CreditCard size={14} className="text-pink-500" />
+                                            <span>{client.paidTripsCount || 0} CORRIDAS PAGAS</span>
+                                        </div>
+                                        <div className="rating-box">
+                                            <span>★ 5.0</span>
+                                        </div>
+                                        <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-500">
+                                            <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
+                                            <span>Membro desde {new Date(client.created_at).toLocaleDateString()}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    <div className="empty-state-container py-40">
+                        <User size={64} className="opacity-10 mx-auto mb-4" />
+                        <p>Nenhum cliente encontrado.</p>
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}

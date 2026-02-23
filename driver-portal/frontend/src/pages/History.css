@@ -1,0 +1,549 @@
+/* COMPLETO HISTORY CSS - SINCRONIZADO PARA AMBOS OS PORTAIS COM IDENTIDADE PINK */
+
+.history-container {
+    padding-bottom: 120px;
+    /* Espaço para o bottom-nav */
+    background: #f8fafc;
+    min-height: 100vh;
+}
+
+.history-header {
+    background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%);
+    padding: 32px 20px 45px;
+    color: white;
+    border-radius: 0 0 35px 35px;
+    box-shadow: 0 10px 30px rgba(233, 30, 99, 0.2);
+    position: relative;
+    z-index: 10;
+}
+
+.history-header h1 {
+    font-size: 24px;
+    font-weight: 800;
+    margin: 25px 0;
+    /* More space above and below text */
+    color: white !important;
+}
+
+.btn-menu-header {
+    background: none;
+    border: none;
+    padding: 0;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.2s;
+}
+
+.btn-menu-header:active {
+    transform: scale(0.9);
+}
+
+.stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.stat-card {
+    padding: 16px;
+    border-radius: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    overflow: hidden;
+    color: white;
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.05);
+}
+
+.stat-card.pink {
+    background: linear-gradient(135deg, #ec4899 0%, #be185d 100%);
+}
+
+.stat-card.blue {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+}
+
+.stat-card.emerald {
+    background: linear-gradient(135deg, #ec4899 0%, #be185d 100%);
+}
+
+/* Removendo verde */
+
+.stat-label {
+    font-size: 11px;
+    opacity: 0.9;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-value {
+    font-size: 1.2rem;
+    font-weight: 900;
+}
+
+.stat-icon-floating {
+    position: absolute;
+    right: -10px;
+    bottom: -10px;
+    opacity: 0.25;
+    transform: rotate(-15deg);
+}
+
+/* Meta Card Driver */
+.goal-card-premium {
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    padding: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    margin-top: 25px;
+}
+
+.goal-progress-bar {
+    height: 8px;
+    background: rgba(255, 255, 255, 0.2);
+    border-radius: 10px;
+    overflow: hidden;
+    margin: 10px 0;
+}
+
+.goal-progress-fill {
+    height: 100%;
+    background: #fff;
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.5);
+    transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.filter-bar {
+    padding: 25px 20px 15px;
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.filter-chip {
+    padding: 10px 18px;
+    border-radius: 25px;
+    background: white;
+    color: #64748b;
+    font-size: 13px;
+    font-weight: 700;
+    white-space: nowrap;
+    border: 1px solid #f1f5f9;
+    transition: all 0.2s;
+}
+
+.filter-chip.active {
+    background: #E91E63;
+    color: white;
+    border-color: #E91E63;
+    box-shadow: 0 8px 20px rgba(233, 30, 99, 0.2);
+}
+
+.history-list {
+    padding: 0 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+}
+
+.trip-card {
+    background: white;
+    border-radius: 25px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+    border: 1px solid #f8fafc;
+}
+
+.trip-card-header {
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px dashed #f1f5f9;
+}
+
+.trip-date {
+    font-size: 12px;
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+.trip-status {
+    padding: 5px 12px;
+    border-radius: 10px;
+    font-size: 10px;
+    font-weight: 850;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.trip-status.completed,
+.trip-status.received {
+    background: #fdf2f8;
+    color: #E91E63;
+}
+
+/* Rosa */
+.trip-status.cancelled {
+    background: #fef2f2;
+    color: #ef4444;
+}
+
+.trip-card-body {
+    padding: 18px 20px;
+}
+
+.trip-path {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.path-point {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.point-text {
+    font-size: 0.9rem;
+    color: #1e293b;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.trip-card-footer {
+    padding: 15px 20px;
+    background: #fafafa;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid #f1f5f9;
+}
+
+.trip-price {
+    font-weight: 900;
+    color: #1e293b;
+    font-size: 1rem;
+}
+
+.btn-receipt-small {
+    background: white;
+    color: #E91E63;
+    border: 1.5px solid #fce7f3;
+    padding: 8px 14px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+}
+
+/* Modal Receipt */
+.receipt-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(5px);
+    z-index: 3000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.receipt-modal {
+    background: white;
+    width: 100%;
+    max-width: 380px;
+    border-radius: 35px;
+    overflow: hidden;
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+}
+
+.receipt-header.pink-gradient {
+    background: linear-gradient(135deg, #E91E63 0%, #C2185B 100%);
+    color: white;
+    padding: 35px 25px;
+    text-align: center;
+}
+
+.receipt-header h3 {
+    font-weight: 900;
+    margin: 10px 0 5px;
+    color: white !important;
+}
+
+.receipt-body {
+    padding: 30px 25px;
+}
+
+.receipt-row {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 15px;
+    font-size: 14px;
+}
+
+.receipt-row label {
+    color: #94a3b8;
+    font-weight: 600;
+}
+
+.receipt-row span {
+    font-weight: 800;
+    color: #1e293b;
+}
+
+.receipt-divider {
+    border-top: 1.5px dashed #f1f5f9;
+    margin: 20px 0;
+}
+
+.receipt-total {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.total-label {
+    font-size: 1rem;
+    font-weight: 900;
+    color: #1e293b;
+}
+
+.total-value.pink-text {
+    font-size: 1.8rem;
+    font-weight: 950;
+    color: #E91E63;
+}
+
+.receipt-actions {
+    padding: 0 25px 30px;
+    display: flex;
+    gap: 12px;
+}
+
+.btn-download-receipt.pink-glow {
+    flex: 1.2;
+    background: #E91E63;
+    color: white;
+    padding: 16px;
+    border-radius: 18px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border: none;
+    box-shadow: 0 8px 25px rgba(233, 30, 99, 0.3);
+}
+
+.btn-load-more {
+    width: 100%;
+    padding: 16px;
+    background: rgba(233, 30, 99, 0.05);
+    /* Soft pink glass */
+    color: #E91E63;
+    font-size: 14px;
+    font-weight: 850;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    border-radius: 20px;
+    border: 2px solid rgba(233, 30, 99, 0.1);
+    margin-top: 25px;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.btn-load-more:hover {
+    background: #E91E63;
+    color: white;
+    box-shadow: 0 10px 25px rgba(233, 30, 99, 0.25);
+    transform: translateY(-2px);
+}
+
+.btn-load-more:active {
+    transform: scale(0.96);
+}
+
+.btn-load-more svg {
+    transition: transform 0.3s ease;
+}
+
+.btn-load-more:hover svg {
+    transform: translateX(4px);
+}
+
+.btn-close-receipt {
+    flex: 1;
+    background: #f1f5f9;
+    color: #475569;
+    padding: 16px;
+    border-radius: 18px;
+    font-weight: 800;
+    border: none;
+}
+
+/* SIDEBAR & BACKDROP */
+.sidebar-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px);
+    z-index: 4000;
+    animation: fadeIn 0.3s ease-out;
+}
+
+.sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 280px;
+    background: white;
+    z-index: 4001;
+    transform: translateX(-100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    display: flex;
+    flex-direction: column;
+    box-shadow: 10px 0 30px rgba(0, 0, 0, 0.1);
+}
+
+.sidebar.open {
+    transform: translateX(0);
+}
+
+.sidebar-header {
+    padding: 40px 24px;
+    background: #ffffff;
+}
+
+.user-profile {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.avatar-circle.pink {
+    width: 64px;
+    height: 64px;
+    background: #E91E63;
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.user-info h3 {
+    margin: 0;
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #1e293b;
+}
+
+.user-info p {
+    margin: 4px 0 0;
+    font-size: 0.9rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.sidebar-nav {
+    flex: 1;
+    padding: 10px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.nav-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 14px 16px;
+    border: none;
+    background: none;
+    color: #475569;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 100%;
+    text-align: left;
+}
+
+.nav-item:hover {
+    background: #f8fafc;
+    color: #E91E63;
+}
+
+.nav-item.active {
+    background: rgba(233, 30, 99, 0.08);
+    color: #E91E63;
+}
+
+/* BOTTOM NAV */
+.bottom-nav {
+    position: fixed;
+    bottom: 20px;
+    left: 20px;
+    right: 20px;
+    height: 75px;
+    background: #ffffff;
+    border-radius: 25px;
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    z-index: 1000;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+.nav-tab {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    color: #94a3b8;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.nav-tab span {
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+.nav-tab.active {
+    color: #E91E63;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

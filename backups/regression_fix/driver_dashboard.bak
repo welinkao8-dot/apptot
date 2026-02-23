@@ -1,0 +1,749 @@
+import { useState, useEffect, useRef } from 'react'
+import { useAuth } from '../context/AuthContext'
+import { Menu, User, DollarSign, Navigation, Clock, Power, CheckCircle, ChevronRight, MapPin, Home, History, LogOut, Play, Square, CreditCard, Phone, MessageSquare, Maximize2, Minimize2 } from 'lucide-react'
+import { toast } from 'react-hot-toast'
+import axios from 'axios'
+import { useNavigate, Link } from 'react-router-dom'
+import { io } from 'socket.io-client'
+import HereMap from '../components/HereMap'
+import { hereRoutingService } from '../services/hereRoutingService'
+import './Dashboard.css'
+
+
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3004'
+const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || API_URL.replace('/auth', '') // Ensure socket points to base
+
+export default function Dashboard() {
+    const { user, signOut } = useAuth()
+    const navigate = useNavigate()
+    const [isOnline, setIsOnline] = useState(false)
+    const [stats, setStats] = useState({ rides: 0, earnings: 0 })
+    const [requests, setRequests] = useState([])
+
+    // STATE RESILIENCE: Hydrate from localStorage to survive refresh
+    const [activeRide, setActiveRide] = useState(() => {
+        const saved = localStorage.getItem('tot_active_ride')
+        return saved ? JSON.parse(saved).ride : null
+    })
+    const [rideStatus, setRideStatus] = useState(() => {
+        const saved = localStorage.getItem('tot_active_ride')
+        return saved ? JSON.parse(saved).status : 'idle'
+    })
+
+    const [fare, setFare] = useState(0)
+    const [isModalMinimized, setIsModalMinimized] = useState(false)
+    const socketRef = useRef(null)
+    const fareInterval = useRef(null)
+
+
+
+    // Armazena última posição conhecida para enviar junto com o taxímetro
+    const latestCoords = useRef({ lat: -8.84, lng: 13.29 })
+
+    const fetchStats = async () => {
+        try {
+            if (!user) return
+            const res = await axios.get(`${API_URL}/trips/stats/${user.id}`)
+            if (res.data) {
+                setStats(res.data)
+            }
+        } catch (error) {
+            console.error('Error fetching stats:', error)
+        }
+    }
+
+    const fetchPendingTrips = async () => {
+        try {
+            if (!isOnline) return
+            const res = await axios.get(`${API_URL}/trips/pending`)
+            if (res.data) {
+                setRequests(res.data)
+                console.log('📦 Loaded pending trips via HTTP:', res.data.length)
+            }
+        } catch (error) {
+            console.error('Error fetching pending trips:', error)
+        }
+    }
+
+    // GERENCIAMENTO DE GPS EM TEMPO REAL
+    useEffect(() => {
+        let watchId = null
+
+        if (isOnline && socketRef.current) {
+            if ('geolocation' in navigator) {
+                console.log('📡 Iniciando GPS Tracker...')
+                watchId = navigator.geolocation.watchPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords
+                        latestCoords.current = { lat: latitude, lng: longitude }
+
+                        // Atualizar marcador no mapa local se visualmente necessário
+                        updateDriverMarker(latitude, longitude)
+
+                        // Enviar coordenadas para o servidor (Persistência & Clientes)
+                        // IMPORTANTE: Envia activeClientId para que o Gateway faça o roteamento correto via socket.to()
+                        const payload = {
+                            driverId: user.id || user.driver_id, // Fallback safety
+                            lat: latitude,
+                            lng: longitude,
+                            activeClientId: activeRide ? activeRide.clientId : null
+                        }
+                        socketRef.current.emit('update_location', payload)
+                    },
+                    (error) => {
+                        console.error('Erro de GPS:', error)
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 5000
+                    }
+                )
+            } else {
+                toast.error('GPS não suportado neste navegador.')
+            }
+        }
+
+        return () => {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId)
+                console.log('🛑 GPS Parado.')
+            }
+        }
+    }, [isOnline, activeRide, user])
+
+    // STATE RESILIENCE: Save to localStorage on change
+    useEffect(() => {
+        if (activeRide) {
+            localStorage.setItem('tot_active_ride', JSON.stringify({
+                ride: activeRide,
+                status: rideStatus
+            }))
+        } else {
+            localStorage.removeItem('tot_active_ride')
+        }
+    }, [activeRide, rideStatus])
+
+    // GERENCIAMENTO DE MAPA EM TEMPO REAL
+    const mapInstance = useRef(null)
+    const driverMarker = useRef(null)
+
+    // CALCULAR ROTA AUTOMÁTICA
+    useEffect(() => {
+        const calculateAndDrawRoute = async () => {
+            if (!activeRide || !mapInstance.current || !window.H) return
+
+            let start = null
+            let end = null
+
+            // Rota 1: Motorista -> Cliente (Accepted)
+            if (rideStatus === 'accepted') {
+                if (!latestCoords.current) return
+                start = latestCoords.current
+
+                // BACKEND: formatTrip envia 'coords' {lat, lng} para origem
+                if (activeRide.coords && activeRide.coords.lat && activeRide.coords.lng) {
+                    end = { lat: activeRide.coords.lat, lng: activeRide.coords.lng }
+                } else {
+                    console.warn('⚠️ Sem coordenadas de pickup (activeRide.coords) para rota.', activeRide)
+                    // Fallback para pickupLat se existir
+                    if (activeRide.pickupLat && activeRide.pickupLng) {
+                        end = { lat: activeRide.pickupLat, lng: activeRide.pickupLng }
+                    } else {
+                        return
+                    }
+                }
+            }
+            // Rota 2: Cliente -> Destino (Ongoing)
+            else if (rideStatus === 'ongoing') {
+                if (!latestCoords.current) return
+
+                // FIXED: Start is Driver Location (was static pickup)
+                start = latestCoords.current
+
+                // BACKEND: formatTrip envia 'coords' (origem) e 'destPos' (destino)
+                if (activeRide.destPos && activeRide.destPos.lat) {
+                    end = { lat: activeRide.destPos.lat, lng: activeRide.destPos.lng }
+                } else if (activeRide.destLat && activeRide.destLng) {
+                    end = { lat: activeRide.destLat, lng: activeRide.destLng }
+                }
+            }
+
+            if (start && end) {
+                // Pre-Validation to avoid API spam
+                if (
+                    typeof start.lat !== 'number' || typeof start.lng !== 'number' ||
+                    typeof end.lat !== 'number' || typeof end.lng !== 'number'
+                ) {
+                    console.warn('⚠️ Coordenadas inválidas para rota:', start, end)
+                    return
+                }
+
+                console.log('🛣️ Calculando rota:', start, end)
+                const routeData = await hereRoutingService.getRoute(start, end)
+                if (routeData) {
+                    // Remover rotas anteriores? Idealmente sim.
+                    mapInstance.current.getObjects().forEach(obj => {
+                        if (obj instanceof window.H.map.Polyline) {
+                            mapInstance.current.removeObject(obj)
+                        }
+                    })
+
+                    const lineString = new window.H.geo.LineString()
+                    routeData.geometry.forEach(p => lineString.pushPoint({ lat: p[0], lng: p[1] }))
+                    const polyline = new window.H.map.Polyline(lineString, {
+                        style: { lineWidth: 5, strokeColor: '#00afea' }
+                    })
+                    mapInstance.current.addObject(polyline)
+
+                    // Zoom na rota
+                    mapInstance.current.getViewModel().setLookAtData({
+                        bounds: polyline.getBoundingBox(),
+                        padding: { top: 100, bottom: 100, left: 50, right: 50 }
+                    })
+
+                    // ADICIONAR MARCADORES DE ORIGEM E DESTINO
+                    // Remove markers anteriores de rota
+                    mapInstance.current.getObjects().forEach(obj => {
+                        if (obj.getData && obj.getData() === 'route-marker') {
+                            mapInstance.current.removeObject(obj)
+                        }
+                    })
+
+                    // Marcador B (End) - Cliente ou Destino Final
+                    const endIcon = new window.H.map.DomIcon(`
+                        <div style="background: ${rideStatus === 'accepted' ? '#00afea' : '#E91E63'}; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 4px 6px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;">
+                            <div style="width: 8px; height: 8px; background: white; border-radius: 50%;"></div>
+                        </div>
+                    `)
+                    const endMarker = new window.H.map.DomMarker(end, { icon: endIcon })
+                    endMarker.setData('route-marker') // Tag para remover depois
+                    mapInstance.current.addObject(endMarker)
+                }
+            }
+        }
+
+        calculateAndDrawRoute()
+    }, [activeRide, rideStatus])
+
+    const updateDriverMarker = (lat, lng) => {
+        if (!mapInstance.current || !window.H) return
+
+        const newLatLng = { lat, lng }
+
+        if (driverMarker.current) {
+            driverMarker.current.setGeometry(newLatLng)
+        } else {
+            const icon = new window.H.map.DomIcon(`
+                <div class="driver-marker-pulse">
+                    <div style="background: #E91E63; width: 24px; height: 24px; border-radius: 50%; border: 3px solid white; box-shadow: 0 0 10px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;">
+                        🚗
+                    </div>
+                </div>
+            `)
+            const marker = new window.H.map.DomMarker(newLatLng, { icon })
+            mapInstance.current.addObject(marker)
+            driverMarker.current = marker
+        }
+    }
+
+    // GERENCIAMENTO DE SOCKET (ESTABILIZADO)
+    useEffect(() => {
+        if (user) {
+            fetchStats() // Fetch on mount
+            socketRef.current = io(SOCKET_URL)
+
+            socketRef.current.on('connect', () => {
+                console.log('Socket Connected, joining room...')
+                socketRef.current.emit('join', { userId: user.id, role: 'driver' })
+            })
+
+            socketRef.current.on('login_status', (status) => {
+                console.log('Login status from server:', status)
+                setIsOnline(status.isOnline)
+                if (status.isOnline) fetchPendingTrips()
+            })
+
+            socketRef.current.on('new_trip_available', (trip) => {
+                // SÓ mostra novas corridas se o estado local for IDLE e estiver online
+                // (O backend já filtra por online, mas mantemos segurança no front)
+                setRequests(prev => {
+                    if (prev.find(r => r.id === trip.id)) return prev
+                    return [trip, ...prev]
+                })
+                toast.success('NOVA CORRIDA!', { icon: '🏎️', style: { background: '#E91E63', color: '#fff' } })
+            })
+
+            socketRef.current.on('pending_trips', (trips) => {
+                console.log('Received pending trips:', trips)
+                // NO auto-online here. Trust the login_status and toggle_online events.
+                setRequests(trips)
+            })
+
+            socketRef.current.on('trip_taken', (data) => {
+                setRequests(prev => prev.filter(req => req.id !== data.tripId))
+            })
+
+            socketRef.current.on('restore_ride', (trip) => {
+                console.log('Restoring ride from DB:', trip)
+                setActiveRide(trip)
+                setRideStatus(trip.status === 'accepted' ? 'accepted' : 'ongoing')
+                if (trip.status === 'ongoing') {
+                    setFare(parseFloat(trip.current_fare) || 0)
+                }
+            })
+
+            socketRef.current.on('trip_cancelled', (data) => {
+                toast.error('Corrida cancelada pelo cliente.', { duration: 5000 })
+                setActiveRide(null)
+                setRideStatus('idle')
+                setFare(0)
+            })
+
+            socketRef.current.on('trip_cancelled_global', (data) => {
+                setRequests(prev => prev.filter(req => req.id !== data.tripId))
+            })
+
+            // CRITICAL: Listen for account suspension in real-time
+            socketRef.current.on('account_suspended', (data) => {
+                console.log('⛔ Account suspended:', data)
+                toast.error(data.message || 'Sua conta foi suspensa pelo administrador', { duration: 5000 })
+                // Force logout and update user status
+                const updatedUser = { ...user, status: 'suspended' }
+                localStorage.setItem('tot_driver_user', JSON.stringify(updatedUser))
+                // Reload to trigger App.jsx routing to /suspended
+                setTimeout(() => window.location.reload(), 2000)
+            })
+
+            // Listen for account activation
+            socketRef.current.on('account_activated', (data) => {
+                console.log('✅ Account activated:', data)
+                toast.success(data.message || 'Sua conta foi reativada!', { duration: 5000 })
+                const updatedUser = { ...user, status: 'active' }
+                localStorage.setItem('tot_driver_user', JSON.stringify(updatedUser))
+            })
+
+            const heartbeatInterval = setInterval(() => {
+                if (socketRef.current?.connected) {
+                    socketRef.current.emit('ping')
+                }
+            }, 30000)
+
+            return () => {
+                if (socketRef.current) socketRef.current.disconnect()
+                clearInterval(heartbeatInterval)
+            }
+        }
+    }, [user]) // rideStatus REMOVED to keep socket connected
+
+    const handleToggleStatus = () => {
+        if (activeRide) {
+            toast.error('Finalize a corrida atual primeiro!')
+            return
+        }
+
+        const newStatus = !isOnline
+        setIsOnline(newStatus)
+
+        if (newStatus) {
+            toast.success('Você está ONLINE!', { style: { background: '#E91E63', color: '#fff' } })
+        } else {
+            setRequests([])
+            toast('Você está OFFLINE', { icon: '💤' })
+        }
+
+        if (socketRef.current) {
+            socketRef.current.emit('toggle_online', { userId: user.id, isOnline: newStatus })
+        }
+
+        if (newStatus) {
+            fetchPendingTrips()
+        }
+    }
+
+    const handleAcceptRide = (req) => {
+        if (socketRef.current) {
+            socketRef.current.emit('accept_trip', {
+                tripId: req.id,
+                driverId: user.id,
+                clientId: req.clientId,
+                driverName: user.full_name
+            }, (response) => {
+                if (response?.success) {
+                    setActiveRide(req)
+                    setRideStatus('accepted')
+                    setRequests([])
+                    setFare(parseFloat(req.price) || 1500)
+                    toast.success('Corrida aceita! Dirija-se ao cliente.')
+                } else {
+                    toast.error(response?.error || 'Erro ao aceitar corrida')
+                }
+            })
+        }
+    }
+
+    const handleStartRide = () => {
+        if (socketRef.current && activeRide) {
+            socketRef.current.emit('start_ride', { tripId: activeRide.id, clientId: activeRide.clientId })
+            setRideStatus('ongoing')
+            toast.success('Corrida Iniciada!')
+
+            // Force local update to avoid waiting for socket echo
+            setActiveRide(prev => ({ ...prev, started_at: new Date().toISOString() }))
+            startTaximeter()
+        }
+    }
+
+    const startTaximeter = () => {
+        if (fareInterval.current) clearInterval(fareInterval.current)
+
+        // Robust Taximeter Logic
+        fareInterval.current = setInterval(() => {
+            if (!activeRide || !activeRide.started_at) return
+
+            const now = new Date()
+            const startedAt = new Date(activeRide.started_at)
+            const elapsedMinutes = (now - startedAt) / 60000
+
+            // Get Pricing from Active Ride (sent by backend formatTrip) or defaults
+            const pricePerMin = Number(activeRide.price_per_min) || 50
+            const baseFare = Number(activeRide.base_fare) || 500
+
+            // Formula: Base + (Time * Rate)
+            // Note: We can add distance logic here later if we trust 'latestCoords' accumulation
+            let currentFare = baseFare + (elapsedMinutes * pricePerMin)
+
+            // Round to nearest 10 for clean display
+            currentFare = Math.ceil(currentFare / 10) * 10
+
+            setFare(currentFare)
+
+            // Sync with backend less frequently (e.g., every 10s) to save bandwidth
+            if (now.getSeconds() % 10 === 0 && socketRef.current) {
+                socketRef.current.emit('trip_progress', {
+                    tripId: activeRide.id,
+                    clientId: activeRide.clientId,
+                    currentFare: currentFare,
+                    coords: latestCoords.current
+                })
+            }
+
+        }, 1000) // Update UI every second
+    }
+
+    // Effect to auto-start taximeter on refresh if ongoing
+    useEffect(() => {
+        if (rideStatus === 'ongoing' && activeRide?.started_at) {
+            startTaximeter()
+        }
+        return () => {
+            if (fareInterval.current) clearInterval(fareInterval.current)
+        }
+    }, [rideStatus, activeRide?.started_at])
+
+    const handleCancelRide = () => {
+        if (socketRef.current && activeRide) {
+            socketRef.current.emit('cancel_trip', {
+                tripId: activeRide.id,
+                userId: user.id,
+                role: 'driver'
+            })
+            setActiveRide(null)
+            setRideStatus('idle')
+            setFare(0)
+            if (fareInterval.current) clearInterval(fareInterval.current)
+            toast('Corrida cancelada.', { icon: '🚫' })
+        }
+    }
+
+    const handleFinishRide = () => {
+        if (fareInterval.current) clearInterval(fareInterval.current)
+        if (socketRef.current && activeRide) {
+            socketRef.current.emit('finish_ride', {
+                tripId: activeRide.id,
+                clientId: activeRide.clientId,
+                finalFare: fare.toString()
+            })
+            setRideStatus('finished')
+            toast.success('Viagem Concluída! Aguardando Pagamento.')
+        }
+    }
+
+    const handleConfirmPayment = () => {
+        if (socketRef.current && activeRide) {
+            const receipt = {
+                id: activeRide.id,
+                driver: user.full_name,
+                total: fare,
+                date: new Date().toLocaleString(),
+                from: activeRide.pickupAddress,
+                to: activeRide.destAddress
+            }
+            socketRef.current.emit('confirm_payment', {
+                tripId: activeRide.id,
+                clientId: activeRide.clientId,
+                receiptData: receipt
+            })
+            setRideStatus('paid')
+            toast.success('Pagamento Confirmado! Recibo Gerado.')
+            fetchStats() // Update stats after payment
+        }
+    }
+
+    const resetToIdle = () => {
+        setActiveRide(null)
+        setRideStatus('idle')
+        setFare(0)
+    }
+
+    // Determine if we are in an "active" flow to toggle UI layers
+    const isRideActive = activeRide && ['accepted', 'ongoing', 'finished', 'paid'].includes(rideStatus)
+
+    return (
+        <div className="driver-dashboard-mobile">
+
+            {/* 1. LAYER 0: MAPA PERSISTENTE (SEMPRE MONTADO) */}
+            <div
+                className="ride-map-fullscreen"
+                style={{
+                    display: isRideActive ? 'block' : 'none',
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    width: '100%',
+                    height: '100%',
+                    zIndex: 0
+                }}
+            >
+                <HereMap
+                    center={latestCoords.current}
+                    zoom={17}
+                    onMapReady={(map) => {
+                        mapInstance.current = map
+                    }}
+                />
+            </div>
+
+            {/* 2. LAYER 1: DASHBOARD NORMAL (IDLE) - Hidden on Active */}
+            {!isRideActive && (
+                <>
+                    <header className="dash-header-premium" style={{ position: 'relative', zIndex: 10 }}>
+                        <div className="header-top">
+                            <button className="icon-btn shadow-sm"><Menu size={24} /></button>
+                            <h1 className="logo-text-small">TOT</h1>
+                            <div className="profile-mini shadow-sm"><User size={20} /></div>
+                        </div>
+                        <div className="status-selector-container">
+                            <div className={`status-pill-big ${isOnline ? 'online' : 'offline'}`}>
+                                <span className="status-text">{isOnline ? 'VOCÊ ESTÁ ONLINE' : 'VOCÊ ESTÁ OFFLINE'}</span>
+                                <button className={`toggle-switch ${isOnline ? 'active' : ''}`} onClick={handleToggleStatus}>
+                                    <Power size={22} color={isOnline ? '#fff' : '#94a3b8'} />
+                                </button>
+                            </div>
+                        </div>
+                    </header>
+
+                    <main className="dash-body" style={{ position: 'relative', zIndex: 10 }}>
+                        <section className="welcome-banner">
+                            <h2>Olá, {user?.full_name?.split(' ')[0] || 'Motorista'}! 👋</h2>
+                            <p>Veja seus resultados de hoje</p>
+                        </section>
+
+                        <section className="stats-grid-premium">
+                            <div className="stat-card-gradient pink-grad shadow-lg">
+                                <div className="stat-icon-bg"><Navigation size={22} color="#fff" /></div>
+                                <div className="stat-content">
+                                    <span className="stat-label">Corridas Hoje</span>
+                                    <span className="stat-value">{stats.rides}</span>
+                                </div>
+                            </div>
+                            <div className="stat-card-gradient purple-grad shadow-lg">
+                                <div className="stat-icon-bg"><DollarSign size={22} color="#fff" /></div>
+                                <div className="stat-content">
+                                    <span className="stat-label">Total Faturado</span>
+                                    <span className="stat-value">Kz {stats.earnings.toLocaleString()}</span>
+                                </div>
+                            </div>
+                        </section>
+
+                        <section className="requests-section">
+                            <div className="section-header">
+                                <h3>Solicitações Próximas</h3>
+                                <span className="badge-pulse">{requests.length}</span>
+                            </div>
+
+                            <div className="requests-list">
+                                {isOnline ? (
+                                    requests.length > 0 ? (
+                                        requests.map(req => (
+                                            <div key={req.id} className="request-card shadow-sm animate-fade-in">
+                                                <div className="req-header">
+                                                    <div className="user-info-mini">
+                                                        <div className="avatar-letter">{req.userName ? req.userName[0] : 'U'}</div>
+                                                        <div className="user-text">
+                                                            <strong>{req.userName}</strong>
+                                                            <span>⭐ 4.8</span>
+                                                        </div>
+                                                    </div>
+                                                    <div className="price-tag-req">
+                                                        Kz {parseFloat(req.price).toLocaleString()}
+                                                    </div>
+                                                </div>
+
+                                                <div className="req-route-info">
+                                                    <div className="route-point">
+                                                        <div className="dot start"></div>
+                                                        <p>{req.pickupAddress}</p>
+                                                    </div>
+                                                    <div className="route-line-vertical"></div>
+                                                    <div className="route-point">
+                                                        <div className="dot end"></div>
+                                                        <p>{req.destAddress}</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="req-actions">
+                                                    <button className="btn-accept" onClick={() => handleAcceptRide(req)}>
+                                                        ACEITAR CORRIDA
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))
+                                    ) : (
+                                        <div className="empty-state-requests">
+                                            <div className="radar-animation"></div>
+                                            <p>Procurando passageiros...</p>
+                                        </div>
+                                    )
+                                ) : (
+                                    <div className="offline-state-box">
+                                        <Power size={40} color="#cbd5e1" />
+                                        <p>Você está offline</p>
+                                        <button className="btn-go-online" onClick={handleToggleStatus}>FICAR ONLINE</button>
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+                    </main>
+                </>
+            )}
+
+            {/* 3. LAYER 2: ACTIVE RIDE OVERLAY (UI FLUTUANTE) */}
+            {isRideActive && (
+                <div
+                    className="ride-active-structure"
+                    style={{
+                        pointerEvents: 'none',
+                        position: 'absolute',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        zIndex: 20
+                    }}
+                >
+                    <header className="ride-header-floating animate-slide-down" style={{ pointerEvents: 'auto' }}>
+                        <div className="ride-status-badge shadow-md">
+                            {rideStatus === 'accepted' && 'A CAMINHO DO CLIENTE'}
+                            {rideStatus === 'ongoing' && 'VIAGEM EM CURSO'}
+                            {rideStatus === 'finished' && 'AGUARDANDO PAGAMENTO'}
+                            {rideStatus === 'paid' && 'CORRIDA CONCLUÍDA'}
+                        </div>
+                        <div className="fare-display-floating shadow-md">
+                            <span className="fare-label">Kz</span>
+                            <span className="fare-value">{fare.toLocaleString()}</span>
+                        </div>
+                    </header>
+
+                    {!isModalMinimized ? (
+                        <div className="ride-modal-floating animate-slide-up shadow-2xl" style={{ pointerEvents: 'auto' }}>
+                            <button className="btn-minimize-modal" onClick={() => setIsModalMinimized(true)}>
+                                <Minimize2 size={24} color="#94a3b8" />
+                            </button>
+
+                            <div className="client-header">
+                                <div className="client-avatar">{activeRide.userName?.[0] || 'U'}</div>
+                                <div className="client-details">
+                                    <strong>{activeRide.userName}</strong>
+                                    <span>Cliente TOT Premium</span>
+                                </div>
+                                <div className="header-actions-end">
+                                    <button className="btn-call-client"><Phone size={18} /></button>
+                                    <button className="btn-call-client"><MessageSquare size={18} /></button>
+                                </div>
+                            </div>
+
+                            {activeRide.category === 'delivery' && activeRide.deliveryInfo && (
+                                <div className="delivery-detail-box animate-fade-in">
+                                    <h4>DETALHES DA ENTREGA</h4>
+                                    <div className="delivery-item">
+                                        <div className="icon-wrap"><User size={16} /></div>
+                                        <div className="delivery-item-text">
+                                            <span className="label">Destinatário</span>
+                                            <span className="val">{activeRide.deliveryInfo.recipientName}</span>
+                                        </div>
+                                    </div>
+                                    <div className="delivery-item">
+                                        <div className="icon-wrap"><Phone size={16} /></div>
+                                        <div className="delivery-item-text">
+                                            <span className="label">Telefone</span>
+                                            <span className="val">{activeRide.deliveryInfo.recipientPhone}</span>
+                                        </div>
+                                    </div>
+                                    <div className="delivery-desc">
+                                        {activeRide.deliveryInfo.packageDescription || 'Sem descrição do pacote'}
+                                    </div>
+                                    {activeRide.deliveryInfo.instructions && (
+                                        <div className="delivery-desc" style={{ marginTop: '5px', borderLeft: '3px solid #E91E63' }}>
+                                            <strong>Obs:</strong> {activeRide.deliveryInfo.instructions}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            <div className="destination-info">
+                                <span className="dest-label">DESTINO DA CORRIDA</span>
+                                <div className="info-row">
+                                    <MapPin size={18} color="#E91E63" />
+                                    <span className="text-truncate">{activeRide.destAddress}</span>
+                                </div>
+                            </div>
+
+                            {rideStatus === 'accepted' && (
+                                <div className="flex flex-col gap-2 w-full">
+                                    <button className="btn-ride-control start" onClick={handleStartRide}>
+                                        <Play size={20} /> INICIAR CORRIDA
+                                    </button>
+                                    <button className="btn-ride-control cancel-mini" onClick={handleCancelRide} style={{ background: '#fef2f2', color: '#ef4444', height: '40px', fontSize: '14px' }}>
+                                        CANCELAR CORRIDA
+                                    </button>
+                                </div>
+                            )}
+                            {rideStatus === 'ongoing' && (
+                                <button className="btn-ride-control finish" onClick={handleFinishRide}>
+                                    <Square size={20} /> FINALIZAR CORRIDA
+                                </button>
+                            )}
+                            {rideStatus === 'finished' && (
+                                <button className="btn-ride-control payment" onClick={handleConfirmPayment}>
+                                    <CreditCard size={20} /> CONFIRMAR PAGAMENTO
+                                </button>
+                            )}
+                            {rideStatus === 'paid' && (
+                                <div className="concluded-actions">
+                                    <button className="btn-receipt-view" onClick={() => navigate('/history')}>VER RECIBO</button>
+                                    <button className="btn-back-home" onClick={resetToIdle}>VOLTAR AO INÍCIO</button>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <button className="ride-modal-restore-btn shadow-lg animate-pop-in" style={{ pointerEvents: 'auto' }} onClick={() => setIsModalMinimized(false)}>
+                            <Maximize2 size={24} color="#ffffff" />
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    )
+}

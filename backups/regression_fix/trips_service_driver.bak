@@ -1,0 +1,313 @@
+import { Injectable, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '@app/database';
+import { CreateTripDto } from './dto/create-trip.dto';
+import { UpdateTripDto } from './dto/update-trip.dto';
+
+@Injectable()
+export class TripsService {
+    constructor(private prisma: PrismaService) { }
+
+    async create(createTripDto: CreateTripDto) {
+        // Check if client already has an active trip
+        const existingTrip = await this.prisma.trips.findFirst({
+            where: {
+                client_id: createTripDto.clientId,
+                status: { in: ['requested', 'accepted', 'ongoing'] }
+            }
+        });
+
+        if (existingTrip) {
+            throw new BadRequestException('You already have an active trip');
+        }
+
+        return this.prisma.trips.create({
+            data: {
+                client_id: createTripDto.clientId,
+                origin_address: createTripDto.originAddress,
+                origin_lat: createTripDto.originLat,
+                origin_lng: createTripDto.originLng,
+                dest_address: createTripDto.destAddress,
+                dest_lat: createTripDto.destLat,
+                dest_lng: createTripDto.destLng,
+                estimated_fare: createTripDto.price?.toString(),
+                status: 'requested',
+                service_config_id: createTripDto.serviceConfigId,
+                category: createTripDto.category || 'ride',
+                delivery_info: createTripDto.deliveryInfo || null
+            },
+            include: {
+                profiles_trips_client_idToprofiles: true
+            }
+        });
+    }
+
+    async findOne(id: string) {
+        return this.prisma.trips.findUnique({
+            where: { id },
+            include: {
+                profiles_trips_client_idToprofiles: true,
+                profiles_trips_driver_idToprofiles: true
+            }
+        });
+    }
+
+    async findAllPending() {
+        return this.prisma.trips.findMany({
+            where: { status: 'requested' },
+            include: { profiles_trips_client_idToprofiles: true },
+            orderBy: { created_at: 'desc' }
+        });
+    }
+
+    async findActiveByDriver(driverId: string) {
+        // driverId is Int in drivers table but String in trips table?
+        // Wait, schema says drivers.id is Int, but trips.driver_id is String(uuid).
+        // Legacy system is messy. Let's assume trips.driver_id refers to drivers.id converted to string OR profiles.id?
+        // Checking schema: trips.driver_id references profiles.id via "trips_driver_idToprofiles" relation.
+        // So trips.driver_id is actually a PROFILE ID.
+        // BUT, drivers table exists.
+
+        // CORRECTION: The schema shows trips.driver_id -> profiles.id.
+        // So the driverId passed here MUST be the profile ID of the driver.
+        return this.prisma.trips.findFirst({
+            where: {
+                driver_id: driverId,
+                status: { in: ['accepted', 'ongoing'] }
+            },
+            orderBy: { created_at: 'desc' },
+            include: {
+                profiles_trips_client_idToprofiles: true,
+                profiles_trips_driver_idToprofiles: true,
+                service_configs: true
+            }
+        });
+    }
+
+    async findActiveByClient(clientId: string) {
+        return this.prisma.trips.findFirst({
+            where: {
+                client_id: clientId,
+                status: { in: ['requested', 'accepted', 'ongoing'] }
+            },
+            include: { profiles_trips_driver_idToprofiles: true },
+            orderBy: { created_at: 'desc' } // Strict latest
+        });
+    }
+
+    async findAll() {
+        return this.prisma.trips.findMany({
+            orderBy: { created_at: 'desc' },
+            take: 100
+        });
+    }
+
+    async accept(tripId: string, driverId: string) {
+        // Optimistic locking: only update if driver_id is null
+        const result = await this.prisma.trips.updateMany({
+            where: {
+                id: tripId,
+                driver_id: null, // CRITICAL: Only if not yet accepted
+                status: 'requested'
+            },
+            data: {
+                driver_id: driverId,
+                status: 'accepted',
+                accepted_at: new Date()
+            }
+        });
+
+        if (result.count === 0) {
+            throw new BadRequestException('Trip already accepted by another driver');
+        }
+
+        // Fetch the updated trip with relations
+        return this.prisma.trips.findUnique({
+            where: { id: tripId },
+            include: {
+                profiles_trips_client_idToprofiles: true,
+                profiles_trips_driver_idToprofiles: true
+            }
+        });
+    }
+
+    async cancel(tripId: string) {
+        return this.prisma.trips.update({
+            where: { id: tripId },
+            data: { status: 'cancelled' },
+            include: { profiles_trips_driver_idToprofiles: true }
+        });
+    }
+
+    async start(tripId: string) {
+        return this.prisma.trips.update({
+            where: { id: tripId },
+            data: { status: 'ongoing', started_at: new Date() }
+        });
+    }
+
+    async finish(tripId: string, finalFare: string) {
+        return this.prisma.trips.update({
+            where: { id: tripId },
+            data: {
+                status: 'completed',
+                final_fare: finalFare,
+                completed_at: new Date()
+            }
+        });
+    }
+
+    async updateFare(tripId: string, currentFare: number) {
+        // Update current fare during trip (for persistence)
+        return this.prisma.trips.update({
+            where: { id: tripId },
+            data: { final_fare: currentFare.toString() }
+        });
+    }
+
+    async cancelOrphanTrips(): Promise<Array<{ tripId: string, clientId: string | null }>> {
+        // Cancel trips that have been in 'requested' state for more than 5 minutes
+        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+
+        const orphanTrips = await this.prisma.trips.findMany({
+            where: {
+                status: 'requested',
+                created_at: { lt: fiveMinutesAgo }
+            }
+        });
+
+        const cancelledIds: Array<{ tripId: string, clientId: string | null }> = [];
+        for (const trip of orphanTrips) {
+            await this.cancel(trip.id);
+            cancelledIds.push({ tripId: trip.id, clientId: trip.client_id });
+        }
+
+        return cancelledIds;
+    }
+
+    async getHistory(userId: string, role: 'client' | 'driver', limit: number = 20, status?: string, month?: number, year?: number) {
+        let where: any = role === 'client'
+            ? { client_id: userId }
+            : { driver_id: userId };
+
+        if (status && status !== 'all') {
+            where.status = status;
+        } else {
+            // Default to completed and cancelled for history list
+            where.status = { in: ['completed', 'cancelled'] };
+        }
+
+        if (month !== undefined && year !== undefined) {
+            const startDate = new Date(year, month, 1);
+            const endDate = new Date(year, month + 1, 0, 23, 59, 59);
+            where.created_at = {
+                gte: startDate,
+                lte: endDate
+            };
+        }
+
+        return this.prisma.trips.findMany({
+            where,
+            orderBy: { created_at: 'desc' },
+            take: limit,
+            include: {
+                profiles_trips_client_idToprofiles: true,
+                profiles_trips_driver_idToprofiles: true,
+                invoices: true
+            }
+        });
+    }
+
+    async getMonthlyStats(userId: string, role: 'client' | 'driver') {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        const where = role === 'client'
+            ? { client_id: userId, status: 'completed', created_at: { gte: startOfMonth } }
+            : { driver_id: userId, status: 'completed', created_at: { gte: startOfMonth } };
+
+        const trips = await this.prisma.trips.findMany({
+            where,
+            select: { final_fare: true }
+        });
+
+        const totalEarnings = trips.reduce((sum, trip) => {
+            return sum + (trip.final_fare ? parseFloat(trip.final_fare.toString()) : 0);
+        }, 0);
+
+        return {
+            count: trips.length,
+            total: totalEarnings
+        };
+    }
+
+    async createInvoice(tripId: string) {
+        const trip = await this.findOne(tripId);
+        if (!trip) throw new BadRequestException('Trip not found');
+
+        // Check if invoice already exists
+        const existing = await this.prisma.invoices.findFirst({
+            where: { trip_id: tripId }
+        });
+        if (existing) return existing;
+
+        return this.prisma.invoices.create({
+            data: {
+                trip_id: tripId,
+                user_id: trip.client_id,
+                amount: trip.final_fare || trip.estimated_fare || 0,
+                invoice_type: 'ride_receipt'
+            }
+        });
+    }
+
+    async getDailyStats(driverId: string) {
+        const now = new Date();
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+        const trips = await this.prisma.trips.findMany({
+            where: {
+                driver_id: driverId,
+                status: 'completed',
+                completed_at: {
+                    gte: startOfDay
+                }
+            },
+            select: {
+                final_fare: true
+            }
+        });
+
+        const totalEarnings = trips.reduce((sum, trip) => {
+            return sum + (trip.final_fare ? parseFloat(trip.final_fare.toString()) : 0);
+        }, 0);
+
+        return {
+            rides: trips.length,
+            earnings: totalEarnings
+        };
+    }
+
+    // Helper
+    async updateDriverStatus(driverId: string, isOnline: boolean) {
+        return this.prisma.drivers.update({
+            where: { id: driverId as any },
+            data: { is_online: isOnline }
+        });
+    }
+
+    async getDriverStatus(driverId: string) {
+        const d = await this.prisma.drivers.findUnique({ where: { id: driverId as any } });
+        return d?.is_online || false;
+    }
+
+    async updateDriverLocation(driverId: string, lat: number, lng: number) {
+        return this.prisma.drivers.update({
+            where: { id: driverId },
+            data: {
+                current_lat: lat,
+                current_lng: lng,
+                last_location_update: new Date()
+            }
+        });
+    }
+}

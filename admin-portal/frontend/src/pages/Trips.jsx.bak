@@ -1,0 +1,184 @@
+import { useState, useEffect } from 'react'
+import {
+    Search,
+    Calendar,
+    ArrowLeft,
+    MapPin,
+    Clock,
+    Navigation,
+    User,
+    Bike,
+    Car,
+    Filter,
+    ChevronRight,
+    Download,
+    FileText
+} from 'lucide-react'
+import axios from 'axios'
+import toast from 'react-hot-toast'
+
+const API_URL = 'http://localhost:3000/admin'
+
+export default function Trips({ onBack }) {
+    const [trips, setTrips] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [filter, setFilter] = useState('all')
+    const [searchTerm, setSearchTerm] = useState('')
+    const [selectedTrip, setSelectedTrip] = useState(null)
+
+    useEffect(() => {
+        fetchTrips()
+    }, [])
+
+    const fetchTrips = async () => {
+        try {
+            setLoading(true)
+            const res = await axios.get(`${API_URL}/trips`)
+            setTrips(res.data || [])
+        } catch (error) {
+            console.error('Error fetching trips:', error)
+            toast.error('Erro ao carregar histórico')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const filteredTrips = trips.filter(t => {
+        const matchesFilter = filter === 'all' || t.status === filter
+        const clientName = t.profiles_trips_client_idToprofiles?.full_name?.toLowerCase() || ''
+        const driverName = t.profiles_trips_driver_idToprofiles?.full_name?.toLowerCase() || ''
+        const matchesSearch = clientName.includes(searchTerm.toLowerCase()) ||
+            driverName.includes(searchTerm.toLowerCase())
+        return matchesFilter && matchesSearch
+    })
+
+    return (
+        <div className="trips-module animate-fade-in">
+            <div className="module-header-nav">
+                <div className="flex items-center gap-4">
+                    <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
+                    <div className="title-area">
+                        <h2>Histórico de Corridas</h2>
+                        <p>{filteredTrips.length} registos encontrados</p>
+                    </div>
+                </div>
+
+                <div className="header-actions">
+                    <div className="search-bar-premium">
+                        <Search size={18} />
+                        <input
+                            type="text"
+                            placeholder="Buscar cliente ou motorista..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
+                    </div>
+                </div>
+            </div>
+
+            <div className="drivers-table-grid mt-6">
+                {loading ? (
+                    [1, 2, 3].map(i => <div key={i} className="driver-card-premium horizontal skeleton h-32"></div>)
+                ) : filteredTrips.length > 0 ? (
+                    filteredTrips.map(trip => (
+                        <div key={trip.id} className="driver-card-premium horizontal animate-fade-in">
+                            <div className="card-left-section">
+                                <div className="avatar-box">
+                                    <Clock size={20} />
+                                </div>
+                                <div className="info-group">
+                                    <h3 style={{ color: '#1e293b' }}>{trip.profiles_trips_client_idToprofiles?.full_name || 'Cliente Anónimo'}</h3>
+                                    <p className="flex items-center gap-1">
+                                        <User size={12} /> {trip.profiles_trips_driver_idToprofiles?.full_name || 'A aguardar motorista'}
+                                    </p>
+                                    <div className="flex flex-col gap-1 mt-2 text-[11px] font-semibold text-slate-500">
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-pink-500"></div>
+                                            <span className="truncate max-w-[200px]">{trip.origin_address}</span>
+                                        </div>
+                                        <div className="flex items-center gap-1">
+                                            <div className="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
+                                            <span className="truncate max-w-[200px]">{trip.dest_address}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="card-right-section">
+                                <div className={`status-pill-mini ${trip.status}`}>
+                                    {(trip.status || 'unknown').toUpperCase()}
+                                </div>
+
+                                <div className="flex items-center gap-6 mt-3">
+                                    <div className="price-tag-modern">
+                                        Kz {Number(trip.final_fare || trip.estimated_fare).toLocaleString()}
+                                    </div>
+
+                                    <button className="btn-pill-sm primary h-12 px-6" onClick={() => setSelectedTrip(trip)}>
+                                        <ChevronRight size={18} />
+                                        <span>Detalhes</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))
+                ) : (
+                    <div className="empty-state-container py-40">
+                        <Navigation size={64} className="opacity-10 mx-auto mb-4" />
+                        <p>Nenhuma corrida encontrada.</p>
+                    </div>
+                )}
+            </div>
+
+            {selectedTrip && (
+                <div className="receipt-overlay animate-fade-in" onClick={() => setSelectedTrip(null)}>
+                    <div className="receipt-modal shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="receipt-header">
+                            <FileText size={40} className="mx-auto mb-2 opacity-50" />
+                            <h3>Recibo de Viagem</h3>
+                            <p className="text-xs opacity-70">TOT PREMIUM ANGOLA</p>
+                        </div>
+                        <div className="receipt-body">
+                            <div className="receipt-row">
+                                <label>Código da Viagem</label>
+                                <span>#{selectedTrip.id.substring(0, 8).toUpperCase()}</span>
+                            </div>
+                            <div className="receipt-row">
+                                <label>Data</label>
+                                <span>{new Date(selectedTrip.created_at).toLocaleDateString()}</span>
+                            </div>
+                            <div className="receipt-row">
+                                <label>Cliente</label>
+                                <span>{selectedTrip.profiles_trips_client_idToprofiles?.full_name || 'Anónimo'}</span>
+                            </div>
+                            <div className="receipt-row">
+                                <label>Motorista</label>
+                                <span>{selectedTrip.profiles_trips_driver_idToprofiles?.full_name || 'Motorista'}</span>
+                            </div>
+                            <div className="receipt-divider"></div>
+                            <div className="receipt-row">
+                                <label>Origem</label>
+                                <span className="text-right max-w-[150px] truncate">{selectedTrip.origin_address}</span>
+                            </div>
+                            <div className="receipt-row">
+                                <label>Destino</label>
+                                <span className="text-right max-w-[150px] truncate">{selectedTrip.dest_address}</span>
+                            </div>
+                            <div className="receipt-divider"></div>
+                            <div className="receipt-total">
+                                <span className="total-label">Total Pago</span>
+                                <span className="total-value">Kz {(selectedTrip.final_fare || selectedTrip.estimated_fare).toLocaleString()}</span>
+                            </div>
+                        </div>
+                        <div className="receipt-actions">
+                            <button className="btn-download-receipt" onClick={() => toast.success('Recibo baixado com sucesso!')}>
+                                <Download size={18} /> Baixar PDF
+                            </button>
+                            <button className="btn-close-receipt" onClick={() => setSelectedTrip(null)}>Fechar</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    )
+}

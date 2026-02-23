@@ -1,0 +1,128 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { View, StyleSheet, Text } from 'react-native';
+import MapboxNavigation from '../native/MapboxNavigation';
+import MapboxGL from '@rnmapbox/maps';
+import colors from '../theme/colors';
+import LinearGradient from 'react-native-linear-gradient';
+import { Navigation as NavIcon } from 'lucide-react-native';
+
+const MapboxNavigationLayer = ({
+    trip,
+    rideStatus,
+    onLocationUpdate,
+}) => {
+    const [mapReady, setMapReady] = useState(false);
+    const isStarted = useRef(false);
+
+    useEffect(() => {
+        if (trip && rideStatus === 'ongoing' && !isStarted.current) {
+            MapboxNavigation.startNavigation({
+                lat: trip.destPos.lat,
+                lng: trip.destPos.lng
+            });
+            isStarted.current = true;
+        }
+
+        return () => {
+            if (isStarted.current) {
+                MapboxNavigation.stopNavigation();
+                isStarted.current = false;
+            }
+        };
+    }, [trip, rideStatus]);
+
+    return (
+        <View style={styles.container}>
+            <MapboxGL.MapView
+                style={styles.map}
+                styleURL={MapboxGL.StyleURL.Street}
+                logoEnabled={false}
+                attributionEnabled={false}
+                onDidFinishLoadingMap={() => {
+                    console.log('✅ Map Ready');
+                    setMapReady(true);
+                }}
+            >
+                {mapReady && (
+                    <MapboxGL.Camera
+                        zoomLevel={16}
+                        centerCoordinate={
+                            rideStatus === 'accepted'
+                                ? [trip.coords.lng, trip.coords.lat]
+                                : [trip.destPos.lng, trip.destPos.lat]
+                        }
+                        animationMode="moveTo"
+                    />
+                )}
+            </MapboxGL.MapView>
+
+            <View style={styles.guidanceOverlay}>
+                <LinearGradient
+                    colors={rideStatus === 'accepted' ? colors.gradients.pink : colors.gradients.dark}
+                    style={styles.gradient}
+                >
+                    <View style={styles.iconContainer}>
+                        <NavIcon size={24} color={rideStatus === 'accepted' ? colors.primary : '#fff'} />
+                    </View>
+                    <View style={styles.textContainer}>
+                        <Text style={styles.instructionText}>
+                            {rideStatus === 'accepted' ? 'Indo buscar o cliente' : 'A caminho do destino'}
+                        </Text>
+                        <Text style={styles.destText} numberOfLines={1}>
+                            {rideStatus === 'accepted' ? trip.pickupAddress : (trip.destAddress || 'Destino')}
+                        </Text>
+                    </View>
+                </LinearGradient>
+            </View>
+        </View>
+    );
+};
+
+const styles = StyleSheet.create({
+    container: { flex: 1 },
+    map: { flex: 1 },
+    guidanceOverlay: {
+        position: 'absolute',
+        top: 20,
+        left: 20,
+        right: 20,
+        borderRadius: 24,
+        overflow: 'hidden',
+        borderWidth: 1,
+        borderColor: colors.glassBorder,
+        elevation: 15,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 10 },
+        shadowOpacity: 0.4,
+        shadowRadius: 20,
+    },
+    gradient: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 20,
+        gap: 16,
+    },
+    iconContainer: {
+        width: 48,
+        height: 48,
+        borderRadius: 24,
+        backgroundColor: 'rgba(233, 30, 99, 0.1)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    textContainer: { flex: 1 },
+    instructionText: {
+        color: '#fff',
+        fontSize: 18,
+        fontWeight: '900',
+        letterSpacing: 0.5,
+    },
+    destText: {
+        color: colors.textSecondary,
+        fontSize: 14,
+        fontWeight: '600',
+        marginTop: 2,
+    },
+});
+
+export default MapboxNavigationLayer;

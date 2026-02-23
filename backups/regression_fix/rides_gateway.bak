@@ -1,0 +1,316 @@
+import { WebSocketGateway, SubscribeMessage, MessageBody, WebSocketServer, ConnectedSocket, OnGatewayConnection, OnGatewayDisconnect } from '@nestjs/websockets';
+import { OnModuleInit } from '@nestjs/common';
+import { TripsService } from '../trips/trips.service';
+import { Server, Socket } from 'socket.io';
+import { CreateTripDto } from '../trips/dto/create-trip.dto';
+
+@WebSocketGateway({ cors: { origin: '*' } })
+export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
+  @WebSocketServer()
+  server: Server;
+
+  // Track connected users
+  private connectedUsers = new Map<string, { socketId: string, role: string, userId: string }>();
+  // Throttling for DB updates
+  private lastLocationUpdates = new Map<string, number>();
+
+  constructor(private readonly tripsService: TripsService) { }
+
+  onModuleInit() {
+    // Check for orphan trips every minute
+    setInterval(async () => {
+      const cancelled = await this.tripsService.cancelOrphanTrips();
+      for (const { tripId, clientId } of cancelled) {
+        this.server.to(`client_${clientId}`).emit('trip_timeout', {
+          tripId,
+          message: 'Nenhum motorista disponível no momento. Tente novamente.'
+        });
+      }
+    }, 60000); // Every 1 minute
+  }
+
+  handleConnection(client: Socket) {
+    console.log(`Client connected: ${client.id}`);
+  }
+
+  handleDisconnect(client: Socket) {
+    console.log(`Client disconnected: ${client.id}`);
+
+    // Find and remove from connected users
+    for (const [userId, data] of this.connectedUsers.entries()) {
+      if (data.socketId === client.id) {
+        console.log(`User ${userId} (${data.role}) disconnected`);
+
+        // REMOVED: Automatic offline status change on disconnect.
+        // Status is now strictly manual (DB source of truth).
+
+        this.connectedUsers.delete(userId);
+        break;
+      }
+    }
+  }
+
+  @SubscribeMessage('join')
+  async handleJoin(@MessageBody() data: { userId: string, role: string }, @ConnectedSocket() client: Socket) {
+    const { userId, role } = data;
+    const room = `${role}_${userId}`;
+    client.join(room);
+    console.log(`${role} joined room: ${room}`);
+
+    // Track connected user
+    this.connectedUsers.set(userId, { socketId: client.id, role, userId });
+
+    if (role === 'driver') {
+      const isOnline = await this.tripsService.getDriverStatus(userId);
+      client.emit('login_status', { isOnline });
+
+      // Restore active trip
+      const activeTrip = await this.tripsService.findActiveByDriver(userId);
+      if (activeTrip) {
+        client.emit('restore_ride', this.formatTrip(activeTrip));
+      } else {
+        // If online and no active trip, show pending
+        if (isOnline) {
+          const pending = await this.tripsService.findAllPending();
+          const formattedPending = pending.map(trip => this.formatTrip(trip));
+          if (formattedPending.length > 0) {
+            client.emit('pending_trips', formattedPending);
+          }
+        }
+      }
+    } else if (role === 'client') {
+      const activeTrip = await this.tripsService.findActiveByClient(userId);
+      if (activeTrip) {
+        // Format trip for client restoration
+        client.emit('restore_trip', this.formatTrip(activeTrip));
+      }
+    }
+  }
+
+  @SubscribeMessage('ping')
+  handlePing(@ConnectedSocket() client: Socket) {
+    // Heartbeat mechanism
+    client.emit('pong');
+  }
+
+  @SubscribeMessage('toggle_online')
+  async handleToggleOnline(@MessageBody() data: { userId: string, isOnline: boolean }, @ConnectedSocket() client: Socket) {
+    await this.tripsService.updateDriverStatus(data.userId, data.isOnline);
+
+    // CRITICAL: If going online, explicitly fetch all pending trips from DB
+    if (data.isOnline) {
+      const pending = await this.tripsService.findAllPending();
+      const formattedPending = pending.map(trip => this.formatTrip(trip));
+      client.emit('pending_trips', formattedPending);
+      console.log(`Driver ${data.userId} went online, sent ${formattedPending.length} pending trips.`);
+    }
+  }
+
+  @SubscribeMessage('update_location')
+  async handleUpdateLocation(@MessageBody() data: { driverId: string, lat: number, lng: number, activeClientId?: string }) {
+    const { driverId, lat, lng, activeClientId } = data;
+
+    // 1. Send to specific Client (if in a ride)
+    if (activeClientId) {
+      this.server.to(`client_${activeClientId}`).emit('driver_location_update', { driverId, lat, lng });
+    }
+
+    // 2. Persist to DB (Throttled: 30s) to avoid overloading Postgres
+    const now = Date.now();
+    const lastUpdate = this.lastLocationUpdates.get(driverId) || 0;
+
+    if (now - lastUpdate > 30000) { // 30 seconds
+      await this.tripsService.updateDriverLocation(driverId, lat, lng);
+      this.lastLocationUpdates.set(driverId, now);
+    }
+  }
+
+  @SubscribeMessage('force_suspend_driver')
+  handleForceSuspend(@MessageBody() data: { driverId: string, message: string }) {
+    console.log(`🔴 Forcing suspension for driver ${data.driverId}`);
+    this.server.to(`driver_${data.driverId}`).emit('account_suspended', {
+      message: data.message
+    });
+  }
+
+  @SubscribeMessage('force_activate_driver')
+  handleForceActivate(@MessageBody() data: { driverId: string, message: string }) {
+    console.log(`🟢 Forcing activation for driver ${data.driverId}`);
+    this.server.to(`driver_${data.driverId}`).emit('account_activated', {
+      message: data.message
+    });
+  }
+
+  // Public method that can be called by other services (like Admin API)
+  notifyDriverAccountStatus(driverId: string, status: 'suspended' | 'active') {
+    const message = status === 'suspended'
+      ? 'Sua conta foi suspensa pelo administrador'
+      : 'Sua conta foi reativada';
+
+    const event = status === 'suspended' ? 'account_suspended' : 'account_activated';
+
+    console.log(`📢 Notifying driver ${driverId}: ${event}`);
+    this.server.to(`driver_${driverId}`).emit(event, { message });
+  }
+
+  @SubscribeMessage('request_trip')
+  async handleRequestTrip(@MessageBody() createTripDto: CreateTripDto, @ConnectedSocket() client: Socket) {
+    const trip = await this.tripsService.create(createTripDto);
+    const formattedTrip = this.formatTrip(trip);
+
+    // CRITICAL: Return trip to client immediately (acknowledgment)
+    // This gives client the tripId for cancellation
+    client.emit('trip_created', { tripId: trip.id, trip: formattedTrip });
+
+    // Broadcast to all drivers
+    this.server.emit('new_trip_available', formattedTrip);
+
+    return { success: true, tripId: trip.id };
+  }
+
+  @SubscribeMessage('accept_trip')
+  async handleAcceptTrip(@MessageBody() data: { tripId: string, driverId: string, clientId: string, driverName: string }) {
+    try {
+      const trip = await this.tripsService.accept(data.tripId, data.driverId);
+
+      if (!trip) {
+        throw new Error('Trip not found after accept');
+      }
+
+      // Notify Client
+      this.server.to(`client_${trip.client_id}`).emit('trip_accepted', {
+        tripId: trip.id,
+        driver: { id: data.driverId, name: data.driverName }
+      });
+
+      // Remove from global list
+      this.server.emit('trip_taken', { tripId: trip.id });
+
+      return { success: true };
+    } catch (error) {
+      // If already accepted, notify driver
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('cancel_trip')
+  async handleCancelTrip(@MessageBody() data: { tripId: string, userId?: string, role?: string }, @ConnectedSocket() client: Socket) {
+    try {
+      // Fetch trip first to validate cancellation rules
+      const trip = await this.tripsService.findOne(data.tripId);
+
+      if (!trip) {
+        return { success: false, error: 'Trip not found' };
+      }
+
+      // Cancellation Rules:
+      // - Client can cancel if status is 'requested' or 'accepted'
+      // - Driver can cancel if status is 'accepted' (before starting)
+      // - Nobody can cancel if status is 'ongoing' or 'completed'
+
+      if (trip.status === 'ongoing') {
+        return { success: false, error: 'Cannot cancel trip in progress' };
+      }
+
+      if (trip.status === 'completed' || trip.status === 'cancelled') {
+        return { success: false, error: 'Trip already finished' };
+      }
+
+      // Perform cancellation
+      const cancelledTrip = await this.tripsService.cancel(data.tripId);
+      const isDriver = data.role === 'driver';
+
+      // Notify driver
+      if (cancelledTrip.driver_id) {
+        if (isDriver) {
+          this.server.to(`driver_${cancelledTrip.driver_id}`).emit('trip_cancelled_confirmed', { tripId: cancelledTrip.id });
+        } else {
+          this.server.to(`driver_${cancelledTrip.driver_id}`).emit('trip_cancelled', { tripId: cancelledTrip.id });
+        }
+      }
+
+      // Notify client
+      if (cancelledTrip.client_id) {
+        if (!isDriver) {
+          this.server.to(`client_${cancelledTrip.client_id}`).emit('trip_cancelled_confirmed', { tripId: cancelledTrip.id });
+        } else {
+          this.server.to(`client_${cancelledTrip.client_id}`).emit('trip_cancelled', { tripId: cancelledTrip.id });
+        }
+      }
+
+      // Remove from global pending list
+      this.server.emit('trip_cancelled_global', { tripId: cancelledTrip.id });
+
+      return { success: true, tripId: cancelledTrip.id };
+    } catch (error) {
+      console.error('Cancel trip error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  @SubscribeMessage('start_ride')
+  async handleStartRide(@MessageBody() data: { tripId: string, clientId: string }) {
+    await this.tripsService.start(data.tripId);
+    this.server.to(`client_${data.clientId}`).emit('ride_started', { tripId: data.tripId });
+  }
+
+  @SubscribeMessage('finish_ride')
+  async handleFinishRide(@MessageBody() data: { tripId: string, clientId: string, finalFare: string }) {
+    await this.tripsService.finish(data.tripId, data.finalFare);
+    this.server.to(`client_${data.clientId}`).emit('ride_finished', { tripId: data.tripId, finalFare: data.finalFare });
+  }
+
+  @SubscribeMessage('trip_progress')
+  async handleTripProgress(@MessageBody() data: { tripId: string, clientId: string, currentFare: number, coords: { lat: number, lng: number } }) {
+    // CRITICAL: Persist current fare in database
+    // This ensures fare is not lost on disconnect/refresh
+    await this.tripsService.updateFare(data.tripId, data.currentFare);
+
+    // Real-time updates to client
+    this.server.to(`client_${data.clientId}`).emit('trip_update', {
+      currentFare: data.currentFare,
+      coords: data.coords
+    });
+  }
+
+  @SubscribeMessage('confirm_payment')
+  async handleConfirmPayment(@MessageBody() data: { tripId: string, clientId: string, receiptData: any }) {
+    // 1. Persist invoice in database
+    const invoice = await this.tripsService.createInvoice(data.tripId);
+
+    // 2. Driver confirms payment received, send updated receipt info to client
+    this.server.to(`client_${data.clientId}`).emit('payment_confirmed', {
+      receiptData: {
+        ...data.receiptData,
+        invoiceId: invoice.id
+      }
+    });
+  }
+
+  private formatTrip(trip: any) {
+    return {
+      id: trip.id,
+      clientId: trip.client_id,
+      userName: trip.profiles_trips_client_idToprofiles?.full_name || 'Cliente',
+      pickupAddress: trip.origin_address,
+      destAddress: trip.dest_address,
+      price: trip.estimated_fare,
+      status: trip.status,
+      coords: { lat: trip.origin_lat, lng: trip.origin_lng },
+      destPos: { lat: trip.dest_lat, lng: trip.dest_lng }, // For restore
+      current_fare: trip.final_fare || trip.estimated_fare,
+      driver_id: trip.driver_id,
+      driver_name: trip.profiles_trips_driver_idToprofiles?.full_name || 'Motorista',
+      category: trip.category,
+      deliveryInfo: trip.delivery_info,
+      // Pricing Logic
+      price_per_min: trip.service_configs?.price_per_min || 50,
+      price_per_km: trip.service_configs?.price_per_km || 100,
+      base_fare: trip.service_configs?.base_fare || 500,
+      // Timestamps
+      created_at: trip.created_at,
+      accepted_at: trip.accepted_at,
+      started_at: trip.started_at
+    };
+  }
+}

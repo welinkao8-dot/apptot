@@ -1,0 +1,57 @@
+ext {
+    buildToolsVersion = "35.0.0"
+    minSdkVersion = 24
+    compileSdkVersion = 35
+    targetSdkVersion = 34
+    ndkVersion = "27.3.13750724"
+    kotlinVersion = "2.1.20"
+    RNMapboxMapsVersion = "11.4.1"
+}
+
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+        // Mapbox Maven
+        maven {
+            url 'https://api.mapbox.com/downloads/v2/releases/maven'
+            credentials {
+                username = 'mapbox'
+                password = project.properties['MAPBOX_DOWNLOADS_TOKEN'] ?: ""
+            }
+        }
+    }
+    dependencies {
+        classpath("com.android.tools.build:gradle")
+        classpath("com.facebook.react:react-native-gradle-plugin")
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin")
+    }
+}
+
+allprojects {
+    repositories {
+        google()
+        mavenCentral()
+        // Mapbox Maven
+        maven {
+            url 'https://api.mapbox.com/downloads/v2/releases/maven'
+            credentials {
+                username = 'mapbox'
+                password = project.properties['MAPBOX_DOWNLOADS_TOKEN'] ?: ""
+            }
+        }
+    }
+
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = "17"
+            freeCompilerArgs += [
+                "-Xno-param-assertions",
+                "-Xno-call-assertions",
+                "-Xno-receiver-assertions"
+            ]
+        }
+    }
+}
+
+apply plugin: "com.facebook.react.rootproject"

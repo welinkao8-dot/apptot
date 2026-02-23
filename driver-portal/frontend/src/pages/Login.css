@@ -1,0 +1,216 @@
+.login-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 100vh;
+    padding: 20px;
+    background: #f8fafc;
+}
+
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 50px 30px;
+    border-radius: 40px;
+    text-align: center;
+    background: #ffffff !important;
+    box-shadow: 0 10px 25px rgba(233, 30, 99, 0.05) !important;
+    border: 1px solid #f1f5f9 !important;
+}
+
+.logo-text {
+    font-size: 4.5rem;
+    font-weight: 950;
+    margin-bottom: 0;
+    color: #E91E63 !important;
+    letter-spacing: -3px;
+    line-height: 1;
+}
+
+.subtitle {
+    color: #94a3b8;
+    font-size: 0.75rem;
+    margin-bottom: 40px;
+    text-transform: uppercase;
+    font-weight: 800;
+    letter-spacing: 2px;
+}
+
+.info-msg {
+    font-size: 0.95rem;
+    color: #1e293b;
+    font-weight: 700;
+    margin-bottom: 30px;
+}
+
+.input-group {
+    text-align: left;
+    margin-bottom: 18px;
+}
+
+.input-group label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 800;
+    color: #1e293b;
+    margin-bottom: 8px;
+}
+
+.input-with-icon {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-icon {
+    position: absolute;
+    left: 18px;
+    color: #94a3b8;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 18px 18px 18px 50px;
+    background: #f8fafc !important;
+    border: 2px solid #f1f5f9 !important;
+    border-radius: 20px;
+    color: #1e293b !important;
+    font-size: 1rem;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+
+.input-group input:focus {
+    outline: none;
+    border-color: #E91E63 !important;
+    background: #ffffff !important;
+}
+
+.btn-primary {
+    width: 100%;
+    padding: 20px;
+    background: #E91E63 !important;
+    color: white !important;
+    border: none;
+    border-radius: 20px;
+    font-size: 1.1rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.2s;
+    margin-top: 10px;
+}
+
+.btn-primary:hover {
+    background: #C2185B !important;
+    transform: translateY(-2px);
+}
+
+.btn-text {
+    background: none;
+    border: none;
+    color: #94a3b8 !important;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    margin-top: 15px;
+}
+
+/* FILE STACK LAYOUT */
+.file-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.file-field-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.file-card-v2 {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 25px 20px;
+    background: #ffffff;
+    border: 2px dashed #e2e8f0;
+    border-radius: 24px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.f-icon {
+    color: #94a3b8;
+}
+
+.f-title {
+    font-size: 0.85rem;
+    font-weight: 800;
+    color: #475569;
+}
+
+.f-hint {
+    font-size: 0.75rem;
+    color: #94a3b8;
+    font-weight: 600;
+    width: 100%;
+    text-align: center;
+}
+
+.file-card-v2:hover {
+    border-color: #E91E63;
+    background: #fff1f2;
+}
+
+.file-card-v2.success {
+    background: #f0fdf4;
+    border-color: #22c55e;
+    border-style: solid;
+}
+
+.file-card-v2.success .f-icon,
+.file-card-v2.success .f-title {
+    color: #22c55e;
+}
+
+.file-card-v2 input {
+    display: none;
+}
+
+/* SUCCESS VIEW */
+.success-icon {
+    color: #E91E63;
+    margin-bottom: 25px;
+}
+
+.success-view h2 {
+    font-weight: 900;
+    margin-bottom: 15px;
+}
+
+.success-view p {
+    color: #64748b;
+    font-weight: 600;
+    margin-bottom: 30px;
+}
+
+/* ANIMATIONS */
+.animate-fade-in {
+    animation: fadeIn 0.4s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

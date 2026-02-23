@@ -1,0 +1,967 @@
+import React, { useState, useEffect, useRef } from 'react';
+import {
+    View,
+    Text,
+    StyleSheet,
+    TouchableOpacity,
+    SafeAreaView,
+    StatusBar,
+    Animated,
+    Dimensions,
+    Image,
+    ScrollView,
+    TextInput,
+    Platform,
+    Alert,
+    BackHandler
+} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Geolocation from 'react-native-geolocation-service';
+import {
+    Menu,
+    Search,
+    Navigation,
+    MapPin,
+    Clock,
+    Package,
+    Bike,
+    Car,
+    Truck,
+    Star,
+    Shield,
+    CheckCircle,
+    X,
+    Heart,
+    User,
+    ArrowLeft,
+    Smartphone,
+    CreditCard
+} from 'lucide-react-native';
+import colors from '../theme/colors';
+import socket from '../services/socket';
+import api from '../services/api';
+import hereService from '../services/hereService';
+import hereRoutingService from '../services/hereRoutingService';
+import HereMap from '../components/HereMap';
+import { useAuth } from '../context/AuthContext';
+import Toast from 'react-native-toast-message';
+
+const { width, height } = Dimensions.get('window');
+
+export default function DeliveryFlowScreen({ navigation, route }) {
+    const { user } = useAuth();
+    const [step, setStep] = useState('home'); // home -> searching_address -> delivery_details -> service_selection ...
+    const [loading, setLoading] = useState(false);
+    const [destination, setDestination] = useState(null);
+    const [pickupAddress, setPickupAddress] = useState('Obtendo localização...');
+    const [pickupCoords, setPickupCoords] = useState(route.params?.pickupCoords || { lat: -8.839, lng: 13.289 });
+    const [selectedService, setSelectedService] = useState(null);
+    const [availableServices, setAvailableServices] = useState([]);
+    const [calculatedServices, setCalculatedServices] = useState([]);
+    const [tripId, setTripId] = useState(null);
+    const [acceptedDriver, setAcceptedDriver] = useState(null);
+    const [currentFare, setCurrentFare] = useState(0);
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searchResults, setSearchResults] = useState([]);
+    const [deliveryInfo, setDeliveryInfo] = useState({
+        recipientName: '',
+        recipientPhone: '',
+        packageDescription: ''
+    });
+
+    const [mapReady, setMapReady] = useState(false);
+
+    const mapRef = useRef(null);
+    const radarAnim = useRef(new Animated.Value(0)).current;
+
+    // --- Effects (Similar to RideFlow but specific for Delivery Persistence) ---
+
+    const pickupCoordsRef = useRef(pickupCoords);
+    const mapReadyRef = useRef(false);
+
+    useEffect(() => {
+        pickupCoordsRef.current = pickupCoords;
+    }, [pickupCoords]);
+
+    useEffect(() => {
+        loadServices();
+
+        // Initial setup for coordinates
+        if (!route.params?.pickupCoords && !route.params?.tripId) {
+            Geolocation.getCurrentPosition(
+                async (pos) => {
+                    const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                    setPickupCoords(coords);
+                    const addr = await hereService.reverseGeocode(coords.lat, coords.lng);
+                    if (addr) setPickupAddress(addr);
+                },
+                (err) => console.log(err),
+                { enableHighAccuracy: true }
+            );
+        }
+
+        // Hydrate from route params (Resume mode)
+        if (route.params?.tripId) {
+            hydrateFromTrip(route.params.tripId);
+        } else if (route.params?.step === 'home') {
+            // Force reset when starting new delivery from Hub
+            console.log('✨ [DeliveryFlow] Iniciando novo pedido de entrega...');
+            resetFlow();
+        }
+
+        // Ensure socket is alive and joined
+        if (!socket.connected) {
+            socket.connect();
+        } else if (user) {
+            socket.emit('join', { userId: user.id, role: 'client' });
+        }
+    }, [route.params?.tripId, route.params?.step]);
+
+    const hydrateFromTrip = async (id) => {
+        try {
+            setLoading(true);
+            const res = await api.get(`/trips/${id}`); // We'll need this endpoint or info from history
+            const trip = res.data;
+            if (trip) {
+                setTripId(trip.id);
+                setStep(trip.status === 'requested' ? 'requesting' :
+                    trip.status === 'completed' ? 'waiting_payment' : trip.status);
+                setDestination({
+                    name: trip.dest_address?.split(',')[0],
+                    address: trip.dest_address,
+                    lat: trip.dest_lat,
+                    lng: trip.dest_lng
+                });
+                setDeliveryInfo(trip.delivery_info || {});
+                if (trip.profiles_trips_driver_idToprofiles) {
+                    setAcceptedDriver({
+                        id: trip.driver_id,
+                        name: trip.profiles_trips_driver_idToprofiles.full_name,
+                        lat: trip.driver_lat,
+                        lng: trip.driver_lng
+                    });
+                }
+                if (trip.current_fare || trip.estimated_fare || trip.final_fare) {
+                    // Prioritize live fare (current_fare) over final/estimated - covers carousel restore case
+                    setCurrentFare(Number(trip.current_fare || trip.final_fare || trip.estimated_fare));
+                }
+                // JOIN ROOM correctly with payload expected by server
+                console.log(`📡 [DeliveryFlow] Entrando na sala do cliente: client_${user.id}`);
+                socket.emit('join', { userId: user.id, role: 'client' });
+            }
+        } catch (e) {
+            console.error('Error hydrating trip:', e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const checkActiveDelivery = async () => {
+        // Fallback or handle multi-active check here
+        const res = await api.get(`/trips/active/${user.id}`);
+        const activeTrips = res.data;
+        const delivery = activeTrips?.find(t => t.category === 'delivery');
+        if (delivery) {
+            hydrateFromTrip(delivery.id);
+        }
+    };
+
+    useEffect(() => {
+        const delay = setTimeout(async () => {
+            if (searchQuery.length >= 3) {
+                const results = await hereService.fetchSuggestions(searchQuery, pickupCoordsRef.current);
+                setSearchResults(results);
+            } else { setSearchResults([]); }
+        }, 500);
+        return () => clearTimeout(delay);
+    }, [searchQuery]);
+
+    useEffect(() => {
+        if (step === 'requesting') {
+            Animated.loop(Animated.sequence([
+                Animated.timing(radarAnim, { toValue: 1, duration: 1500, useNativeDriver: false }),
+                Animated.timing(radarAnim, { toValue: 0, duration: 0, useNativeDriver: false })
+            ])).start();
+        } else { radarAnim.setValue(0); }
+    }, [step]);
+
+    useEffect(() => {
+        const backAction = () => {
+            if (step === 'home') {
+                navigation.navigate('App', { screen: 'Dashboard' });
+                return true;
+            }
+            if (['searching_address', 'delivery_details', 'service_selection'].includes(step)) {
+                setStep('home');
+                return true;
+            }
+            navigation.navigate('App', { screen: 'Dashboard' });
+            return true;
+        };
+        const backHandler = BackHandler.addEventListener("hardwareBackPress", backAction);
+        return () => backHandler.remove();
+    }, [step]);
+
+    // --- Socket Listeners (Stabilized) ---
+    useEffect(() => {
+        const onTripCreated = (data) => {
+            console.log('📦 [DeliveryFlow] Trip created:', data.tripId);
+            setTripId(data.tripId);
+            setStep('requesting');
+            // Room join is usually handled in useEffect or upon login, but ensuring here
+            socket.emit('join', { userId: user.id, role: 'client' });
+        };
+        const onTripAccepted = (data) => { setAcceptedDriver(data.driver); setStep('accepted'); };
+        const onRideStarted = () => setStep('ongoing');
+        const onTripUpdate = (data) => {
+            if (data.currentFare) setCurrentFare(data.currentFare);
+            // Backend sends coords as { lat, lng } object inside data.coords
+            const lat = data.coords?.lat ?? data.driverLat;
+            const lng = data.coords?.lng ?? data.driverLng;
+            if (lat) mapRef.current?.setDriverPosition({ lat, lng });
+        };
+        const onRideFinished = (data) => { setStep('waiting_payment'); setCurrentFare(data.finalFare); };
+        const onPaymentConfirmed = () => setStep('finished');
+
+        const onTripCancelled = () => {
+            Toast.show({ type: 'error', text1: 'Cancelada', text2: 'A entrega foi cancelada.' });
+            resetFlow();
+        };
+
+        const onTripTimeout = (data) => {
+            Toast.show({ type: 'error', text1: 'Timeout', text2: data.message });
+            resetFlow();
+        };
+
+        socket.on('trip_created', onTripCreated);
+        socket.on('trip_accepted', onTripAccepted);
+        socket.on('ride_started', onRideStarted);
+        socket.on('trip_update', onTripUpdate);
+        socket.on('ride_finished', onRideFinished);
+        socket.on('payment_confirmed', onPaymentConfirmed);
+        socket.on('trip_cancelled', onTripCancelled);
+        socket.on('trip_timeout', onTripTimeout);
+
+        return () => {
+            socket.off('trip_created', onTripCreated);
+            socket.off('trip_accepted', onTripAccepted);
+            socket.off('ride_started', onRideStarted);
+            socket.off('trip_update', onTripUpdate);
+            socket.off('ride_finished', onRideFinished);
+            socket.off('payment_confirmed', onPaymentConfirmed);
+            socket.off('trip_cancelled', onTripCancelled);
+            socket.off('trip_timeout', onTripTimeout);
+        };
+    }, []);
+
+    const resetFlow = () => {
+        setStep('home');
+        setTripId(null);
+        setAcceptedDriver(null);
+        setDestination(null);
+        setCurrentFare(0);
+        setSearchQuery('');
+        if (mapRef.current) {
+            mapRef.current.clearMap();
+            mapRef.current.setUserLocation(pickupCoordsRef.current);
+        }
+    };
+
+    // --- Helpers ---
+    const loadServices = async () => {
+        try { const res = await api.getServices(); setAvailableServices(res.data); } catch (e) { }
+    };
+
+    const calculateFares = async (destLat, destLng) => {
+        if (!pickupCoords) return;
+        const route = await hereRoutingService.getRoute(pickupCoords, { lat: destLat, lng: destLng });
+        if (route) {
+            mapRef.current?.drawRoute(route.rawPolyline || route.geometry);
+            const distKm = parseFloat(route.distanceKm);
+            const durMin = route.durationMin;
+
+            const calculated = availableServices
+                .filter(s => s.category === 'delivery') // Only delivery services
+                .map(service => {
+                    const base = parseFloat(service.base_fare || 0);
+                    const pKm = parseFloat(service.price_per_km || 0);
+                    const pMin = parseFloat(service.price_per_min || 0);
+                    const minFare = parseFloat(service.min_fare || 0);
+                    let total = base + (distKm * pKm) + (durMin * pMin);
+                    total = Math.max(total, minFare);
+                    return { ...service, estimatedPrice: Math.round(total), estimatedTime: Math.ceil(durMin) };
+                });
+            setCalculatedServices(calculated);
+        }
+    };
+
+    const handleSelectDestination = (item) => {
+        setDestination(item);
+        setSearchQuery(item.address || item.name);
+        // After destination, go to DETAILS
+        setStep('delivery_details');
+
+        if (mapRef.current && pickupCoords) {
+            const dest = { lat: item.lat, lng: item.lng };
+            mapRef.current.setMarkers(pickupCoords, dest);
+        }
+    };
+
+    const handleConfirmDetails = () => {
+        if (!deliveryInfo.recipientName || !deliveryInfo.recipientPhone || !deliveryInfo.packageDescription) {
+            Toast.show({ type: 'error', text1: 'Campos obrigatórios', text2: 'Preencha todos os dados da entrega.' });
+            return;
+        }
+        calculateFares(destination.lat, destination.lng);
+        setStep('service_selection');
+    };
+
+    const handleRequestDelivery = () => {
+        if (!selectedService || !destination) return;
+
+        const payload = {
+            clientId: user.id,
+            userName: user.full_name,
+            originAddress: pickupAddress,
+            destAddress: destination.name,
+            originLat: pickupCoords.lat,
+            originLng: pickupCoords.lng,
+            destLat: destination.lat,
+            destLng: destination.lng,
+            category: 'delivery',
+            price: Number(selectedService.estimatedPrice),
+            estimatedFare: Number(selectedService.estimatedPrice),
+            serviceId: Number(selectedService.id),
+            deliveryInfo: deliveryInfo // Important!
+        };
+
+        socket.emit('request_trip', payload);
+    };
+
+    const onMapTap = async (coords) => {
+        if (step !== 'home' && step !== 'searching_address') return;
+        const address = await hereService.reverseGeocode(coords.lat, coords.lng);
+        handleSelectDestination({
+            name: address ? address.split(',')[0] : 'Local',
+            address: address,
+            lat: coords.lat,
+            lng: coords.lng
+        });
+    };
+
+    // --- Render ---
+    const renderContent = () => {
+        switch (step) {
+            case 'home':
+            case 'searching_address':
+                // Re-use search UI or simplified one? Reuse simpler for brevity but could copy full one if needed.
+                // Using the full one from RideFlow logic for better UX
+                return (
+                    <View style={styles.searchContainer}>
+                        <View style={styles.searchHeader}>
+                            <TouchableOpacity onPress={() => navigation.navigate('App', { screen: 'Dashboard' })}><ArrowLeft size={24} color={colors.text} /></TouchableOpacity>
+                            <Text style={styles.headerTitlePink}>NOVA ENTREGA</Text>
+                            <View style={{ width: 24 }} />
+                        </View>
+                        <View style={styles.inputsWrapper}>
+                            <View style={styles.inputBoxActive}>
+                                <TextInput
+                                    style={styles.inputTextActive}
+                                    placeholder="Onde entregar?"
+                                    value={searchQuery}
+                                    onChangeText={setSearchQuery}
+                                    autoFocus
+                                />
+                                {searchQuery.length > 0 && <TouchableOpacity onPress={() => setSearchQuery('')}><X size={18} color={colors.primary} /></TouchableOpacity>}
+                            </View>
+                        </View>
+                        <ScrollView style={styles.resultsList}>
+                            {searchResults.map((item) => (
+                                <TouchableOpacity key={item.id} style={styles.resultItem} onPress={() => handleSelectDestination(item)}>
+                                    <MapPin size={20} color={colors.primary} style={{ marginRight: 10 }} />
+                                    <View><Text style={styles.resultName}>{item.name}</Text><Text style={styles.resultAddress}>{item.address}</Text></View>
+                                </TouchableOpacity>
+                            ))}
+                            <TouchableOpacity style={styles.resultItem} onPress={() => { /* Logic to use map center */ }}>
+                                <MapPin size={20} color={colors.primary} style={{ marginRight: 10 }} />
+                                <Text style={styles.resultName}>Selecionar no mapa</Text>
+                            </TouchableOpacity>
+                        </ScrollView>
+                    </View>
+                );
+
+            case 'delivery_details':
+                return (
+                    <View style={styles.bottomSheet}>
+                        <Text style={styles.sheetTitleCallback}>DETALHES DA ENTREGA</Text>
+                        <Text style={styles.inputLabel}>Para quem enviamos?</Text>
+                        <TextInput style={styles.deliveryInput} placeholder="Nome do Destinatário" value={deliveryInfo.recipientName} onChangeText={t => setDeliveryInfo({ ...deliveryInfo, recipientName: t })} />
+
+                        <Text style={styles.inputLabel}>Telemóvel</Text>
+                        <TextInput style={styles.deliveryInput} placeholder="9xx xxx xxx" keyboardType="phone-pad" value={deliveryInfo.recipientPhone} onChangeText={t => setDeliveryInfo({ ...deliveryInfo, recipientPhone: t })} />
+
+                        <Text style={styles.inputLabel}>Conteúdo</Text>
+                        <TextInput style={[styles.deliveryInput, { height: 60 }]} placeholder="O que é?" multiline value={deliveryInfo.packageDescription} onChangeText={t => setDeliveryInfo({ ...deliveryInfo, packageDescription: t })} />
+
+                        <TouchableOpacity style={styles.primaryBtn} onPress={handleConfirmDetails}>
+                            <Text style={styles.primaryBtnText}>Próximo</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+
+            case 'service_selection':
+                return (
+                    <View style={styles.bottomSheet}>
+                        <Text style={styles.sheetTitleCallback}>VEÍCULO</Text>
+                        {calculatedServices.map(service => (
+                            <TouchableOpacity key={service.id} style={[styles.serviceItem, selectedService?.id === service.id && styles.serviceItemActive]} onPress={() => setSelectedService(service)}>
+                                <Text style={styles.serviceName}>{service.name}</Text>
+                                <Text style={styles.servicePrice}>{service.estimatedPrice.toLocaleString()} Kz</Text>
+                            </TouchableOpacity>
+                        ))}
+                        <TouchableOpacity style={styles.primaryBtn} onPress={handleRequestDelivery} disabled={!selectedService}>
+                            <Text style={styles.primaryBtnText}>Chamar Entregador</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+
+            case 'requesting':
+                return (
+                    <View style={styles.overlay}>
+                        <View style={styles.radarContainer}>
+                            <Animated.View style={[styles.radarRing, {
+                                transform: [{ scale: radarAnim.interpolate({ inputRange: [0, 1], outputRange: [1, 2.5] }) }],
+                                opacity: radarAnim.interpolate({ inputRange: [0, 1], outputRange: [0.8, 0] })
+                            }]} />
+                            <Package size={40} color="#FFF" />
+                        </View>
+                        <Text style={styles.overlayTitle}>Procurando entregador...</Text>
+                        <Text style={styles.overlaySub}>Estamos conectando sua encomenda ao melhor estafeta</Text>
+
+                        <View style={styles.waitingActions}>
+                            <TouchableOpacity style={styles.cancelBtn} onPress={() => {
+                                socket.emit('cancel_trip', { tripId, userId: user.id });
+                                resetFlow();
+                            }}>
+                                <Text style={styles.cancelText}>Cancelar Pedido</Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.cancelBtn, { backgroundColor: 'rgba(255,255,255,0.1)', marginTop: 15 }]}
+                                onPress={() => navigation.navigate('App', { screen: 'Dashboard' })}
+                            >
+                                <Text style={styles.cancelText}>Voltar ao Dashboard</Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                );
+
+            case 'accepted':
+            case 'ongoing':
+                return (
+                    <View style={styles.trackingWrapper}>
+                        {/* Header Row: Status + Elegant Price */}
+                        <View style={styles.trackingHeaderRow}>
+                            <View style={[styles.statusBadgeAccepted, { flex: 0 }]}>
+                                <Text style={styles.statusBadgeTextAccepted}>
+                                    {step === 'accepted' ? 'MOTORISTA A CAMINHO' : 'ENTREGA EM CURSO'}
+                                </Text>
+                            </View>
+                            <View style={styles.elegantPricePill}>
+                                <Text style={styles.pricePillText}>
+                                    {(currentFare || selectedService?.estimatedPrice || 0).toLocaleString()} Kz
+                                </Text>
+                            </View>
+                        </View>
+
+                        <ScrollView
+                            style={styles.trackingScrollArea}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={{ paddingBottom: 100 }}
+                        >
+                            {/* Driver & Vehicle Section */}
+                            <View style={styles.premiumSection}>
+                                <View style={styles.sectionHeader}>
+                                    <View style={styles.driverAvatarLarge}>
+                                        <Text style={styles.avatarText}>{acceptedDriver?.name?.[0] || 'D'}</Text>
+                                    </View>
+                                    <View style={styles.driverCoreInfo}>
+                                        <Text style={styles.cardDriverName}>{acceptedDriver?.name || 'Carregando...'}</Text>
+                                        <Text style={styles.driverVehicleText}>Toyota Corolla • LD-00-00-AA</Text>
+                                        <View style={styles.ratingRow}>
+                                            <Star size={12} color="#F59E0B" fill="#F59E0B" />
+                                            <Text style={styles.ratingText}>4.9 (240 viagens)</Text>
+                                        </View>
+                                    </View>
+                                    <View style={styles.actionGroup}>
+                                        <TouchableOpacity style={styles.actionCircleBtn}>
+                                            <Smartphone size={18} color="#FFF" />
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </View>
+
+                            {/* Delivery & Package Details */}
+                            <View style={styles.premiumSection}>
+                                <View style={styles.detailRow}>
+                                    <View style={styles.iconBoxPink}><Package size={18} color={colors.primary} /></View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.detailLabel}>O QUE ENVIAMOS</Text>
+                                        <Text style={styles.detailValue}>{deliveryInfo.packageDescription}</Text>
+                                    </View>
+                                </View>
+
+                                <View style={styles.sectionDivider} />
+
+                                <View style={styles.detailRow}>
+                                    <View style={styles.iconBoxPink}><User size={18} color={colors.primary} /></View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.detailLabel}>DESTINATÁRIO</Text>
+                                        <Text style={styles.detailValue}>{deliveryInfo.recipientName}</Text>
+                                        <Text style={styles.detailSubValue}>{deliveryInfo.recipientPhone}</Text>
+                                    </View>
+                                </View>
+
+                                <View style={styles.sectionDivider} />
+
+                                <View style={styles.detailRow}>
+                                    <View style={styles.iconBoxPink}><MapPin size={18} color={colors.primary} /></View>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.detailLabel}>DESTINO FINAL</Text>
+                                        <Text style={styles.detailValue}>{destination?.name}</Text>
+                                        <Text style={styles.detailSubValue}>{destination?.address}</Text>
+                                    </View>
+                                </View>
+                            </View>
+                        </ScrollView>
+
+                        {/* Fixed Footer Ribbon */}
+                        <TouchableOpacity
+                            style={styles.fixedRibbonBtn}
+                            onPress={() => navigation.navigate('Dashboard')}
+                        >
+                            <Text style={styles.fixedRibbonText}>Voltar ao Dashboard</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+
+            case 'waiting_payment':
+                return (
+                    <View style={styles.overlay}>
+                        <View style={styles.paymentCard}>
+                            <View style={styles.paymentIconBox}>
+                                <CreditCard size={40} color={colors.primary} />
+                            </View>
+                            <Text style={styles.paymentTitle}>Pagamento Pendente</Text>
+                            <Text style={styles.paymentSub}>Aguardando o entregador confirmar o recebimento.</Text>
+
+                            <View style={styles.finalFareBox}>
+                                <Text style={styles.finalFareLabel}>Valor Total</Text>
+                                <Text style={styles.finalFareValue}>Kz {currentFare.toLocaleString()}</Text>
+                            </View>
+
+                            <View style={styles.waitingActionsOverlay}>
+                                <TouchableOpacity
+                                    style={styles.cancelBtnOverlay}
+                                    onPress={() => navigation.navigate('App', { screen: 'Dashboard' })}
+                                >
+                                    <Text style={styles.cancelTextOverlay}>Voltar ao Dashboard</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                );
+
+            case 'finished':
+                return (
+                    <View style={styles.overlay}>
+                        <View style={styles.successIconBox}>
+                            <CheckCircle size={80} color="#10B981" />
+                        </View>
+                        <Text style={styles.overlayTitle}>Entrega Concluída!</Text>
+                        <Text style={styles.overlaySub}>O valor final foi de Kz {currentFare.toLocaleString()}</Text>
+                        <TouchableOpacity style={styles.primaryBtnLarge} onPress={resetFlow}>
+                            <Text style={styles.primaryBtnTextLarge}>Concluído</Text>
+                        </TouchableOpacity>
+                    </View>
+                );
+            default: return null;
+        }
+    };
+
+    const isTracking = step === 'accepted' || step === 'ongoing';
+    const isOverlay = step === 'requesting' || step === 'waiting_payment' || step === 'finished';
+
+    return (
+        <SafeAreaView style={styles.container}>
+            <View style={[
+                styles.mapContainer,
+                isTracking && styles.mapContainerSmall
+            ]}>
+                <HereMap
+                    ref={mapRef}
+                    onMapTap={onMapTap}
+                    onMapReady={() => {
+                        console.log('🗺️ [DeliveryFlow] Mapa pronto.');
+                        setMapReady(true);
+                        mapReadyRef.current = true;
+                    }}
+                />
+
+                {/* Sidebar Menu Icon - ONLY in tracking states, hide in Overlays */}
+                {isTracking && !isOverlay && (
+                    <TouchableOpacity
+                        style={styles.menuIconButton}
+                        onPress={() => navigation.openDrawer()}
+                    >
+                        <Menu size={24} color={colors.text} />
+                    </TouchableOpacity>
+                )}
+
+                {/* Manual Sync Button (Fallback) */}
+                {tripId && (
+                    <TouchableOpacity
+                        style={styles.syncButton}
+                        onPress={() => {
+                            if (destination) {
+                                mapRef.current?.setMarkers(pickupCoordsRef.current, destination);
+                                calculateFares(destination.lat, destination.lng);
+                            }
+                        }}
+                    >
+                        <Navigation size={20} color={colors.primary} />
+                    </TouchableOpacity>
+                )}
+            </View>
+
+            {isTracking ? (
+                <View style={styles.contentAreaLarge}>
+                    {renderContent()}
+                </View>
+            ) : (
+                renderContent()
+            )}
+        </SafeAreaView>
+    );
+}
+
+const styles = StyleSheet.create({
+    container: { flex: 1, backgroundColor: '#FFF' },
+    mapPlaceholder: { flex: 1 },
+    bottomSheet: {
+        backgroundColor: '#FFF',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        padding: 30,
+        ...colors.shadow,
+        position: 'absolute', bottom: 0, width: '100%'
+    },
+    sheetTitleCallback: { fontSize: 18, fontWeight: '900', color: colors.primary, marginBottom: 15, textTransform: 'uppercase' },
+    inputLabel: { fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginBottom: 5, marginTop: 10 },
+    deliveryInput: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 15, fontSize: 15, color: colors.text, borderWidth: 1, borderColor: '#E2E8F0' },
+    primaryBtn: { backgroundColor: colors.primary, height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
+    primaryBtnText: { color: '#FFF', fontSize: 16, fontWeight: '900' },
+    // Search
+    searchContainer: { ...StyleSheet.absoluteFillObject, backgroundColor: '#FFF' },
+    searchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },
+    headerTitlePink: { fontSize: 16, fontWeight: '900', color: colors.primary },
+    inputsWrapper: { paddingHorizontal: 20 },
+    inputBoxActive: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FDF2F5', padding: 10, borderRadius: 10 },
+    inputTextActive: { flex: 1, fontSize: 16, color: colors.text, fontWeight: '600' },
+    resultsList: { padding: 20 },
+    resultItem: { flexDirection: 'row', alignItems: 'center', paddingVertical: 15, borderBottomWidth: 1, borderColor: '#F1F5F9' },
+    resultName: { fontSize: 16, fontWeight: '700', color: colors.text },
+    resultAddress: { fontSize: 13, color: colors.textSecondary },
+    // Service
+    serviceItem: { flexDirection: 'row', justifyContent: 'space-between', padding: 15, borderRadius: 15, backgroundColor: '#F8FAFC', marginBottom: 10, borderWidth: 2, borderColor: 'transparent' },
+    serviceItemActive: { backgroundColor: '#FDF2F5', borderColor: colors.primary },
+    serviceName: { fontSize: 16, fontWeight: '800', color: colors.text },
+    servicePrice: { fontSize: 16, fontWeight: '900', color: colors.text },
+    acceptedTitle: { fontSize: 24, fontWeight: '900', color: colors.text, textAlign: 'center', marginVertical: 20 },
+    driverName: { fontSize: 18, fontWeight: '700', textAlign: 'center' },
+    syncButton: {
+        position: 'absolute',
+        top: 60,
+        right: 20,
+        width: 45,
+        height: 45,
+        borderRadius: 22.5,
+        backgroundColor: '#FFF',
+        justifyContent: 'center',
+        alignItems: 'center',
+        ...colors.shadow
+    },
+
+    // Overlay styles for requesting mode
+    overlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(236, 17, 107, 0.95)', // Premium Pink Overlay
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 30,
+        zIndex: 1000
+    },
+    radarContainer: {
+        width: 120,
+        height: 120,
+        borderRadius: 60,
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 30,
+    },
+    radarRing: {
+        position: 'absolute',
+        width: 140,
+        height: 140,
+        borderRadius: 70,
+        borderWidth: 2,
+        borderColor: 'rgba(255,255,255,0.3)',
+    },
+    overlayTitle: {
+        fontSize: 26,
+        fontWeight: '950',
+        color: '#FFF',
+        textAlign: 'center',
+        marginBottom: 10,
+    },
+    overlaySub: {
+        fontSize: 15,
+        color: 'rgba(255,255,255,0.8)',
+        textAlign: 'center',
+        marginBottom: 40,
+        fontWeight: '600'
+    },
+    waitingActions: { width: '100%', alignItems: 'center' },
+    cancelBtn: {
+        backgroundColor: 'rgba(255,255,255,0.2)',
+        paddingHorizontal: 30,
+        paddingVertical: 15,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: 'rgba(255,255,255,0.4)',
+        width: '80%',
+        alignItems: 'center'
+    },
+    cancelText: {
+        color: '#FFF',
+        fontWeight: '900',
+        fontSize: 15
+    },
+
+    // --- New Redesign Styles ---
+    mapContainer: { flex: 1 },
+    mapContainerSmall: { flex: 0.3 },
+    contentArea: { position: 'absolute', bottom: 0, width: '100%', zIndex: 10 },
+    contentAreaLarge: {
+        position: 'relative',
+        flex: 0.7,
+        backgroundColor: '#F8FAFC',
+        borderTopLeftRadius: 32,
+        borderTopRightRadius: 32,
+        ...colors.shadow,
+        shadowOpacity: 0.012, // 50% reduction from previous value
+        elevation: 2
+    },
+    menuIconButton: {
+        position: 'absolute',
+        top: 50,
+        left: 20,
+        width: 50,
+        height: 50,
+        borderRadius: 25,
+        backgroundColor: '#FFF',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 1001,
+        ...colors.shadow
+    },
+    trackingScroll: { padding: 25 },
+    trackingHeader: { alignItems: 'center', marginBottom: 25 },
+    trackingTitle: { fontSize: 24, fontWeight: '950', color: colors.text, marginTop: 10 },
+    statusBadgeAccepted: { backgroundColor: '#FDF2F5', paddingVertical: 6, paddingHorizontal: 15, borderRadius: 12 },
+    statusBadgeTextAccepted: { color: colors.primary, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+    statusBadgeOngoing: { backgroundColor: '#FDF2F5', paddingVertical: 6, paddingHorizontal: 15, borderRadius: 12 },
+    statusBadgeTextOngoing: { color: colors.primary, fontSize: 11, fontWeight: '900', letterSpacing: 1 },
+    premiumCard: {
+        backgroundColor: '#FFF',
+        borderRadius: 24,
+        padding: 20,
+        marginBottom: 15,
+        ...colors.shadow,
+        shadowOpacity: 0.025, // 75% reduction
+        elevation: 2
+    },
+    solidPinkCard: {
+        backgroundColor: colors.primary,
+    },
+    priceLabelWhite: { fontSize: 11, fontWeight: '800', color: 'rgba(255,255,255,0.8)', marginBottom: 5 },
+    priceValueWhite: { fontSize: 36, fontWeight: '950', color: '#FFF' },
+    fullWidthBackBtn: {
+        backgroundColor: colors.primary,
+        width: width, // Full width
+        marginLeft: -25, // Compensation for trackingScroll padding
+        height: 45, // Reduced height
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 40,
+    },
+    fullWidthBackBtnText: {
+        color: '#FFF',
+        fontSize: 15,
+        fontWeight: '800',
+        textTransform: 'uppercase',
+    },
+    cardHeader: { flexDirection: 'row', alignItems: 'center' },
+    driverAvatarLarge: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
+    avatarText: { fontSize: 28, fontWeight: '900', color: '#FFF' },
+    driverCoreInfo: { flex: 1, marginLeft: 15 },
+    cardDriverName: { fontSize: 18, fontWeight: '900', color: colors.text },
+    ratingRow: { flexDirection: 'row', alignItems: 'center', marginTop: 4 },
+    ratingText: { marginLeft: 5, fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+    chatActionBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
+    cardSection: { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+    cardLabel: { fontSize: 10, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
+    cardValue: { fontSize: 15, fontWeight: '700', color: colors.text, marginTop: 2 },
+    cardSubValue: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+    cardDivider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 5 },
+    priceLabel: { fontSize: 11, fontWeight: '800', color: colors.textSecondary, marginBottom: 5 },
+    priceValue: { fontSize: 36, fontWeight: '950', color: colors.primary },
+    driverMinimalRow: { flexDirection: 'row', alignItems: 'center' },
+    driverAvatarSmall: { width: 44, height: 44, borderRadius: 18, backgroundColor: '#F1F5F9', justifyContent: 'center', alignItems: 'center' },
+    avatarTextSmall: { fontSize: 18, fontWeight: '900', color: colors.textSecondary },
+    smallDriverName: { fontSize: 16, fontWeight: '800', color: colors.text },
+    smallDriverCar: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+    smallChatBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#FDF2F5', justifyContent: 'center', alignItems: 'center' },
+
+    // --- Elegant Redesign (Huber Style) ---
+    trackingWrapper: { flex: 1, backgroundColor: '#F8FAFC' },
+    trackingHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 25,
+        paddingVertical: 20,
+        backgroundColor: '#FFF',
+        borderBottomWidth: 1,
+        borderBottomColor: '#F1F5F9'
+    },
+    elegantPricePill: {
+        backgroundColor: colors.primary,
+        paddingHorizontal: 15,
+        paddingVertical: 6,
+        borderRadius: 20,
+        ...colors.shadow,
+        shadowOpacity: 0.025, // Reduced by 50%
+    },
+    pricePillText: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: '900',
+    },
+    trackingScrollArea: { flex: 1 },
+    premiumSection: {
+        backgroundColor: '#FFF',
+        marginHorizontal: 20,
+        marginTop: 15,
+        borderRadius: 24,
+        padding: 20,
+        ...colors.shadow,
+        shadowOpacity: 0.01, // Reduced by 50%
+        borderWidth: 1,
+        borderColor: '#F1F5F9'
+    },
+    sectionHeader: { flexDirection: 'row', alignItems: 'center' },
+    driverVehicleText: { fontSize: 13, color: colors.textSecondary, fontWeight: '600', marginTop: 2 },
+    actionGroup: { flexDirection: 'row', gap: 10 },
+    actionCircleBtn: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    detailRow: { flexDirection: 'row', alignItems: 'center', gap: 15, paddingVertical: 5 },
+    iconBoxPink: {
+        width: 36,
+        height: 36,
+        borderRadius: 12,
+        backgroundColor: '#FDF2F5',
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    detailLabel: { fontSize: 9, fontWeight: '900', color: colors.textMuted, letterSpacing: 1 },
+    detailValue: { fontSize: 15, fontWeight: '800', color: colors.text, marginTop: 2 },
+    detailSubValue: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+    sectionDivider: { height: 1, backgroundColor: '#F1F5F9', marginVertical: 12 },
+    fixedRibbonBtn: {
+        position: 'absolute',
+        bottom: 0,
+        width: '100%',
+        backgroundColor: colors.primary,
+        height: 55,
+        justifyContent: 'center',
+        alignItems: 'center',
+        borderTopLeftRadius: 0,
+        borderTopRightRadius: 0,
+    },
+    fixedRibbonText: {
+        color: '#FFF',
+        fontSize: 14,
+        fontWeight: '950',
+        textTransform: 'uppercase',
+        letterSpacing: 2
+    },
+    priceValueLarge: { fontSize: 42, fontWeight: '950', color: colors.primary, marginTop: 10 },
+    priceSubtext: { fontSize: 13, color: colors.textSecondary, fontWeight: '600', marginTop: 5, textAlign: 'center' },
+    paymentCard: {
+        backgroundColor: '#FFF',
+        width: '90%',
+        borderRadius: 32,
+        padding: 30,
+        alignItems: 'center',
+        ...colors.shadow,
+    },
+    paymentIconBox: {
+        width: 80,
+        height: 80,
+        borderRadius: 40,
+        backgroundColor: '#FDF2F5',
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 20,
+    },
+    paymentTitle: { fontSize: 22, fontWeight: '900', color: colors.text, marginBottom: 10 },
+    paymentSub: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', fontWeight: '600', lineHeight: 20, marginBottom: 25 },
+    finalFareBox: {
+        backgroundColor: '#F8FAFC',
+        width: '100%',
+        padding: 20,
+        borderRadius: 20,
+        alignItems: 'center',
+        marginBottom: 25,
+    },
+    finalFareLabel: { fontSize: 11, fontWeight: '800', color: colors.textSecondary, textTransform: 'uppercase', marginBottom: 5 },
+    finalFareValue: { fontSize: 32, fontWeight: '950', color: colors.primary },
+    successIconBox: { marginBottom: 20 },
+    primaryBtnLarge: {
+        backgroundColor: colors.primary,
+        width: '100%',
+        height: 55,
+        borderRadius: 18,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    primaryBtnTextLarge: { color: '#FFF', fontSize: 18, fontWeight: '800' },
+    waitingActionsOverlay: { width: '100%', marginTop: 5 },
+    cancelBtnOverlay: {
+        backgroundColor: 'rgba(0,0,0,0.05)',
+        paddingVertical: 15,
+        borderRadius: 15,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: 'rgba(0,0,0,0.1)'
+    },
+    cancelTextOverlay: { color: colors.text, fontWeight: '800', fontSize: 14 }
+});

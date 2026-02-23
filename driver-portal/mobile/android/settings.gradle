@@ -1,0 +1,31 @@
+pluginManagement {
+    includeBuild("../node_modules/@react-native/gradle-plugin")
+}
+
+plugins {
+    id("com.facebook.react.settings")
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.PREFER_SETTINGS)
+    repositories {
+        google()
+        mavenCentral()
+        maven {
+            url "https://api.mapbox.com/downloads/v2/releases/maven"
+            authentication {
+                basic(BasicAuthentication)
+            }
+            credentials {
+                def mapboxToken = System.getenv("MAPBOX_DOWNLOADS_TOKEN") ?: providers.gradleProperty("MAPBOX_DOWNLOADS_TOKEN").getOrNull()
+                username = "mapbox"
+                password = mapboxToken ?: ""
+            }
+        }
+    }
+}
+
+rootProject.name = 'DriverMobile'
+extensions.configure(com.facebook.react.ReactSettingsExtension) { ex -> ex.autolinkLibrariesFromCommand() }
+include ':app'
+includeBuild('../node_modules/@react-native/gradle-plugin')

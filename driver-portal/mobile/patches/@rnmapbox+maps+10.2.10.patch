@@ -1,0 +1,547 @@
+diff --git a/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/styles/RNMBXStyleFactory.kt b/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/styles/RNMBXStyleFactory.kt
+index a8456b6..8c381f9 100644
+--- a/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/styles/RNMBXStyleFactory.kt
++++ b/node_modules/@rnmapbox/maps/android/src/main/java/com/rnmapbox/rnmbx/components/styles/RNMBXStyleFactory.kt
+@@ -85,16 +85,6 @@ object RNMBXStyleFactory {
+                         }
+                     }
+                 })
+-              "fillPatternCrossFade" ->
+-                style.addImage(styleValue!!, styleKey, object : OnAllImagesLoaded {
+-                    override fun onAllImagesLoaded() {
+-                        try {
+-                            setFillPatternCrossFade(layer, styleValue)
+-                        } catch (exception: RuntimeException) {
+-                            Logger.e("RNMBXFill",String.format("Exception failed during setFillPatternCrossFade: %s", exception.message))
+-                        }
+-                    }
+-                })
+               "fillEmissiveStrength" ->
+                 setFillEmissiveStrength(layer, styleValue)
+                 "fillEmissiveStrengthTransition" ->
+@@ -175,36 +165,12 @@ object RNMBXStyleFactory {
+                 setLineGradient(layer, styleValue)
+               "lineTrimOffset" ->
+                 setLineTrimOffset(layer, styleValue)
+-              "lineZOffset" ->
+-                setLineZOffset(layer, styleValue)
+-              "lineElevationReference" ->
+-                setLineElevationReference(layer, styleValue)
+-              "lineCrossSlope" ->
+-                setLineCrossSlope(layer, styleValue)
+-              "linePatternCrossFade" ->
+-                style.addImage(styleValue!!, styleKey, object : OnAllImagesLoaded {
+-                    override fun onAllImagesLoaded() {
+-                        try {
+-                            setLinePatternCrossFade(layer, styleValue)
+-                        } catch (exception: RuntimeException) {
+-                            Logger.e("RNMBXLine",String.format("Exception failed during setLinePatternCrossFade: %s", exception.message))
+-                        }
+-                    }
+-                })
+-              "lineTrimFadeRange" ->
+-                setLineTrimFadeRange(layer, styleValue)
+-              "lineTrimColor" ->
+-                setLineTrimColor(layer, styleValue)
+-                "lineTrimColorTransition" ->
+-                setLineTrimColorTransition(layer, styleValue)
++
+               "lineEmissiveStrength" ->
+                 setLineEmissiveStrength(layer, styleValue)
+                 "lineEmissiveStrengthTransition" ->
+                 setLineEmissiveStrengthTransition(layer, styleValue)
+-              "lineOcclusionOpacity" ->
+-                setLineOcclusionOpacity(layer, styleValue)
+-                "lineOcclusionOpacityTransition" ->
+-                setLineOcclusionOpacityTransition(layer, styleValue)
++
+           }
+         } catch (e: MapboxStyleException) {
+           Logger.e(LOG_TAG, "Failed to update: $styleKey ${e.message}")
+@@ -369,12 +335,7 @@ object RNMBXStyleFactory {
+                 setTextTranslateAnchor(layer, styleValue)
+               "symbolZElevate" ->
+                 setSymbolZElevate(layer, styleValue)
+-              "symbolElevationReference" ->
+-                setSymbolElevationReference(layer, styleValue)
+-              "iconOcclusionOpacity" ->
+-                setIconOcclusionOpacity(layer, styleValue)
+-                "iconOcclusionOpacityTransition" ->
+-                setIconOcclusionOpacityTransition(layer, styleValue)
++
+               "iconEmissiveStrength" ->
+                 setIconEmissiveStrength(layer, styleValue)
+                 "iconEmissiveStrengthTransition" ->
+@@ -393,16 +354,10 @@ object RNMBXStyleFactory {
+                         }
+                     }
+                 })
+-              "textOcclusionOpacity" ->
+-                setTextOcclusionOpacity(layer, styleValue)
+-                "textOcclusionOpacityTransition" ->
+-                setTextOcclusionOpacityTransition(layer, styleValue)
++
+               "iconColorSaturation" ->
+                 setIconColorSaturation(layer, styleValue)
+-              "symbolZOffset" ->
+-                setSymbolZOffset(layer, styleValue)
+-                "symbolZOffsetTransition" ->
+-                setSymbolZOffsetTransition(layer, styleValue)
++
+           }
+         } catch (e: MapboxStyleException) {
+           Logger.e(LOG_TAG, "Failed to update: $styleKey ${e.message}")
+@@ -463,8 +418,6 @@ object RNMBXStyleFactory {
+                 setCircleStrokeOpacity(layer, styleValue)
+                 "circleStrokeOpacityTransition" ->
+                 setCircleStrokeOpacityTransition(layer, styleValue)
+-              "circleElevationReference" ->
+-                setCircleElevationReference(layer, styleValue)
+               "circleEmissiveStrength" ->
+                 setCircleEmissiveStrength(layer, styleValue)
+                 "circleEmissiveStrengthTransition" ->
+@@ -571,20 +524,6 @@ object RNMBXStyleFactory {
+                 setFillExtrusionAmbientOcclusionRadiusTransition(layer, styleValue)
+               "fillExtrusionRoundedRoof" ->
+                 setFillExtrusionRoundedRoof(layer, styleValue)
+-              "fillExtrusionPatternCrossFade" ->
+-                style.addImage(styleValue!!, styleKey, object : OnAllImagesLoaded {
+-                    override fun onAllImagesLoaded() {
+-                        try {
+-                            setFillExtrusionPatternCrossFade(layer, styleValue)
+-                        } catch (exception: RuntimeException) {
+-                            Logger.e("RNMBXFillExtrusion",String.format("Exception failed during setFillExtrusionPatternCrossFade: %s", exception.message))
+-                        }
+-                    }
+-                })
+-              "fillExtrusionHeightAlignment" ->
+-                setFillExtrusionHeightAlignment(layer, styleValue)
+-              "fillExtrusionBaseAlignment" ->
+-                setFillExtrusionBaseAlignment(layer, styleValue)
+               "fillExtrusionAmbientOcclusionWallRadius" ->
+                 setFillExtrusionAmbientOcclusionWallRadius(layer, styleValue)
+                 "fillExtrusionAmbientOcclusionWallRadiusTransition" ->
+@@ -627,10 +566,7 @@ object RNMBXStyleFactory {
+                 setFillExtrusionEmissiveStrength(layer, styleValue)
+                 "fillExtrusionEmissiveStrengthTransition" ->
+                 setFillExtrusionEmissiveStrengthTransition(layer, styleValue)
+-              "fillExtrusionLineWidth" ->
+-                setFillExtrusionLineWidth(layer, styleValue)
+-                "fillExtrusionLineWidthTransition" ->
+-                setFillExtrusionLineWidthTransition(layer, styleValue)
++
+           }
+         } catch (e: MapboxStyleException) {
+           Logger.e(LOG_TAG, "Failed to update: $styleKey ${e.message}")
+@@ -885,8 +821,6 @@ object RNMBXStyleFactory {
+                 setBackgroundOpacity(layer, styleValue)
+                 "backgroundOpacityTransition" ->
+                 setBackgroundOpacityTransition(layer, styleValue)
+-              "backgroundPitchAlignment" ->
+-                setBackgroundPitchAlignment(layer, styleValue)
+               "backgroundEmissiveStrength" ->
+                 setBackgroundEmissiveStrength(layer, styleValue)
+                 "backgroundEmissiveStrengthTransition" ->
+@@ -1220,23 +1154,6 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setFillPatternCrossFade(layer: FillLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.fillPatternCrossFade(expression)
+-        } else {
+-          Logger.e("RNMBXFill", "Expression for fillPatternCrossFade is null")
+-        }
+-      } else {
+-          val value = styleValue.getDouble(VALUE_KEY)
+-          if (value != null) {
+-            layer.fillPatternCrossFade(value)
+-          } else {
+-            Logger.e("RNMBXFill", "value for fillPatternCrossFade is null")
+-          }
+-      }
+-    }
+ 
+     fun setFillEmissiveStrength(layer: FillLayer, styleValue: RNMBXStyleValue ) {
+       if (styleValue.isExpression()) {
+@@ -1619,116 +1536,14 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setLineZOffset(layer: LineLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.lineZOffset(expression)
+-        } else {
+-          Logger.e("RNMBXLine", "Expression for lineZOffset is null")
+-        }
+-      } else {
+-          val value = styleValue.getDouble(VALUE_KEY)
+-          if (value != null) {
+-            layer.lineZOffset(value)
+-          } else {
+-            Logger.e("RNMBXLine", "value for lineZOffset is null")
+-          }
+-      }
+-    }
+ 
+-    fun setLineElevationReference(layer: LineLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.lineElevationReference(expression)
+-        } else {
+-          Logger.e("RNMBXLine", "Expression for lineElevationReference is null")
+-        }
+-      } else {
+-          layer.lineElevationReference(LineElevationReference.valueOf(styleValue.getEnumName()))
+-      }
+-    }
+ 
+-    fun setLineCrossSlope(layer: LineLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.lineCrossSlope(expression)
+-        } else {
+-          Logger.e("RNMBXLine", "Expression for lineCrossSlope is null")
+-        }
+-      } else {
+-          val value = styleValue.getDouble(VALUE_KEY)
+-          if (value != null) {
+-            layer.lineCrossSlope(value)
+-          } else {
+-            Logger.e("RNMBXLine", "value for lineCrossSlope is null")
+-          }
+-      }
+-    }
+ 
+-    fun setLinePatternCrossFade(layer: LineLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.linePatternCrossFade(expression)
+-        } else {
+-          Logger.e("RNMBXLine", "Expression for linePatternCrossFade is null")
+-        }
+-      } else {
+-          val value = styleValue.getDouble(VALUE_KEY)
+-          if (value != null) {
+-            layer.linePatternCrossFade(value)
+-          } else {
+-            Logger.e("RNMBXLine", "value for linePatternCrossFade is null")
+-          }
+-      }
+-    }
+ 
+-    fun setLineTrimFadeRange(layer: LineLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.lineTrimFadeRange(expression)
+-        } else {
+-          Logger.e("RNMBXLine", "Expression for lineTrimFadeRange is null")
+-        }
+-      } else {
+-          val value = styleValue.getFloatArray(VALUE_KEY)
+-          if (value != null) {
+-            layer.lineTrimFadeRange(value)
+-          } else {
+-            Logger.e("RNMBXLine", "value for lineTrimFadeRange is null")
+-          }
+-      }
+-    }
+ 
+-    fun setLineTrimColor(layer: LineLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.lineTrimColor(expression)
+-        } else {
+-          Logger.e("RNMBXLine", "Expression for lineTrimColor is null")
+-        }
+-      } else {
+-          val value = styleValue.getInt(VALUE_KEY)
+-          if (value != null) {
+-            layer.lineTrimColor(value)
+-          } else {
+-            Logger.e("RNMBXLine", "value for lineTrimColor is null")
+-          }
+-      }
+-    }
+ 
+ 
+-    fun setLineTrimColorTransition(layer: LineLayer, styleValue: RNMBXStyleValue) {
+-      val transition = styleValue.transition
+-      if (transition != null) {
+-        layer.lineTrimColorTransition(transition);
+-      }
+-    }
++
+ 
+     fun setLineEmissiveStrength(layer: LineLayer, styleValue: RNMBXStyleValue ) {
+       if (styleValue.isExpression()) {
+@@ -1756,31 +1571,9 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setLineOcclusionOpacity(layer: LineLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.lineOcclusionOpacity(expression)
+-        } else {
+-          Logger.e("RNMBXLine", "Expression for lineOcclusionOpacity is null")
+-        }
+-      } else {
+-          val value = styleValue.getDouble(VALUE_KEY)
+-          if (value != null) {
+-            layer.lineOcclusionOpacity(value)
+-          } else {
+-            Logger.e("RNMBXLine", "value for lineOcclusionOpacity is null")
+-          }
+-      }
+-    }
+ 
+ 
+-    fun setLineOcclusionOpacityTransition(layer: LineLayer, styleValue: RNMBXStyleValue) {
+-      val transition = styleValue.transition
+-      if (transition != null) {
+-        layer.lineOcclusionOpacityTransition(transition);
+-      }
+-    }
++
+ 
+     fun setSymbolPlacement(layer: SymbolLayer, styleValue: RNMBXStyleValue ) {
+       if (styleValue.isExpression()) {
+@@ -2834,20 +2627,10 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setSymbolElevationReference(layer: SymbolLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.symbolElevationReference(expression)
+-        } else {
+-          Logger.e("RNMBXSymbol", "Expression for symbolElevationReference is null")
+-        }
+-      } else {
+-          layer.symbolElevationReference(SymbolElevationReference.valueOf(styleValue.getEnumName()))
+-      }
+-    }
+ 
+     fun setIconOcclusionOpacity(layer: SymbolLayer, styleValue: RNMBXStyleValue ) {
++      // Deprecated in v11
++      /*
+       if (styleValue.isExpression()) {
+         val expression = styleValue.getExpression()
+         if (expression != null) {
+@@ -2863,15 +2646,11 @@ object RNMBXStyleFactory {
+             Logger.e("RNMBXSymbol", "value for iconOcclusionOpacity is null")
+           }
+       }
++      */
+     }
+ 
+ 
+-    fun setIconOcclusionOpacityTransition(layer: SymbolLayer, styleValue: RNMBXStyleValue) {
+-      val transition = styleValue.transition
+-      if (transition != null) {
+-        layer.iconOcclusionOpacityTransition(transition);
+-      }
+-    }
++
+ 
+     fun setIconEmissiveStrength(layer: SymbolLayer, styleValue: RNMBXStyleValue ) {
+       if (styleValue.isExpression()) {
+@@ -2943,31 +2722,9 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setTextOcclusionOpacity(layer: SymbolLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.textOcclusionOpacity(expression)
+-        } else {
+-          Logger.e("RNMBXSymbol", "Expression for textOcclusionOpacity is null")
+-        }
+-      } else {
+-          val value = styleValue.getDouble(VALUE_KEY)
+-          if (value != null) {
+-            layer.textOcclusionOpacity(value)
+-          } else {
+-            Logger.e("RNMBXSymbol", "value for textOcclusionOpacity is null")
+-          }
+-      }
+-    }
+ 
+ 
+-    fun setTextOcclusionOpacityTransition(layer: SymbolLayer, styleValue: RNMBXStyleValue) {
+-      val transition = styleValue.transition
+-      if (transition != null) {
+-        layer.textOcclusionOpacityTransition(transition);
+-      }
+-    }
++
+ 
+     fun setIconColorSaturation(layer: SymbolLayer, styleValue: RNMBXStyleValue ) {
+       if (styleValue.isExpression()) {
+@@ -2987,31 +2744,9 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setSymbolZOffset(layer: SymbolLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.symbolZOffset(expression)
+-        } else {
+-          Logger.e("RNMBXSymbol", "Expression for symbolZOffset is null")
+-        }
+-      } else {
+-          val value = styleValue.getDouble(VALUE_KEY)
+-          if (value != null) {
+-            layer.symbolZOffset(value)
+-          } else {
+-            Logger.e("RNMBXSymbol", "value for symbolZOffset is null")
+-          }
+-      }
+-    }
+ 
+ 
+-    fun setSymbolZOffsetTransition(layer: SymbolLayer, styleValue: RNMBXStyleValue) {
+-      val transition = styleValue.transition
+-      if (transition != null) {
+-        layer.symbolZOffsetTransition(transition);
+-      }
+-    }
++
+ 
+     fun setCircleSortKey(layer: CircleLayer, styleValue: RNMBXStyleValue ) {
+       if (styleValue.isExpression()) {
+@@ -3282,18 +3017,6 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setCircleElevationReference(layer: CircleLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.circleElevationReference(expression)
+-        } else {
+-          Logger.e("RNMBXCircle", "Expression for circleElevationReference is null")
+-        }
+-      } else {
+-          layer.circleElevationReference(CircleElevationReference.valueOf(styleValue.getEnumName()))
+-      }
+-    }
+ 
+     fun setCircleEmissiveStrength(layer: CircleLayer, styleValue: RNMBXStyleValue ) {
+       if (styleValue.isExpression()) {
+@@ -3714,49 +3437,8 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setFillExtrusionPatternCrossFade(layer: FillExtrusionLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.fillExtrusionPatternCrossFade(expression)
+-        } else {
+-          Logger.e("RNMBXFillExtrusion", "Expression for fillExtrusionPatternCrossFade is null")
+-        }
+-      } else {
+-          val value = styleValue.getDouble(VALUE_KEY)
+-          if (value != null) {
+-            layer.fillExtrusionPatternCrossFade(value)
+-          } else {
+-            Logger.e("RNMBXFillExtrusion", "value for fillExtrusionPatternCrossFade is null")
+-          }
+-      }
+-    }
+ 
+-    fun setFillExtrusionHeightAlignment(layer: FillExtrusionLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.fillExtrusionHeightAlignment(expression)
+-        } else {
+-          Logger.e("RNMBXFillExtrusion", "Expression for fillExtrusionHeightAlignment is null")
+-        }
+-      } else {
+-          layer.fillExtrusionHeightAlignment(FillExtrusionHeightAlignment.valueOf(styleValue.getEnumName()))
+-      }
+-    }
+ 
+-    fun setFillExtrusionBaseAlignment(layer: FillExtrusionLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.fillExtrusionBaseAlignment(expression)
+-        } else {
+-          Logger.e("RNMBXFillExtrusion", "Expression for fillExtrusionBaseAlignment is null")
+-        }
+-      } else {
+-          layer.fillExtrusionBaseAlignment(FillExtrusionBaseAlignment.valueOf(styleValue.getEnumName()))
+-      }
+-    }
+ 
+     fun setFillExtrusionAmbientOcclusionWallRadius(layer: FillExtrusionLayer, styleValue: RNMBXStyleValue ) {
+       if (styleValue.isExpression()) {
+@@ -4036,31 +3718,9 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setFillExtrusionLineWidth(layer: FillExtrusionLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.fillExtrusionLineWidth(expression)
+-        } else {
+-          Logger.e("RNMBXFillExtrusion", "Expression for fillExtrusionLineWidth is null")
+-        }
+-      } else {
+-          val value = styleValue.getDouble(VALUE_KEY)
+-          if (value != null) {
+-            layer.fillExtrusionLineWidth(value)
+-          } else {
+-            Logger.e("RNMBXFillExtrusion", "value for fillExtrusionLineWidth is null")
+-          }
+-      }
+-    }
+ 
+ 
+-    fun setFillExtrusionLineWidthTransition(layer: FillExtrusionLayer, styleValue: RNMBXStyleValue) {
+-      val transition = styleValue.transition
+-      if (transition != null) {
+-        layer.fillExtrusionLineWidthTransition(transition);
+-      }
+-    }
++
+ 
+     fun setVisibility(layer: RasterLayer, styleValue: RNMBXStyleValue ) {
+         layer.visibility(Visibility.valueOf(styleValue.getEnumName()));
+@@ -5105,18 +4765,6 @@ object RNMBXStyleFactory {
+       }
+     }
+ 
+-    fun setBackgroundPitchAlignment(layer: BackgroundLayer, styleValue: RNMBXStyleValue ) {
+-      if (styleValue.isExpression()) {
+-        val expression = styleValue.getExpression()
+-        if (expression != null) {
+-          layer.backgroundPitchAlignment(expression)
+-        } else {
+-          Logger.e("RNMBXBackground", "Expression for backgroundPitchAlignment is null")
+-        }
+-      } else {
+-          layer.backgroundPitchAlignment(BackgroundPitchAlignment.valueOf(styleValue.getEnumName()))
+-      }
+-    }
+ 
+     fun setBackgroundEmissiveStrength(layer: BackgroundLayer, styleValue: RNMBXStyleValue ) {
+       if (styleValue.isExpression()) {

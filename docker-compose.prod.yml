@@ -1,0 +1,77 @@
+services:
+  # --- DATABASE ---
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      - POSTGRES_USER=${DATABASE_USER:-tot_user}
+      - POSTGRES_PASSWORD=${DATABASE_PASSWORD:-tot_password}
+      - POSTGRES_DB=${DATABASE_NAME:-tot_database}
+    volumes:
+      - tot_data:/var/lib/postgresql/data
+
+  # --- BACKEND APIS ---
+  admin-api:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    command: [ "npx", "nest", "start", "admin-api", "--prod" ]
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}?schema=public
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - db
+
+  client-api:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    command: [ "npx", "nest", "start", "client-api", "--prod" ]
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}?schema=public
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - db
+
+  driver-api:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    command: [ "npx", "nest", "start", "driver-api", "--prod" ]
+    environment:
+      - DATABASE_URL=postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}?schema=public
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - db
+
+  # --- FRONTEND PORTALS ---
+  admin-portal:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+      args:
+        - PORTAL_PATH=admin-portal/frontend
+        - VITE_API_URL=${ADMIN_API_URL}
+
+  client-portal:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+      args:
+        - PORTAL_PATH=client-portal/frontend
+        - VITE_API_URL=${CLIENT_API_URL}
+        - VITE_SOCKET_URL=${DRIVER_API_SOCKET_URL}
+        - VITE_HERE_API_KEY=${HERE_API_KEY}
+
+  driver-portal:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+      args:
+        - PORTAL_PATH=driver-portal/frontend
+        - VITE_API_URL=${DRIVER_API_URL}
+        - VITE_SOCKET_URL=${DRIVER_API_SOCKET_URL}
+        - VITE_HERE_API_KEY=${HERE_API_KEY}
+
+volumes:
+  tot_data:

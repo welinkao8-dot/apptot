@@ -1,0 +1,24 @@
+:root {
+    --primary-color: #E91E63;
+    /* Pink Magenta do logo TOT */
+    --primary-hover: #C2185B;
+    --secondary-color: #ffffff;
+    --bg-color: #ffffff;
+    --text-main: #1e293b;
+    --text-muted: #64748b;
+    --glass-bg: rgba(255, 255, 255, 0.8);
+    --input-bg: #f8fafc;
+    --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+body {
+    margin: 0;
+    font-family: var(--font-family);
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    -webkit-font-smoothing: antialiased;
+}
+
+* {
+    box-sizing: border-box;
+}

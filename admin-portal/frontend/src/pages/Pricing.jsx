@@ -1,0 +1,381 @@
+import { useState, useEffect } from 'react'
+import {
+    Settings,
+    Save,
+    ArrowLeft,
+    DollarSign,
+    Zap,
+    MapPin,
+    Clock,
+    Percent,
+    ShieldCheck,
+    Car,
+    Bike,
+    Plus,
+    Trash2,
+    Package,
+    Truck,
+    Camera,
+    Info,
+    Image as ImageIcon,
+    X
+} from 'lucide-react'
+import axios from 'axios'
+import toast from 'react-hot-toast'
+
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
+
+export default function Pricing({ onBack }) {
+    const [services, setServices] = useState([])
+    const [loading, setLoading] = useState(true)
+    const [saving, setSaving] = useState(false)
+    const [showModal, setShowModal] = useState(false)
+    const [editingService, setEditingService] = useState(null)
+    const [uploading, setUploading] = useState(false)
+
+    const initialServiceState = {
+        name: '',
+        category: 'ride',
+        service_type: 'express',
+        vehicle_category: 'car',
+        description: '',
+        image_url: '',
+        base_fare: 500,
+        price_per_km: 150,
+        price_per_min: 10,
+        min_fare: 700,
+        platform_fee_type: 'percentage',
+        platform_fee_value: 15
+    }
+
+    useEffect(() => {
+        fetchServices()
+    }, [])
+
+    const fetchServices = async () => {
+        try {
+            setLoading(true)
+            const res = await axios.get(`${API_URL}/admin/configs`)
+            setServices(Array.isArray(res.data) ? res.data : [])
+        } catch (error) {
+            console.error('Error fetching services:', error)
+            toast.error('Erro ao carregar serviços')
+            setServices([])
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    const handleSave = async (e) => {
+        e.preventDefault()
+        try {
+            setSaving(true)
+            if (editingService.id) {
+                await axios.post(`${API_URL}/admin/services/${editingService.id}`, editingService)
+                toast.success('Serviço atualizado com sucesso!')
+            } else {
+                await axios.post(`${API_URL}/admin/services`, editingService)
+                toast.success('Serviço criado com sucesso!')
+            }
+            setShowModal(false)
+            fetchServices()
+        } catch (error) {
+            toast.error('Erro ao salvar serviço')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const handleDelete = async (id) => {
+        if (!window.confirm('Tem certeza que deseja excluir este serviço?')) return
+        try {
+            setSaving(true)
+            await axios.post(`${API_URL}/admin/services/${id}/delete`)
+            toast.success('Serviço excluído com sucesso!')
+            fetchServices()
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Erro ao excluir serviço')
+        } finally {
+            setSaving(false)
+        }
+    }
+
+    const openCreateModal = () => {
+        setEditingService(initialServiceState)
+        setShowModal(true)
+    }
+
+    const openEditModal = (service) => {
+        setEditingService({ ...service })
+        setShowModal(true)
+    }
+
+    const handleFileUpload = async (e) => {
+        const file = e.target.files[0]
+        if (!file) return
+
+        const formData = new FormData()
+        formData.append('file', file)
+
+        try {
+            setUploading(true)
+            const res = await axios.post(`${API_URL}/admin/upload`, formData, {
+                headers: {
+                    'Content-Type': 'multipart/form-data'
+                }
+            })
+            setEditingService({ ...editingService, image_url: res.data.url })
+            toast.success('Imagem enviada com sucesso!')
+        } catch (error) {
+            console.error('Upload error:', error)
+            toast.error('Erro ao enviar imagem')
+        } finally {
+            setUploading(false)
+        }
+    }
+
+    const getIcon = (category, vehicle) => {
+        if (category === 'delivery') return <Package size={24} />
+        if (vehicle === 'moto') return <Bike size={24} />
+        if (vehicle === 'van') return <Truck size={24} />
+        return <Car size={24} />
+    }
+
+    return (
+        <div className="pricing-module animate-fade-in">
+            <div className="module-header-nav">
+                <div className="flex items-center gap-4">
+                    <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
+                    <div className="title-area">
+                        <h2>Gestão de Serviços & Tarifas</h2>
+                        <p>Configure categorias, veículos e regras de preço</p>
+                    </div>
+                </div>
+
+                <div className="header-actions">
+                    <button className="btn-approve-big" onClick={openCreateModal}>
+                        <Plus size={20} /> NOVO SERVIÇO
+                    </button>
+                </div>
+            </div>
+
+            {loading ? (
+                <div className="pricing-grid">
+                    {[1, 2, 3].map(i => <div key={i} className="pricing-group-card skeleton h-96"></div>)}
+                </div>
+            ) : (
+                <div className="pricing-grid">
+                    {services.map(service => (
+                        <div key={service.id} className="pricing-group-card animate-fade-in">
+                            <div className="group-header">
+                                <div className={`icon-badge ${service.category === 'ride' ? 'pink-gradient' : 'blue-gradient'}`}>
+                                    {getIcon(service.category, service.vehicle_category)}
+                                </div>
+                                <div className="title">
+                                    <h3 className="flex items-center gap-2">
+                                        {service.name || 'Sem Nome'}
+                                        <span className={`badge-status ${service.category}`}>
+                                            {service.category === 'ride' ? 'CORRIDA' : 'ENTREGA'}
+                                        </span>
+                                    </h3>
+                                    <span>{service.description || 'Nenhuma descrição'}</span>
+                                </div>
+                                <button className="btn-icon-only text-red-400 hover:bg-red-500/10 ml-auto" onClick={() => handleDelete(service.id)}>
+                                    <Trash2 size={18} />
+                                </button>
+                            </div>
+
+                            <div className="pricing-summary-grid">
+                                <div className="summary-item">
+                                    <label>Base</label>
+                                    <p>{Number(service.base_fare).toLocaleString()} Kz</p>
+                                </div>
+                                <div className="summary-item">
+                                    <label>Por KM</label>
+                                    <p>{Number(service.price_per_km).toLocaleString()} Kz</p>
+                                </div>
+                                <div className="summary-item">
+                                    <label>Minímo</label>
+                                    <p>{Number(service.min_fare).toLocaleString()} Kz</p>
+                                </div>
+                                <div className="summary-item">
+                                    <label>Taxa</label>
+                                    <p>{service.platform_fee_value}{service.platform_fee_type === 'percentage' ? '%' : ' Kz'}</p>
+                                </div>
+                            </div>
+
+                            <div className="group-footer">
+                                <button className="btn-save-pricing w-full" onClick={() => openEditModal(service)}>
+                                    <Settings size={18} /> Ajustar Tarifas & Info
+                                </button>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {showModal && (
+                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                    <div className="modal-content glass-modal wide-modal animate-pop-in" onClick={e => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div className="title-with-icon">
+                                <div className="icon-badge pink-gradient"><Settings size={20} /></div>
+                                <div>
+                                    <h3>{editingService.id ? 'Editar Serviço' : 'Novo Serviço'}</h3>
+                                    <p>Configure as especificações e regras de preço</p>
+                                </div>
+                            </div>
+                            <button className="btn-close-circle" onClick={() => setShowModal(false)}>
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSave} className="service-form">
+                            <div className="form-sections-grid">
+                                <section className="form-section">
+                                    <h4><Info size={16} /> Informações Básicas</h4>
+                                    <div className="input-group">
+                                        <label>Nome do Serviço</label>
+                                        <input
+                                            type="text"
+                                            placeholder="Ex: Moto Táxi, Entrega Express"
+                                            value={editingService.name}
+                                            onChange={e => setEditingService({ ...editingService, name: e.target.value })}
+                                            required
+                                        />
+                                    </div>
+                                    <div className="input-row">
+                                        <div className="input-group">
+                                            <label>Categoria</label>
+                                            <select
+                                                value={editingService.category}
+                                                onChange={e => setEditingService({ ...editingService, category: e.target.value })}
+                                            >
+                                                <option value="ride">Corrida (Passageiros)</option>
+                                                <option value="delivery">Entrega (Pacotes)</option>
+                                            </select>
+                                        </div>
+                                        <div className="input-group">
+                                            <label>Tipo de Veículo</label>
+                                            <select
+                                                value={editingService.vehicle_category}
+                                                onChange={e => setEditingService({ ...editingService, vehicle_category: e.target.value })}
+                                            >
+                                                <option value="moto">Moto</option>
+                                                <option value="car">Carro</option>
+                                                <option value="van">Carrinha / Van</option>
+                                                <option value="truck">Camião</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="input-group">
+                                        <label>Descrição</label>
+                                        <textarea
+                                            placeholder="Descreva os benefícios deste serviço..."
+                                            rows="2"
+                                            value={editingService.description}
+                                            onChange={e => setEditingService({ ...editingService, description: e.target.value })}
+                                        ></textarea>
+                                    </div>
+                                    <div className="input-group">
+                                        <label><ImageIcon size={14} /> Foto do Veículo</label>
+                                        <div className="file-input-wrapper mt-3">
+                                            <label className={`file-label ${editingService.image_url ? 'uploaded' : ''} ${uploading ? 'opacity-50' : ''}`}>
+                                                <Camera size={20} />
+                                                <span>
+                                                    {uploading ? 'A CARREGAR...' :
+                                                        editingService.image_url ? 'IMAGEM CARREGADA (OK)' : 'CLIQUE PARA CARREGAR FOTO'}
+                                                </span>
+                                                <input
+                                                    type="file"
+                                                    accept="image/*"
+                                                    onChange={handleFileUpload}
+                                                    disabled={uploading}
+                                                />
+                                            </label>
+                                        </div>
+                                        <p className="text-[10px] text-slate-400 mt-2 font-semibold">
+                                            * A imagem será salva automaticamente após o carregamento.
+                                        </p>
+                                    </div>
+                                </section>
+
+                                <section className="form-section">
+                                    <h4><DollarSign size={16} /> Regras de Tarifação</h4>
+                                    <div className="input-row">
+                                        <div className="input-field-premium">
+                                            <label>Base (Kz)</label>
+                                            <input
+                                                type="number"
+                                                value={editingService.base_fare}
+                                                onChange={e => setEditingService({ ...editingService, base_fare: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="input-field-premium">
+                                            <label>Mínimo (Kz)</label>
+                                            <input
+                                                type="number"
+                                                value={editingService.min_fare}
+                                                onChange={e => setEditingService({ ...editingService, min_fare: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="input-row mt-4">
+                                        <div className="input-field-premium">
+                                            <label>P/ Km (Kz)</label>
+                                            <input
+                                                type="number"
+                                                value={editingService.price_per_km}
+                                                onChange={e => setEditingService({ ...editingService, price_per_km: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="input-field-premium">
+                                            <label>P/ Min (Kz)</label>
+                                            <input
+                                                type="number"
+                                                value={editingService.price_per_min}
+                                                onChange={e => setEditingService({ ...editingService, price_per_min: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="input-row mt-4">
+                                        <div className="input-group">
+                                            <label>Tipo de Taxa APP</label>
+                                            <select
+                                                value={editingService.platform_fee_type}
+                                                onChange={e => setEditingService({ ...editingService, platform_fee_type: e.target.value })}
+                                            >
+                                                <option value="percentage">Percentagem (%)</option>
+                                                <option value="fixed">Valor Fixo (Kz)</option>
+                                            </select>
+                                        </div>
+                                        <div className="input-field-premium">
+                                            <label>Valor da Taxa</label>
+                                            <input
+                                                type="number"
+                                                value={editingService.platform_fee_value}
+                                                onChange={e => setEditingService({ ...editingService, platform_fee_value: e.target.value })}
+                                            />
+                                        </div>
+                                    </div>
+                                </section>
+                            </div>
+
+                            <div className="modal-footer mt-6">
+                                <button type="button" className="btn-text" onClick={() => setShowModal(false)}>CANCELAR</button>
+                                <button type="submit" className="btn-approve-big" disabled={saving}>
+                                    <Save size={20} /> {saving ? 'A SALVAR...' : editingService.id ? 'ATUALIZAR SERVIÇO' : 'CRIAR SERVIÇO'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
+
+            <div className="pricing-info-alert glass mt-10">
+                <ShieldCheck size={20} className="text-emerald-500" />
+                <p><strong>Segurança:</strong> Alterações nas tarifas são registradas no log de auditoria e afetam apenas novas solicitações.</p>
+            </div>
+        </div>
+    )
+}
