@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
+import { Menu, X } from 'lucide-react';
 import './App.css';
 
 function App() {
   const [showPrivacy, setShowPrivacy] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   if (showPrivacy) {
     return (
@@ -55,14 +57,21 @@ function App() {
     <div className="landing">
       <nav className="header">
         <div className="container">
-          <div className="logo-container">
-            <img src="/assets/images/logo.png" alt="TOT Logo" className="logo-img" />
-          </div>
-          <div className="nav-links">
-            <a href="#seguranca">Segurança</a>
-            <a href="#economia">Economia</a>
-            <a href="#motoristas">Motoristas</a>
-            <button className="download-nav-btn">Baixar App</button>
+          <div className="header-inner">
+            <div className="logo-container">
+              <img src="/assets/images/logo.png" alt="TOT Logo" className="logo-img" />
+            </div>
+
+            <button className="menu-toggle" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+              {isMenuOpen ? <X size={28} /> : <Menu size={28} />}
+            </button>
+
+            <div className={`nav-links ${isMenuOpen ? 'open' : ''}`}>
+              <a href="#seguranca" onClick={() => setIsMenuOpen(false)}>Segurança</a>
+              <a href="#economia" onClick={() => setIsMenuOpen(false)}>Economia</a>
+              <a href="#motoristas" onClick={() => setIsMenuOpen(false)}>Motoristas</a>
+              <button className="download-nav-btn">Baixar App</button>
+            </div>
           </div>
         </div>
       </nav>
@@ -100,7 +109,7 @@ function App() {
         </div>
       </section>
 
-      <div className="container section">
+      <div className="container section grid-section">
         <div className="grid">
           <div className="card" id="seguranca">
             <h3>Segurança em Primeiro Lugar</h3>

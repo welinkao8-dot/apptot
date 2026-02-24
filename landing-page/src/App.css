@@ -187,29 +187,171 @@
   line-height: 1.7;
 }
 
-@media (max-width: 968px) {
-  .hero {
-    grid-template-columns: 1fr;
-    text-align: center;
-    padding: 4rem 0;
+/* Base Styles for Header Inner */
+.header-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+}
+
+.menu-toggle {
+  display: none;
+  background: transparent;
+  border: none;
+  color: var(--primary-color);
+  cursor: pointer;
+  padding: 0.5rem;
+  box-shadow: none;
+}
+
+.menu-toggle:hover {
+  background: #fce4ec;
+  transform: none;
+}
+
+@media (max-width: 768px) {
+  .header {
+    padding: 1rem 0;
   }
 
-  .hero-content {
+  .header-inner {
+    position: relative;
+  }
+
+  .logo-img {
+    height: 40px;
+  }
+
+  .menu-toggle {
     display: flex;
-    flex-direction: column;
     align-items: center;
+    justify-content: center;
+    z-index: 1001;
+  }
+
+  .nav-links {
+    position: fixed;
+    top: 0;
+    right: -100%;
+    width: 80%;
+    height: 100vh;
+    background: white;
+    flex-direction: column;
+    padding: 6rem 2rem;
+    gap: 2rem;
+    box-shadow: -10px 0 30px rgba(0, 0, 0, 0.1);
+    transition: right 0.3s ease;
+    z-index: 1000;
+  }
+
+  .nav-links.open {
+    right: 0;
+    display: flex;
+  }
+
+  .container {
+    padding: 0 1.5rem;
+  }
+
+  .hero {
+    padding: 2rem 0;
+    /* Reduced top padding */
+    padding-bottom: 3rem;
+    /* Small bottom padding */
+  }
+
+  .hero .container {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+    /* Reduced gap */
+    text-align: center;
+  }
+
+  .hero-banner-container {
+    order: -1;
+    /* Banner FIRST as requested */
+    height: 300px;
+    max-width: 100%;
+    margin: 0 auto;
+  }
+
+  .hero-content h1 {
+    font-size: 2.3rem;
+    line-height: 1.1;
+    margin-top: 1rem;
+    margin-bottom: 1.2rem;
+  }
+
+  .hero-subtitle {
+    font-size: 1.1rem;
+    margin-bottom: 1.8rem;
   }
 
   .hero-btns {
     flex-direction: column;
     width: 100%;
+    max-width: 320px;
+    margin: 0 auto;
+    gap: 1rem;
   }
 
-  .nav-links {
-    display: none;
+  .section {
+    padding: 3rem 0;
+    /* Reduced padding between sections */
   }
 
-  .hero-banner-placeholder {
-    height: 320px;
+  .grid-section {
+    padding-top: 1rem;
+    /* Adjust gap between Hero and Cards */
+  }
+
+  .split-layout {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+    text-align: center;
+  }
+
+  .split-banner {
+    order: -1;
+    /* Banner BEFORE text for drivers too */
+  }
+
+  .split-content h2 {
+    font-size: 2rem;
+    margin-top: 1rem;
+  }
+
+  .driver-img {
+    height: 250px;
+  }
+
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
+  }
+
+  .card {
+    padding: 2rem;
+  }
+
+  .footer {
+    margin-top: 3rem;
+    /* Margin between last card and footer as requested */
+  }
+
+  .footer-links {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-content h1 {
+    font-size: 2rem;
+  }
+
+  .hero-banner-container {
+    height: 220px;
   }
 }

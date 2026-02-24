@@ -1,4 +1,4 @@
-name: Client App - Production APK
+name: Client App - Play Store Release (AAB)
 
 on:
   push:
@@ -34,14 +34,14 @@ jobs:
         working-directory: client-portal/mobile
         run: npm install --legacy-peer-deps
 
-      - name: Build Production APK (Supporting Multiple Architectures)
+      - name: Build Production AAB (Android App Bundle)
         working-directory: client-portal/mobile/android
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=armeabi-v7a,arm64-v8a
+          ./gradlew bundleRelease --no-daemon
 
-      - name: Upload Production APK
+      - name: Upload Production AAB
         uses: actions/upload-artifact@v4
         with:
-          name: client-app-production
-          path: client-portal/mobile/android/app/build/outputs/apk/release/*.apk
+          name: client-app-bundle
+          path: client-portal/mobile/android/app/build/outputs/bundle/release/*.aab
