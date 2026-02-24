@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { SafeAreaView, StatusBar, StyleSheet } from 'react-native';
+import { SafeAreaView, StatusBar, StyleSheet, PermissionsAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import AppNavigator from './src/navigation/AppNavigator';
 import Toast from 'react-native-toast-message';
@@ -42,6 +42,34 @@ function App(): React.JSX.Element {
     try {
       await AsyncStorage.setItem(DISCLOSURE_KEY, 'true');
       setShowDisclosure(false);
+
+      // Request system permissions immediately
+      if (Platform.OS === 'android') {
+        const fineGranted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+          {
+            title: "Permissão de Localização",
+            message: "A TOT precisa da sua localização para receber corridas próximas e rastrear o trajeto.",
+            buttonNeutral: "Depois",
+            buttonNegative: "Não",
+            buttonPositive: "Sim"
+          }
+        );
+
+        if (fineGranted === PermissionsAndroid.RESULTS.GRANTED) {
+          // If fine location is granted, request background location (API 29+)
+          if (Platform.Version >= 29) {
+            await PermissionsAndroid.request(
+              PermissionsAndroid.PERMISSIONS.ACCESS_BACKGROUND_LOCATION,
+              {
+                title: "Localização em Segundo Plano",
+                message: "Para garantir que a viagem não seja interrompida, permita o acesso 'O tempo todo'.",
+                buttonPositive: "Permitir"
+              }
+            );
+          }
+        }
+      }
     } catch (e) {
       console.error('Error saving disclosure status:', e);
       setShowDisclosure(false);

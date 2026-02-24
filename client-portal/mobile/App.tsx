@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { StatusBar, LogBox } from 'react-native';
+import { StatusBar, LogBox, PermissionsAndroid, Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AuthProvider } from './src/context/AuthContext';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -73,6 +73,24 @@ const App = () => {
         try {
             await AsyncStorage.setItem(DISCLOSURE_KEY, 'true');
             setShowDisclosure(false);
+
+            // Request system permission immediately after disclosure
+            if (Platform.OS === 'android') {
+                const granted = await PermissionsAndroid.request(
+                    PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
+                    {
+                        title: "Permissão de Localização",
+                        message: "O TOT MOTO TÁXI precisa da sua localização para encontrar motoristas próximos e calcular a rota.",
+                        buttonNeutral: "Perguntar Depois",
+                        buttonNegative: "Cancelar",
+                        buttonPositive: "OK"
+                    }
+                );
+
+                if (granted === PermissionsAndroid.RESULTS.GRANTED) {
+                    console.log('Location permission granted');
+                }
+            }
         } catch (e) {
             console.error('Error saving disclosure status:', e);
             setShowDisclosure(false);
