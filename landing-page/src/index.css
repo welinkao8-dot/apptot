@@ -1,0 +1,149 @@
+:root {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light;
+  color: #2D3436;
+  background-color: #FFF5F7;
+  /* Soft Light Pink */
+
+  /* TOT Brand Identity - Rose/Pink */
+  --primary-color: #e91e63;
+  --primary-hover: #c2185b;
+  --secondary-color: #ffffff;
+  --accent-color: #ff4081;
+  --text-primary: #2D3436;
+  --text-secondary: #636E72;
+  --card-bg: #ffffff;
+  --glass-border: rgba(233, 30, 99, 0.1);
+  --hero-bg: rgba(233, 30, 99, 0.03);
+  /* Transparent Pink for Hero */
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: #FFF5F7;
+}
+
+#root {
+  width: 100%;
+}
+
+.container {
+  width: 100%;
+  max-width: 1280px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  box-sizing: border-box;
+}
+
+h1 {
+  font-size: 3.5em;
+  line-height: 1.1;
+  font-weight: 900;
+  margin-bottom: 0.5em;
+  color: #2D3436;
+  letter-spacing: -1px;
+}
+
+h1 span {
+  color: var(--primary-color);
+}
+
+.hero-subtitle {
+  font-size: 1.35rem;
+  color: var(--text-secondary);
+  margin-bottom: 2.5rem;
+  max-width: 700px;
+  line-height: 1.6;
+}
+
+button {
+  border-radius: 50px;
+  /* More rounded/modern */
+  border: 1px solid transparent;
+  padding: 1em 2.2em;
+  font-size: 1em;
+  font-weight: 700;
+  font-family: inherit;
+  background-color: var(--primary-color);
+  color: white;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 15px rgba(233, 30, 99, 0.2);
+}
+
+button:hover {
+  background-color: var(--primary-hover);
+  transform: translateY(-3px);
+  box-shadow: 0 8px 25px rgba(233, 30, 99, 0.4);
+}
+
+.secondary-btn {
+  background-color: white;
+  border: 2px solid var(--primary-color);
+  color: var(--primary-color);
+  margin-left: 1rem;
+}
+
+.secondary-btn:hover {
+  background-color: var(--primary-color);
+  color: white;
+}
+
+.section {
+  padding: 5rem 0;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2.5rem;
+}
+
+.card {
+  background: white;
+  border: 1px solid var(--glass-border);
+  padding: 2.5rem;
+  border-radius: 24px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.05);
+  transition: all 0.4s ease;
+}
+
+.card:hover {
+  transform: translateY(-10px);
+  box-shadow: 0 20px 40px rgba(233, 30, 99, 0.1);
+  border-color: var(--primary-color);
+}
+
+.card h3 {
+  color: var(--primary-color);
+  margin-top: 0;
+  font-size: 1.5rem;
+  font-weight: 800;
+}
+
+@media (max-width: 768px) {
+  #root {
+    padding: 0 1.5rem;
+  }
+
+  h1 {
+    font-size: 2.5em;
+  }
+
+  .secondary-btn {
+    margin-left: 0;
+    margin-top: 1rem;
+    display: block;
+    width: 100%;
+  }
+}

@@ -73,5 +73,14 @@ services:
         - VITE_SOCKET_URL=${DRIVER_API_SOCKET_URL}
         - VITE_HERE_API_KEY=${HERE_API_KEY}
 
+  # --- INSTITUTIONAL ---
+  landing-page:
+    build:
+      context: ./landing-page
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    restart: always
+
 volumes:
   tot_data:
