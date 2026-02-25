@@ -1,4 +1,4 @@
-package com.drivermobile;
+package com.taxitot.driver;
 
 import android.content.Context;
 import com.mapbox.navigation.core.MapboxNavigation;

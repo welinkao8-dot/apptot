@@ -1,4 +1,4 @@
-package com.clientmobile
+package com.taxitot.client
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

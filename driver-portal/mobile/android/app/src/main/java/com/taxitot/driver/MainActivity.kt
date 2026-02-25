@@ -1,4 +1,4 @@
-package com.drivermobile
+package com.taxitot.driver
 
 import com.facebook.react.ReactActivity
 import com.facebook.react.ReactActivityDelegate

@@ -1,4 +1,4 @@
-package com.drivermobile
+package com.taxitot.driver
 
 import android.app.Application
 import com.facebook.react.PackageList
@@ -6,7 +6,7 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
-import com.drivermobile.MapboxNavigationPackage
+import com.taxitot.driver.MapboxNavigationPackage
 import com.mapbox.navigation.core.lifecycle.MapboxNavigationApp
 import com.mapbox.navigation.base.options.NavigationOptions
 

@@ -1,4 +1,4 @@
-package com.drivermobile;
+package com.taxitot.driver;
 
 import androidx.annotation.NonNull;
 import com.facebook.react.uimanager.SimpleViewManager;

@@ -1,4 +1,4 @@
-package com.clientmobile
+package com.taxitot.client
 
 import android.app.Application
 import com.facebook.react.PackageList

@@ -87,9 +87,9 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
-    namespace "com.drivermobile"
+    namespace "com.taxitot.driver"
     defaultConfig {
-        applicationId "com.drivermobile"
+        applicationId "com.taxitot.driver"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
