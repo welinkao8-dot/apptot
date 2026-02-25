@@ -34,10 +34,17 @@ jobs:
         working-directory: driver-portal/mobile
         run: npm install
 
+      - name: Decode Keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64_DRIVER }}" | base64 --decode > driver-portal/mobile/android/app/release.keystore
+
       - name: Build Production AAB (Android App Bundle)
         working-directory: driver-portal/mobile/android
         env:
           MAPBOX_DOWNLOADS_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN }}
+          ANDROID_KEYSTORE_FILE: release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS_DRIVER }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           echo "MAPBOX_DOWNLOADS_TOKEN=$MAPBOX_DOWNLOADS_TOKEN" >> gradle.properties
           chmod +x gradlew

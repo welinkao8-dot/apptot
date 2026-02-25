@@ -34,8 +34,16 @@ jobs:
         working-directory: client-portal/mobile
         run: npm install --legacy-peer-deps
 
+      - name: Decode Keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64_CLIENT }}" | base64 --decode > client-portal/mobile/android/app/release.keystore
+
       - name: Build Production AAB (Android App Bundle)
         working-directory: client-portal/mobile/android
+        env:
+          ANDROID_KEYSTORE_FILE: release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS_CLIENT }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
           ./gradlew bundleRelease --no-daemon
