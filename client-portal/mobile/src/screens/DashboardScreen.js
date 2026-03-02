@@ -141,7 +141,7 @@ export default function DashboardScreen({ navigation }) {
 
     return (
         <SafeAreaView style={styles.container}>
-            <StatusBar barStyle="dark-content" backgroundColor="#FFF" translucent />
+            <StatusBar barStyle="dark-content" />
 
             {/* Background Map - Purely Visual in Hub */}
             <View style={styles.mapContainer}>

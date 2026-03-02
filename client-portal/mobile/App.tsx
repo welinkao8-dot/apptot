@@ -90,6 +90,10 @@ const App = () => {
                 if (granted === PermissionsAndroid.RESULTS.GRANTED) {
                     console.log('Location permission granted');
                 }
+            } else if (Platform.OS === 'ios') {
+                // No iOS, a permissão é solicitada automaticamente pela biblioteca 
+                // de geolocalização ou via Info.plist na primeira tentativa de uso.
+                console.log('iOS: Permissão será gerenciada pelo sistema via Info.plist');
             }
         } catch (e) {
             console.error('Error saving disclosure status:', e);
