@@ -1,8 +1,8 @@
-name: Client App - Play Store Release (AAB)
+name: Client App - Development APK Build
 
 on:
-#   push:
-#     branches: [ main, master ]
+  push:
+    branches: [ main, master ]
   workflow_dispatch:
 
 jobs:
@@ -37,7 +37,7 @@ jobs:
       - name: Decode Keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64_CLIENT }}" | base64 --decode > client-portal/mobile/android/app/release.keystore
 
-      - name: Build Production AAB (Android App Bundle)
+      - name: Build Production APK
         working-directory: client-portal/mobile/android
         env:
           ANDROID_KEYSTORE_FILE: release.keystore
@@ -46,10 +46,10 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew bundleRelease --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload Production AAB
+      - name: Upload APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: client-app-bundle
-          path: client-portal/mobile/android/app/build/outputs/bundle/release/*.aab
+          name: client-app-apk
+          path: client-portal/mobile/android/app/build/outputs/apk/release/*.apk
