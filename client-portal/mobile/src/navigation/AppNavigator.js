@@ -16,6 +16,7 @@ import LoginScreen from '../screens/LoginScreen';
 import DashboardScreen from '../screens/DashboardScreen';
 import HistoryScreen from '../screens/HistoryScreen';
 import DeliveriesScreen from '../screens/DeliveriesScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 import RideFlowScreen from '../screens/RideFlowScreen';
 import DeliveryFlowScreen from '../screens/DeliveryFlowScreen';
 
@@ -38,6 +39,7 @@ function MainDrawer() {
             <Drawer.Screen name="Dashboard" component={DashboardScreen} />
             <Drawer.Screen name="History" component={HistoryScreen} />
             <Drawer.Screen name="Deliveries" component={DeliveriesScreen} />
+            <Drawer.Screen name="Profile" component={ProfileScreen} />
             <Drawer.Screen name="RideFlow" component={RideFlowScreen} options={{ drawerItemStyle: { display: 'none' }, swipeEnabled: false }} />
             <Drawer.Screen name="DeliveryFlow" component={DeliveryFlowScreen} options={{ drawerItemStyle: { display: 'none' }, swipeEnabled: false }} />
         </Drawer.Navigator>

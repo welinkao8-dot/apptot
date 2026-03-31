@@ -45,7 +45,7 @@ export default function Sidebar({ navigation }) {
     ];
 
     const handleNavigate = (route) => {
-        if (route === 'Dashboard' || route === 'History' || route === 'Deliveries') {
+        if (route === 'Dashboard' || route === 'History' || route === 'Deliveries' || route === 'Profile') {
             navigation.navigate(route);
         } else {
             // Placeholder for other routes
@@ -56,15 +56,15 @@ export default function Sidebar({ navigation }) {
     return (
         <SafeAreaView style={styles.container}>
             <View style={styles.header}>
-                <View style={styles.profileBadge}>
-                    <View style={styles.avatarCircle}>
-                        <User size={30} color="#FFF" />
-                    </View>
-                    <View style={styles.statusDot} />
-                </View>
                 <View style={styles.userInfo}>
                     <Text style={styles.userName}>{user?.full_name || 'Usuário TOT'}</Text>
                     <Text style={styles.userPhone}>{user?.phone || '9XXXXXXXX'}</Text>
+                </View>
+                <View style={styles.profileBadge}>
+                    <View style={styles.avatarCircle}>
+                        <User size={24} color="#FFF" />
+                    </View>
+                    <View style={styles.statusDot} />
                 </View>
             </View>
 
@@ -133,21 +133,23 @@ const styles = StyleSheet.create({
     },
     header: {
         padding: 24,
-        paddingTop: 40,
+        paddingTop: 50,
         backgroundColor: colors.primary,
         borderBottomRightRadius: 40,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
         ...colors.shadow,
         shadowColor: colors.primary,
     },
     profileBadge: {
-        width: 80,
-        height: 80,
-        borderRadius: 30,
+        width: 65,
+        height: 65,
+        borderRadius: 24,
         backgroundColor: 'rgba(255,255,255,0.2)',
         justifyContent: 'center',
         alignItems: 'center',
-        marginBottom: 15,
-        borderWidth: 1,
+        borderWidth: 1.5,
         borderColor: 'rgba(255,255,255,0.3)',
     },
     avatarCircle: {
@@ -170,18 +172,19 @@ const styles = StyleSheet.create({
         borderColor: colors.primary,
     },
     userInfo: {
-        marginTop: 5,
+        flex: 1,
+        justifyContent: 'center',
     },
     userName: {
-        fontSize: 22,
+        fontSize: 18,
         fontWeight: '950',
         color: '#FFF',
     },
     userPhone: {
-        fontSize: 14,
+        fontSize: 13,
         color: 'rgba(255,255,255,0.8)',
         fontWeight: '600',
-        marginTop: 2,
+        marginTop: 1,
     },
     scrollContent: {
         flex: 1,

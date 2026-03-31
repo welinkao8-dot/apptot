@@ -22,6 +22,7 @@ const { width } = Dimensions.get('window');
 export default function HistoryScreen({ navigation }) {
     const { user } = useAuth();
     const [trips, setTrips] = useState([]);
+    const [stats, setStats] = useState({ count: 0, total: 0 });
     const [status, setStatus] = useState({ loading: true, loadingMore: false });
     const [query, setQuery] = useState({ filter: 'all', page: 1, hasMore: true });
     const [receiptTrip, setReceiptTrip] = useState(null);
@@ -30,6 +31,7 @@ export default function HistoryScreen({ navigation }) {
         setTrips([]);
         setQuery(prev => ({ ...prev, page: 1, hasMore: true }));
         fetchHistory(1, true);
+        fetchMonthlyStats();
     }, [query.filter]);
 
     const fetchHistory = async (pageNumber = 1, isInitial = false) => {
@@ -73,6 +75,16 @@ export default function HistoryScreen({ navigation }) {
         }
     };
 
+    const fetchMonthlyStats = async () => {
+        try {
+            const res = await api.get(`/trips/stats/monthly/${user.id}`, {
+                params: { role: 'client' }
+            });
+            setStats(res.data);
+        } catch (error) {
+            console.error('Error fetching monthly stats:', error);
+        }
+    };
 
     const renderTripItem = ({ item }) => (
         <View style={styles.tripCard}>
@@ -127,6 +139,23 @@ export default function HistoryScreen({ navigation }) {
 
     const renderHeaderContent = () => (
         <View style={styles.headerContentContainer}>
+            <View style={styles.statsContainer}>
+                <View style={styles.statCard}>
+                    <View style={[styles.statIconBox, { backgroundColor: '#FDF2F5' }]}>
+                        <Navigation size={22} color={colors.primary} />
+                    </View>
+                    <Text style={styles.statVal}>{stats.count}</Text>
+                    <Text style={styles.statLabel}>Viagens/Mês</Text>
+                </View>
+                <View style={styles.statCard}>
+                    <View style={[styles.statIconBox, { backgroundColor: '#EFF6FF' }]}>
+                        <CreditCard size={22} color={colors.secondary} />
+                    </View>
+                    <Text style={styles.statVal}>Kz {Number(stats.total).toLocaleString()}</Text>
+                    <Text style={styles.statLabel}>Investimento</Text>
+                </View>
+            </View>
+
             <View style={styles.filterSection}>
                 <Text style={styles.sectionTitle}>Suas Atividades</Text>
                 <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterBar}>
@@ -158,7 +187,7 @@ export default function HistoryScreen({ navigation }) {
                 <View style={{ width: 44 }} />
             </View>
 
-            {(status.loading && (trips?.length || 0) === 0) ? (
+            {status.loading && trips.length === 0 ? (
                 <View style={styles.centerLoading}>
                     <ActivityIndicator size="large" color={colors.primary} />
                 </View>
@@ -209,7 +238,7 @@ export default function HistoryScreen({ navigation }) {
                         <ScrollView style={styles.receiptContent} showsVerticalScrollIndicator={false}>
                             <View style={styles.receiptSection}>
                                 <Text style={styles.receiptLabel}>ID DA VIAGEM</Text>
-                                <Text style={styles.receiptValue}>#TOT-{receiptTrip?.id?.substring(0, 8)?.toUpperCase() || '---'}</Text>
+                                <Text style={styles.receiptValue}>#TOT-{receiptTrip?.id?.substring(0, 8).toUpperCase()}</Text>
                             </View>
 
                             <View style={styles.receiptDivider} />
@@ -379,13 +408,18 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     tripCard: {
-        backgroundColor: '#FDF2F5',
-        borderRadius: 28,
+        backgroundColor: '#FFF',
+        borderRadius: 24,
         padding: 20,
         marginBottom: 20,
-        marginHorizontal: 24,
-        borderWidth: 0.8,
-        borderColor: 'rgba(233, 30, 99, 0.15)',
+        marginHorizontal: 24, // Fix shadow clipping by adding outer margin
+        borderWidth: 1.5,
+        borderColor: '#F8FAFC',
+        elevation: 4, // Better shadow for Android
+        shadowColor: colors.text,
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.08,
+        shadowRadius: 10,
     },
     tripHeader: {
         flexDirection: 'row',
@@ -417,9 +451,9 @@ const styles = StyleSheet.create({
     tripBody: {
         flexDirection: 'row',
         marginBottom: 20,
-        backgroundColor: '#FFF', // Contrast within the tonal card
+        backgroundColor: '#FDF2F5',
         padding: 15,
-        borderRadius: 20,
+        borderRadius: 16,
     },
     pathGraphic: {
         alignItems: 'center',

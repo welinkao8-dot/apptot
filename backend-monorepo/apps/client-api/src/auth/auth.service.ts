@@ -57,4 +57,31 @@ export class AuthService {
 
         return this.login(user); // Auto-login
     }
+
+    async changePassword(userId: string, oldPass: string, newPass: string) {
+        if (!userId) {
+            throw new BadRequestException('ID do usuário não fornecido.');
+        }
+
+        const user = await this.prisma.profiles.findUnique({
+            where: { id: userId }
+        });
+
+        if (!user || !user.password_hash) {
+            throw new BadRequestException('Usuário não encontrado.');
+        }
+
+        const isMatch = await bcrypt.compare(oldPass, user.password_hash);
+        if (!isMatch) {
+            throw new BadRequestException('Senha atual incorreta.');
+        }
+
+        const hashedNewPassword = await bcrypt.hash(newPass, 10);
+        await this.prisma.profiles.update({
+            where: { id: userId },
+            data: { password_hash: hashedNewPassword }
+        });
+
+        return { message: 'Senha alterada com sucesso.' };
+    }
 }
