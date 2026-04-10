@@ -19,6 +19,7 @@ import DeliveriesScreen from '../screens/DeliveriesScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import RideFlowScreen from '../screens/RideFlowScreen';
 import DeliveryFlowScreen from '../screens/DeliveryFlowScreen';
+import PaymentsScreen from '../screens/PaymentsScreen';
 
 const Stack = createStackNavigator();
 const Drawer = createDrawerNavigator();
@@ -40,6 +41,7 @@ function MainDrawer() {
             <Drawer.Screen name="History" component={HistoryScreen} />
             <Drawer.Screen name="Deliveries" component={DeliveriesScreen} />
             <Drawer.Screen name="Profile" component={ProfileScreen} />
+            <Drawer.Screen name="Payments" component={PaymentsScreen} />
             <Drawer.Screen name="RideFlow" component={RideFlowScreen} options={{ drawerItemStyle: { display: 'none' }, swipeEnabled: false }} />
             <Drawer.Screen name="DeliveryFlow" component={DeliveryFlowScreen} options={{ drawerItemStyle: { display: 'none' }, swipeEnabled: false }} />
         </Drawer.Navigator>

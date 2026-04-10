@@ -6,7 +6,7 @@ const HereMapView = ({
     userLocation,
     route,
     onMapReady
-}) => {
+}) => {wq
     return (
         <View style={styles.container}>
             <View style={styles.placeholder}>

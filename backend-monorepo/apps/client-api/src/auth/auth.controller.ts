@@ -1,4 +1,4 @@
-import { Controller, Post, Body, Get, UseGuards, Request } from '@nestjs/common';
+import { Controller, Post, Body, Get, UseGuards, Request, BadRequestException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '@app/database';
 
@@ -13,7 +13,7 @@ export class AuthController {
     async login(@Body() body) {
         const user = await this.authService.validateUser(body.phone, body.password);
         if (!user) {
-            throw new Error('Credenciais inválidas'); // Nest default exception filter handles 500/400? or 401? Ideally HttpEx
+            throw new BadRequestException('Credenciais inválidas');
         }
         return this.authService.login(user);
     }
@@ -46,11 +46,13 @@ export class AuthController {
 
     @Post('change-password')
     async changePassword(@Body() body) {
-        // userId should come from JWT token in a real app
-        // For now, it might be passed as a param if we trust the source (not recommended)
-        // But the user's prompt suggests making it work.
-        // Let's assume the body contains the userId for now, or we'll need an auth guard.
         const { userId, oldPassword, newPassword } = body;
         return this.authService.changePassword(userId, oldPassword, newPassword);
+    }
+
+    @Post('update-profile')
+    async updateProfile(@Body() body) {
+        const { userId, fullName, email } = body;
+        return this.authService.updateProfile(userId, { fullName, email });
     }
 }

@@ -45,7 +45,7 @@ export default function Sidebar({ navigation }) {
     ];
 
     const handleNavigate = (route) => {
-        if (route === 'Dashboard' || route === 'History' || route === 'Deliveries' || route === 'Profile') {
+        if (['Dashboard', 'History', 'Deliveries', 'Profile', 'Payments'].includes(route)) {
             navigation.navigate(route);
         } else {
             // Placeholder for other routes

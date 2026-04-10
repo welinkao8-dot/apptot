@@ -84,4 +84,21 @@ export class AuthService {
 
         return { message: 'Senha alterada com sucesso.' };
     }
+
+    async updateProfile(userId: string, data: { fullName?: string, email?: string }) {
+        if (!userId) {
+            throw new BadRequestException('ID do usuário não fornecido.');
+        }
+
+        const user = await this.prisma.profiles.update({
+            where: { id: userId },
+            data: {
+                full_name: data.fullName,
+                email: data.email
+            }
+        });
+
+        const { password_hash, ...result } = user;
+        return result;
+    }
 }

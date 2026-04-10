@@ -35,15 +35,22 @@ import Toast from 'react-native-toast-message';
 const { width } = Dimensions.get('window');
 
 export default function ProfileScreen({ navigation }) {
-    const { user, signOut } = useAuth();
+    const { user, signOut, updateUser } = useAuth();
     const [isModalVisible, setIsModalVisible] = React.useState(false);
+    const [isEditModalVisible, setIsEditModalVisible] = React.useState(false);
     const [showPassword, setShowPassword] = React.useState(false);
     const [loading, setLoading] = React.useState(false);
+    const [editLoading, setEditLoading] = React.useState(false);
 
     const [form, setForm] = React.useState({
         oldPassword: '',
         newPassword: '',
         confirmPassword: ''
+    });
+
+    const [editForm, setEditForm] = React.useState({
+        fullName: user?.full_name || '',
+        email: user?.email || '',
     });
 
     const infoItems = [
@@ -88,6 +95,35 @@ export default function ProfileScreen({ navigation }) {
         }
     };
 
+    const handleUpdateProfile = async () => {
+        if (!editForm.fullName || !editForm.email) {
+            Toast.show({ type: 'error', text1: 'Atenção', text2: 'Preencha todos os campos.' });
+            return;
+        }
+
+        try {
+            setEditLoading(true);
+            const updatedUser = await api.post('/auth/update-profile', {
+                userId: user.id,
+                fullName: editForm.fullName,
+                email: editForm.email
+            });
+
+            await updateUser({
+                full_name: editForm.fullName,
+                email: editForm.email
+            });
+
+            Toast.show({ type: 'success', text1: 'Sucesso', text2: 'Perfil atualizado!' });
+            setIsEditModalVisible(false);
+        } catch (error) {
+            console.error('Update profile error:', error);
+            Toast.show({ type: 'error', text1: 'Erro', text2: 'Falha ao atualizar perfil.' });
+        } finally {
+            setEditLoading(false);
+        }
+    };
+
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
@@ -111,7 +147,7 @@ export default function ProfileScreen({ navigation }) {
                         <View style={styles.avatarGradient}>
                             <User size={60} color="#FFF" />
                         </View>
-                        <TouchableOpacity style={styles.editBadge}>
+                        <TouchableOpacity style={styles.editBadge} onPress={() => setIsEditModalVisible(true)}>
                             <Settings size={16} color={colors.primary} />
                         </TouchableOpacity>
                     </View>
@@ -244,6 +280,79 @@ export default function ProfileScreen({ navigation }) {
                                     <ActivityIndicator color="#FFF" />
                                 ) : (
                                     <Text style={styles.updateBtnText}>Actualizar Palavra-passe</Text>
+                                )}
+                            </TouchableOpacity>
+                        </ScrollView>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* Edit Profile Modal */}
+            <Modal
+                visible={isEditModalVisible}
+                animationType="slide"
+                transparent={true}
+                onRequestClose={() => setIsEditModalVisible(false)}
+            >
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <View style={styles.modalHeader}>
+                            <Text style={styles.modalTitle}>EDITAR PERFIL</Text>
+                            <TouchableOpacity onPress={() => setIsEditModalVisible(false)} style={styles.closeBtn}>
+                                <X size={24} color="#FFF" />
+                            </TouchableOpacity>
+                        </View>
+
+                        <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                            <Text style={styles.modalSubtitle}>Mantenha seus dados atualizados para uma melhor experiência.</Text>
+
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Nome Completo</Text>
+                                <View style={styles.inputWrapper}>
+                                    <User size={18} color={colors.textMuted} style={styles.inputIcon} />
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Seu nome completo"
+                                        value={editForm.fullName}
+                                        onChangeText={(t) => setEditForm({ ...editForm, fullName: t })}
+                                        placeholderTextColor="#94A3B8"
+                                    />
+                                </View>
+                            </View>
+
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>E-mail</Text>
+                                <View style={styles.inputWrapper}>
+                                    <Mail size={18} color={colors.textMuted} style={styles.inputIcon} />
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="seu@email.com"
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        value={editForm.email}
+                                        onChangeText={(t) => setEditForm({ ...editForm, email: t })}
+                                        placeholderTextColor="#94A3B8"
+                                    />
+                                </View>
+                            </View>
+
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Telemóvel (Apenas leitura)</Text>
+                                <View style={[styles.inputWrapper, { backgroundColor: '#F1F5F9', borderStyle: 'dashed' }]}>
+                                    <Phone size={18} color={colors.textMuted} style={styles.inputIcon} />
+                                    <Text style={[styles.input, { color: colors.textMuted }]}>{user?.phone}</Text>
+                                </View>
+                            </View>
+
+                            <TouchableOpacity 
+                                style={[styles.updateBtn, editLoading && { opacity: 0.7 }]} 
+                                onPress={handleUpdateProfile}
+                                disabled={editLoading}
+                            >
+                                {editLoading ? (
+                                    <ActivityIndicator color="#FFF" />
+                                ) : (
+                                    <Text style={styles.updateBtnText}>Salvar Alterações</Text>
                                 )}
                             </TouchableOpacity>
                         </ScrollView>
