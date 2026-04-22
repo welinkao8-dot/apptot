@@ -32,11 +32,24 @@ jobs:
           sed -i "s|http://localhost:3004|https://driver-api.taxitot.com|g" \
             client-portal/mobile/src/services/socket.js
 
-      - name: Fix PNG Assets (Re-encode for AAPT2 compatibility)
+      - name: Fix PNG Assets (Force 8-bit RGBA for AAPT2 compatibility)
         run: |
-          find client-portal/mobile/src/assets -name "*.png" | while read f; do
-            convert "$f" -define png:compression-level=9 "$f" 2>/dev/null || echo "Skipping $f"
-          done
+          pip install Pillow --quiet
+          python3 - <<'EOF'
+          import os
+          import glob
+          from PIL import Image
+
+          for f in glob.glob('client-portal/mobile/src/assets/**/*.png', recursive=True):
+              try:
+                  img = Image.open(f)
+                  # Forçar conversão para RGBA 8-bit (formato exigido pelo AAPT2)
+                  img = img.convert('RGBA')
+                  img.save(f, 'PNG', optimize=False)
+                  print(f'Fixed: {f}')
+              except Exception as e:
+                  print(f'Error: {f} -> {e}')
+          EOF
 
       - name: Install Dependencies
         working-directory: client-portal/mobile
