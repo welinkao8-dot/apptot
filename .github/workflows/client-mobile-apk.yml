@@ -32,6 +32,12 @@ jobs:
           sed -i "s|http://localhost:3004|https://driver-api.taxitot.com|g" \
             client-portal/mobile/src/services/socket.js
 
+      - name: Fix PNG Assets (Re-encode for AAPT2 compatibility)
+        run: |
+          find client-portal/mobile/src/assets -name "*.png" | while read f; do
+            convert "$f" -define png:compression-level=9 "$f" 2>/dev/null || echo "Skipping $f"
+          done
+
       - name: Install Dependencies
         working-directory: client-portal/mobile
         run: npm install --legacy-peer-deps
