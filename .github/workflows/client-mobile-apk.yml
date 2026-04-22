@@ -1,4 +1,4 @@
-name: Client App - Development APK Build
+name: Client App - Production APK Release
 
 on:
   push:
@@ -23,18 +23,35 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Inject Production API URLs
+        run: |
+          # Substitui a URL da API do Cliente (Login, Perfil, Serviços)
+          sed -i "s|http://localhost:3001|https://api.taxitot.com|g" \
+            client-portal/mobile/src/services/api.js
+          # Substitui a URL do Socket/Driver API (Corridas em tempo real)
+          sed -i "s|http://localhost:3004|https://driver-api.taxitot.com|g" \
+            client-portal/mobile/src/services/socket.js
+
       - name: Install Dependencies
         working-directory: client-portal/mobile
         run: npm install --legacy-peer-deps
 
-      - name: Build Debug APK
+      - name: Decode Keystore
+        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64_CLIENT }}" | base64 --decode > client-portal/mobile/android/app/release.keystore
+
+      - name: Build Production APK (Release)
         working-directory: client-portal/mobile/android
+        env:
+          ANDROID_KEYSTORE_FILE: release.keystore
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS_CLIENT }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug --no-daemon
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload Debug APK Artifact
+      - name: Upload Production APK
         uses: actions/upload-artifact@v4
         with:
-          name: client-app-debug-apk
-          path: client-portal/mobile/android/app/build/outputs/apk/debug/*.apk
+          name: client-app-release-apk
+          path: client-portal/mobile/android/app/build/outputs/apk/release/*.apk
