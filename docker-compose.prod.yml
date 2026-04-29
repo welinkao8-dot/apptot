@@ -82,5 +82,13 @@ services:
       - "80:80"
     restart: always
 
+  landing-frota:
+    build:
+      context: ./landing-frota
+      dockerfile: Dockerfile
+    ports:
+      - "81:80"
+    restart: always
+
 volumes:
   tot_data:
