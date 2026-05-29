@@ -113,6 +113,17 @@ export class AdminApiService {
     return { success: true };
   }
 
+  async updateClientStatus(id: string, status: string) {
+    await this.prisma.profiles.update({
+      where: { id },
+      data: { status },
+    });
+
+    await this.createAuditLog(null, `UPDATE_CLIENT_STATUS_${status.toUpperCase()}`, 'client', id);
+
+    return { success: true };
+  }
+
   async getServiceConfigs() {
     const configs = await this.prisma.service_configs.findMany({
       orderBy: { id: 'asc' }
@@ -191,7 +202,7 @@ export class AdminApiService {
       where: { role: 'client' }
     });
 
-    // Calculate Total Revenue (completed only)
+    // Calculate Total Revenue (completed only, all-time)
     const revenueData = await this.prisma.trips.aggregate({
       where: { status: 'completed' },
       _sum: {
@@ -213,6 +224,35 @@ export class AdminApiService {
       },
     });
 
+    // Calculate Monthly Revenue (completed only, current month)
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const monthlyRevenueData = await this.prisma.trips.aggregate({
+      where: {
+        status: 'completed',
+        created_at: { gte: startOfMonth },
+      },
+      _sum: {
+        final_fare: true,
+      },
+    });
+
+    // Count Today's Trips (all created today)
+    const todayTrips = await this.prisma.trips.count({
+      where: {
+        created_at: { gte: today },
+      },
+    });
+
+    // Count Total Deliveries (all-time delivery trips)
+    const totalDeliveries = await this.prisma.trips.count({
+      where: {
+        category: 'delivery',
+      },
+    });
+
     const result = {
       totalTrips,
       completedTrips,
@@ -222,6 +262,9 @@ export class AdminApiService {
       totalClients,
       totalRevenue: Number(revenueData._sum.final_fare || 0),
       todayRevenue: Number(todayRevenueData._sum.final_fare || 0),
+      monthlyRevenue: Number(monthlyRevenueData._sum.final_fare || 0),
+      todayTrips,
+      totalDeliveries,
     };
 
     console.log('--- DASHBOARD STATS DEBUG ---');
@@ -230,6 +273,9 @@ export class AdminApiService {
     console.log('Active Trips:', activeTrips);
     console.log('Revenue Raw:', revenueData);
     console.log('Today Revenue Raw:', todayRevenueData);
+    console.log('Monthly Revenue Raw:', monthlyRevenueData);
+    console.log('Today Trips:', todayTrips);
+    console.log('Total Deliveries:', totalDeliveries);
     console.log('Final Result:', result);
 
     return result;

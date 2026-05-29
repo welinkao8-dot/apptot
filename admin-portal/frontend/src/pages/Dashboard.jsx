@@ -56,12 +56,14 @@ export default function Dashboard() {
         totalTrips: 0,
         completedTrips: 0,
         activeTrips: 0,
-        totalDeliveries: 0, // NEW
+        totalDeliveries: 0,
         totalDrivers: 0,
         onlineDrivers: 0,
         totalClients: 0,
         totalRevenue: 0,
-        todayRevenue: 0
+        todayRevenue: 0,
+        monthlyRevenue: 0,
+        todayTrips: 0
     })
     const [pendingDrivers, setPendingDrivers] = useState([])
 
@@ -202,7 +204,7 @@ export default function Dashboard() {
                                     <div className="stat-icon pink"><DollarSign size={24} /></div>
                                     <div className="stat-info">
                                         <span className="label">Receita Acumulada</span>
-                                        <span className="value truncate">Kz {(stats?.totalRevenue || 0).toLocaleString()}</span>
+                                        <span className="value truncate">Kz {(stats?.monthlyRevenue || 0).toLocaleString()}</span>
                                     </div>
                                 </div>
                                 <div className="admin-stat-card">
@@ -230,7 +232,7 @@ export default function Dashboard() {
                                     <div className="stat-icon pink"><Navigation size={24} /></div>
                                     <div className="stat-info">
                                         <span className="label">Corridas Hoje</span>
-                                        <span className="value">{Math.floor((stats?.totalTrips || 0) * 0.2)}</span>
+                                        <span className="value">{stats?.todayTrips || 0}</span>
                                     </div>
                                 </div>
                                 <div className="admin-stat-card">

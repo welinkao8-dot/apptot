@@ -4,7 +4,6 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    SafeAreaView,
     StatusBar,
     Animated,
     Dimensions,
@@ -179,17 +178,18 @@ export default function RideFlowScreen({ navigation, route }) {
         }
     };
 
-    // 2. Map Auto-Restore during hydration (if map becomes ready later)
+    // 2. Map Auto-Restore and Dynamic Adjustment
     useEffect(() => {
-        if (mapReady && destination && (step === 'requesting' || step === 'accepted' || step === 'ongoing' || step === 'waiting_payment')) {
+        if (mapReady && destination && step !== 'searching_address') {
             mapRef.current?.setMarkers(pickupCoords, { lat: destination.lat, lng: destination.lng });
-            calculateFares(destination.lat, destination.lng);
-
-            if (acceptedDriver) {
-                mapRef.current?.setDriverPosition({ lat: acceptedDriver.lat, lng: acceptedDriver.lng });
+            
+            if (step === 'service_selection' || step === 'requesting' || step === 'accepted' || step === 'ongoing') {
+                if (acceptedDriver) {
+                    mapRef.current?.setDriverPosition({ lat: acceptedDriver.lat, lng: acceptedDriver.lng });
+                }
             }
         }
-    }, [mapReady, step, pickupCoords, destination]);
+    }, [mapReady, step, destination]);
 
     // 3. Search Logic
     useEffect(() => {
@@ -358,7 +358,6 @@ export default function RideFlowScreen({ navigation, route }) {
     }, [user?.id]); // Use optional chaining to avoid crash when user is null after logout
 
 
-    // --- Helper Functions ---
 
     const loadServices = async () => {
         try {
@@ -797,8 +796,13 @@ export default function RideFlowScreen({ navigation, route }) {
 
     return (
         <SafeAreaView style={styles.container}>
+            <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
             <View style={styles.mapPlaceholder}>
-                <HereMap ref={mapRef} onMapTap={onMapTap} onMapReady={() => setMapReady(true)} />
+                <HereMap 
+                    ref={mapRef} 
+                    onMapTap={onMapTap} 
+                    onMapReady={() => setMapReady(true)} 
+                />
             </View>
 
             {/* Manual Sync Button - Only for restored sessions - Discreet floating button on the side */}
@@ -832,9 +836,6 @@ const styles = StyleSheet.create({
         borderTopRightRadius: 32,
         padding: 30,
         ...colors.shadow,
-        position: 'absolute',
-        bottom: 0,
-        width: '100%'
     },
     sheetTitle: {
         fontSize: 22,

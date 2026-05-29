@@ -1,4 +1,4 @@
-import React, { useRef, useImperativeHandle, forwardRef } from 'react';
+import React, { useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
@@ -31,6 +31,7 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
             injectJS(`window.centerOn(${JSON.stringify(coords)}, ${zoom});`);
         }
     }));
+
 
     const initialCenterJson = JSON.stringify(initialCenter || { lat: -8.839, lng: 13.289 });
 
@@ -163,7 +164,7 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                     if (bounds) {
                         map.getViewModel().setLookAtData({ 
                             bounds: bounds,
-                            padding: { top: 120, bottom: 120, left: 60, right: 60 }
+                            padding: { top: 140, bottom: 140, left: 80, right: 80 }
                         }, true);
                     }
                 } else if (o) {
@@ -198,7 +199,7 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                     if (bounds) {
                         map.getViewModel().setLookAtData({ 
                             bounds: bounds,
-                            padding: { top: 120, bottom: 120, left: 60, right: 60 }
+                            padding: { top: 140, bottom: 140, left: 80, right: 80 }
                         }, true);
                     }
                 } catch (e) {

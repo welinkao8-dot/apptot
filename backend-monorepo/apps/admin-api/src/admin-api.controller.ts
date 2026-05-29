@@ -95,6 +95,11 @@ export class AdminApiController {
     return this.adminApiService.updateDriverStatus(id, newStatus);
   }
 
+  @Post('clients/:id/status')
+  updateClientStatus(@Param('id') id: string, @Body() body: { status: string }) {
+    return this.adminApiService.updateClientStatus(id, body.status);
+  }
+
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', {
     storage: diskStorage({
