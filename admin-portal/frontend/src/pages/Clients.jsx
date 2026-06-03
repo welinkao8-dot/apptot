@@ -37,6 +37,12 @@ export default function Clients({ onBack }) {
     const [allTrips, setAllTrips] = useState([])
     const [tripsLoading, setTripsLoading] = useState(false)
     const [selectedTrip, setSelectedTrip] = useState(null)
+    const [currentPage, setCurrentPage] = useState(1)
+    const itemsPerPage = 10
+
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [searchTerm])
 
     useEffect(() => {
         fetchClients()
@@ -72,12 +78,14 @@ export default function Clients({ onBack }) {
     const handleViewHistory = async (client) => {
         setSelectedClient(client)
         setView('history')
+        setCurrentPage(1)
         await fetchTrips()
     }
 
     const handleViewProfile = async (client) => {
         setSelectedClient(client)
         setView('profile')
+        setCurrentPage(1)
         await fetchTrips()
     }
 
@@ -101,8 +109,13 @@ export default function Clients({ onBack }) {
         c.phone?.includes(searchTerm)
     )
 
+    const totalPages = Math.ceil(filteredClients.length / itemsPerPage)
+    const paginatedClients = filteredClients.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+
     // Filter trips for selected client
     const clientTrips = selectedClient ? allTrips.filter(t => t.client_id === selectedClient.id) : []
+    const totalHistoryPages = Math.ceil(clientTrips.length / itemsPerPage)
+    const paginatedHistoryTrips = clientTrips.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
 
     // Render list view
     if (view === 'list') {
@@ -133,8 +146,8 @@ export default function Clients({ onBack }) {
                 <div className="drivers-table-grid mt-6">
                     {loading ? (
                         [1, 2, 3].map(i => <div key={i} className="driver-card-premium horizontal skeleton h-32"></div>)
-                    ) : filteredClients.length > 0 ? (
-                        filteredClients.map(client => (
+                    ) : paginatedClients.length > 0 ? (
+                        paginatedClients.map(client => (
                             <div key={client.id} className="driver-card-premium horizontal animate-fade-in">
                                 <div className="card-left-section">
                                     <div className="avatar-box">
@@ -182,6 +195,73 @@ export default function Clients({ onBack }) {
                         </div>
                     )}
                 </div>
+
+                {/* Pagination Controls */}
+                {!loading && totalPages > 1 && (() => {
+                    const pages = [];
+                    if (totalPages <= 7) {
+                        for (let i = 1; i <= totalPages; i++) pages.push(i);
+                    } else {
+                        pages.push(1);
+                        if (currentPage > 3) pages.push('...');
+                        const start = Math.max(2, currentPage - 1);
+                        const end = Math.min(totalPages - 1, currentPage + 1);
+                        for (let i = start; i <= end; i++) {
+                            if (pages[pages.length - 1] !== i) pages.push(i);
+                        }
+                        if (currentPage < totalPages - 2) pages.push('...');
+                        if (pages[pages.length - 1] !== totalPages) pages.push(totalPages);
+                    }
+
+                    return (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24, marginBottom: 12 }}>
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={currentPage === 1}
+                                style={{
+                                    padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
+                                    background: '#fff', color: currentPage === 1 ? '#cbd5e1' : '#64748b',
+                                    fontWeight: 600, fontSize: 13, cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                Anterior
+                            </button>
+                            {pages.map((page, idx) => {
+                                if (page === '...') {
+                                    return <span key={`dots-${idx}`} style={{ color: '#94a3b8', padding: '0 4px' }}>...</span>;
+                                }
+                                return (
+                                    <button
+                                        key={page}
+                                        onClick={() => setCurrentPage(page)}
+                                        style={{
+                                            width: 36, height: 36, borderRadius: 8, border: 'none',
+                                            background: currentPage === page ? 'linear-gradient(135deg, #e91e63, #c2185b)' : '#f1f5f9',
+                                            color: currentPage === page ? '#fff' : '#64748b',
+                                            fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {page}
+                                    </button>
+                                );
+                            })}
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                                disabled={currentPage === totalPages}
+                                style={{
+                                    padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
+                                    background: '#fff', color: currentPage === totalPages ? '#cbd5e1' : '#64748b',
+                                    fontWeight: 600, fontSize: 13, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                Seguinte
+                            </button>
+                        </div>
+                    );
+                })()}
             </div>
         )
     }
@@ -192,7 +272,7 @@ export default function Clients({ onBack }) {
             <div className="clients-module animate-fade-in">
                 <div className="module-header-nav">
                     <div className="flex items-center gap-4">
-                        <button className="btn-back-square" onClick={() => setView('list')}><ArrowLeft size={20} /></button>
+                        <button className="btn-back-square" onClick={() => { setView('list'); setCurrentPage(1); }}><ArrowLeft size={20} /></button>
                         <div className="title-area">
                             <h2>Histórico de {selectedClient.full_name || 'Cliente'}</h2>
                             <p>{clientTrips.length} corridas registradas</p>
@@ -203,8 +283,8 @@ export default function Clients({ onBack }) {
                 <div className="drivers-table-grid mt-6">
                     {tripsLoading ? (
                         [1, 2, 3].map(i => <div key={i} className="driver-card-premium horizontal skeleton h-32"></div>)
-                    ) : clientTrips.length > 0 ? (
-                        clientTrips.map(trip => (
+                    ) : paginatedHistoryTrips.length > 0 ? (
+                        paginatedHistoryTrips.map(trip => (
                             <div key={trip.id} className="driver-card-premium horizontal animate-fade-in">
                                 <div className="card-left-section">
                                     <div className="avatar-box">
@@ -253,6 +333,73 @@ export default function Clients({ onBack }) {
                         </div>
                     )}
                 </div>
+
+                {/* Pagination Controls */}
+                {!tripsLoading && totalHistoryPages > 1 && (() => {
+                    const pages = [];
+                    if (totalHistoryPages <= 7) {
+                        for (let i = 1; i <= totalHistoryPages; i++) pages.push(i);
+                    } else {
+                        pages.push(1);
+                        if (currentPage > 3) pages.push('...');
+                        const start = Math.max(2, currentPage - 1);
+                        const end = Math.min(totalHistoryPages - 1, currentPage + 1);
+                        for (let i = start; i <= end; i++) {
+                            if (pages[pages.length - 1] !== i) pages.push(i);
+                        }
+                        if (currentPage < totalHistoryPages - 2) pages.push('...');
+                        if (pages[pages.length - 1] !== totalHistoryPages) pages.push(totalHistoryPages);
+                    }
+
+                    return (
+                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24, marginBottom: 12 }}>
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                disabled={currentPage === 1}
+                                style={{
+                                    padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
+                                    background: '#fff', color: currentPage === 1 ? '#cbd5e1' : '#64748b',
+                                    fontWeight: 600, fontSize: 13, cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                Anterior
+                            </button>
+                            {pages.map((page, idx) => {
+                                if (page === '...') {
+                                    return <span key={`dots-${idx}`} style={{ color: '#94a3b8', padding: '0 4px' }}>...</span>;
+                                }
+                                return (
+                                    <button
+                                        key={page}
+                                        onClick={() => setCurrentPage(page)}
+                                        style={{
+                                            width: 36, height: 36, borderRadius: 8, border: 'none',
+                                            background: currentPage === page ? 'linear-gradient(135deg, #e91e63, #c2185b)' : '#f1f5f9',
+                                            color: currentPage === page ? '#fff' : '#64748b',
+                                            fontWeight: 700, fontSize: 13, cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {page}
+                                    </button>
+                                );
+                            })}
+                            <button
+                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalHistoryPages))}
+                                disabled={currentPage === totalHistoryPages}
+                                style={{
+                                    padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
+                                    background: '#fff', color: currentPage === totalHistoryPages ? '#cbd5e1' : '#64748b',
+                                    fontWeight: 600, fontSize: 13, cursor: currentPage === totalHistoryPages ? 'not-allowed' : 'pointer',
+                                    transition: 'all 0.2s'
+                                }}
+                            >
+                                Seguinte
+                            </button>
+                        </div>
+                    );
+                })()}
 
                 {selectedTrip && (
                     <div className="receipt-overlay animate-fade-in" onClick={() => setSelectedTrip(null)}>

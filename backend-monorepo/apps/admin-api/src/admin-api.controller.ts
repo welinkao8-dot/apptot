@@ -79,6 +79,26 @@ export class AdminApiController {
     return this.adminApiService.getAllTrips();
   }
 
+  @Get('trips/:id')
+  getTripById(@Param('id') id: string) {
+    return this.adminApiService.getTripById(id);
+  }
+
+  @Get('invoices')
+  getAllInvoices() {
+    return this.adminApiService.getAllInvoices();
+  }
+
+  @Get('invoices/user/:userId')
+  getInvoicesByUser(@Param('userId') userId: string) {
+    return this.adminApiService.getInvoicesByUser(userId);
+  }
+
+  @Get('settings')
+  getAppSettings() {
+    return this.adminApiService.getAppSettings();
+  }
+
   @Get('logs')
   getLogs() {
     return this.adminApiService.getAuditLogs();

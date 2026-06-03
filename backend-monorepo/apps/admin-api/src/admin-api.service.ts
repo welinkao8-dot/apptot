@@ -34,6 +34,85 @@ export class AdminApiService {
     });
   }
 
+  async getTripById(id: string) {
+    return this.prisma.trips.findUnique({
+      where: { id },
+      include: {
+        profiles_trips_client_idToprofiles: {
+          select: { full_name: true, phone: true, email: true, avatar_url: true }
+        },
+        profiles_trips_driver_idToprofiles: {
+          select: { full_name: true, phone: true, email: true }
+        },
+        service_configs: {
+          select: { name: true, vehicle_category: true, service_type: true }
+        },
+        invoices: true
+      }
+    });
+  }
+
+  async getAllInvoices() {
+    return this.prisma.invoices.findMany({
+      include: {
+        trips: {
+          select: {
+            id: true,
+            origin_address: true,
+            dest_address: true,
+            status: true,
+            created_at: true
+          }
+        },
+        profiles: {
+          select: { full_name: true, phone: true, email: true, role: true }
+        }
+      },
+      orderBy: { created_at: 'desc' }
+    });
+  }
+
+  async getInvoicesByUser(userId: string) {
+    return this.prisma.invoices.findMany({
+      where: { user_id: userId },
+      include: {
+        trips: {
+          select: {
+            id: true,
+            origin_address: true,
+            dest_address: true,
+            status: true,
+            created_at: true
+          }
+        }
+      },
+      orderBy: { created_at: 'desc' }
+    });
+  }
+
+  async getAppSettings() {
+    // Return global platform parameters derived from current state
+    const [totalDrivers, activeDrivers, totalClients, totalTrips] = await Promise.all([
+      this.prisma.drivers.count(),
+      this.prisma.drivers.count({ where: { status: 'active' } }),
+      this.prisma.profiles.count({ where: { role: 'client' } }),
+      this.prisma.trips.count()
+    ]);
+    return {
+      platform_name: 'TOT Angola',
+      platform_version: '1.0.0',
+      max_driver_radius_km: 10,
+      trip_timeout_minutes: 5,
+      default_commission_pct: 15,
+      currency: 'AOA',
+      currency_symbol: 'Kz',
+      country: 'Angola',
+      support_phone: '+244 900 000 000',
+      support_email: 'suporte@tot.ao',
+      stats: { totalDrivers, activeDrivers, totalClients, totalTrips }
+    };
+  }
+
   async getAllClients() {
     const clients = await this.prisma.profiles.findMany({
       where: { role: 'client' },
@@ -302,7 +381,12 @@ export class AdminApiService {
       select: {
         id: true,
         full_name: true,
+        phone: true,
         status: true,
+        current_lat: true,
+        current_lng: true,
+        last_location_update: true,
+        rating: true
       }
     });
   }

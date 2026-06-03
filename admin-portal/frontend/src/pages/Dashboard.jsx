@@ -39,6 +39,10 @@ import Drivers from './Drivers'
 import Clients from './Clients'
 import Pricing from './Pricing'
 import Trips from './Trips'
+import AuditLogs from './AuditLogs'
+import Invoices from './Invoices'
+import Configs from './Configs'
+import LiveOps from './LiveOps'
 
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
@@ -149,6 +153,9 @@ export default function Dashboard() {
                     <button className={`nav-link ${view === 'overview' ? 'active' : ''}`} onClick={() => { setView('overview'); setIsMobileMenuOpen(false); }}>
                         <LayoutDashboard size={20} /> <span className="ml-4">Visão Geral</span>
                     </button>
+                    <button className={`nav-link ${view === 'liveops' ? 'active' : ''}`} onClick={() => { setView('liveops'); setIsMobileMenuOpen(false); }}>
+                        <Navigation size={20} /> <span className="ml-4">Operação Live</span>
+                    </button>
                     <button className={`nav-link ${view === 'drivers' ? 'active' : ''}`} onClick={() => { setView('drivers'); setIsMobileMenuOpen(false); }}>
                         <Bike size={20} /> <span className="ml-4">Motoristas</span>
                     </button>
@@ -160,6 +167,12 @@ export default function Dashboard() {
                     </button>
                     <button className={`nav-link ${view === 'trips' ? 'active' : ''}`} onClick={() => { setView('trips'); setIsMobileMenuOpen(false); }}>
                         <History size={20} /> <span className="ml-4">Corridas</span>
+                    </button>
+                    <button className={`nav-link ${view === 'invoices' ? 'active' : ''}`} onClick={() => { setView('invoices'); setIsMobileMenuOpen(false); }}>
+                        <FileText size={20} /> <span className="ml-4">Faturas</span>
+                    </button>
+                    <button className={`nav-link ${view === 'auditlogs' ? 'active' : ''}`} onClick={() => { setView('auditlogs'); setIsMobileMenuOpen(false); }}>
+                        <ShieldCheck size={20} /> <span className="ml-4">Audit Logs</span>
                     </button>
                     <button className={`nav-link ${view === 'configs' ? 'active' : ''}`} onClick={() => { setView('configs'); setIsMobileMenuOpen(false); }}>
                         <Settings size={20} /> <span className="ml-4">Configurações</span>
@@ -310,8 +323,12 @@ export default function Dashboard() {
                 {view === 'clients' && <Clients onBack={() => setView('overview')} />}
                 {view === 'pricing' && <Pricing onBack={() => setView('overview')} />}
                 {view === 'trips' && <Trips onBack={() => setView('overview')} />}
+                {view === 'liveops' && <LiveOps onBack={() => setView('overview')} />}
+                {view === 'invoices' && <Invoices onBack={() => setView('overview')} />}
+                {view === 'auditlogs' && <AuditLogs onBack={() => setView('overview')} />}
+                {view === 'configs' && <Configs onBack={() => setView('overview')} />}
 
-                {view !== 'overview' && !['drivers', 'clients', 'pricing', 'trips'].includes(view) && (
+                {view !== 'overview' && !['drivers', 'clients', 'pricing', 'trips', 'liveops', 'invoices', 'auditlogs', 'configs'].includes(view) && (
                     <div className="under-construction py-20 text-center text-slate-400">
                         <Settings size={48} className="mx-auto mb-4 animate-spin-slow" />
                         <h2>Módulo {view} em desenvolvimento...</h2>
