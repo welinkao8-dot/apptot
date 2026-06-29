@@ -151,21 +151,7 @@ dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
 
-    // Mapbox SDK Integration - stable 3.18.1 (Compatible with @rnmapbox/maps)
-    // Mapbox Navigation SDK v3.18.1
-    implementation("com.mapbox.navigationcore:android:3.18.1")
-    implementation("com.mapbox.navigationcore:ui-maps:3.18.1")
-    implementation("com.mapbox.navigationcore:ui-components:3.18.1")
-    implementation("com.mapbox.navigationcore:voice:3.18.1")
-    implementation("com.mapbox.navigationcore:tripdata:3.18.1")
-
-    // Mapbox Common (compatível)
-    implementation("com.mapbox.common:common:23.5.0")
-
     implementation("androidx.constraintlayout:constraintlayout:2.1.4")
-    // Note: com.mapbox.maps:android is handled by @rnmapbox/maps autolinking
-    // BUT we need explicit access to v11 classes in our Java code:
-    implementation("com.mapbox.maps:android:11.4.1")
 
     if (hermesEnabled.toBoolean()) {
         implementation("com.facebook.react:hermes-android")

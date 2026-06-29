@@ -13,10 +13,6 @@ import { AuthProvider } from './src/context/AuthContext';
 import LocationDisclosure from './src/components/LocationDisclosure';
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import MapboxGL from '@rnmapbox/maps';
-
-// Set Mapbox Token Globally
-MapboxGL.setAccessToken('pk.eyJ1Ijoicm9seW5nYWx1bGEiLCJhIjoiY21reW4yazd1MGEzcDNlcHZ5ZmxiOWkyeCJ9.h0ixib23eamrzruV6yvqUA');
 
 const DISCLOSURE_KEY = '@has_seen_location_disclosure';
 

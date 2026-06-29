@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, ActivityIndicator, Pressable, Platform, DeviceEventEmitter, PermissionsAndroid } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, ActivityIndicator, Pressable, Platform, DeviceEventEmitter, PermissionsAndroid, Linking, NativeModules } from 'react-native';
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { SafeAreaView } from 'react-native-safe-area-context';
-import MapboxGL from '@rnmapbox/maps';
-import MapboxNavigation from '../native/MapboxNavigation';
-import MapboxNavigationLayer from '../components/MapboxNavigationLayer';
+import { WebView } from 'react-native-webview';
+import { openNavigationApp } from '../utils/openNavigation';
 import { AuthContext, API_URL } from '../context/AuthContext';
 import { getSocket, connectSocket } from '../services/socket';
 import colors from '../theme/colors';
@@ -61,9 +60,7 @@ import { formatCurrency } from '../utils/formatters';
 
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 
-// Set access token globally for Mapbox
-MapboxGL.setAccessToken('pk.eyJ1Ijoicm9seW5nYWx1bGEiLCJhIjoiY21reW4yazd1MGEzcDNlcHZ5ZmxiOWkyeCJ9.h0ixib23eamrzruV6yvqUA');
-
+const { LocationModule } = NativeModules;
 
 const { width, height } = Dimensions.get('window');
 
@@ -80,11 +77,7 @@ export default function DashboardScreen({ navigation }) {
     const [rideStatus, setRideStatus] = useState('idle');
     const [activeTrip, setActiveTrip] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [mountMap, setMountMap] = useState(false);
     const [isMinimized, setIsMinimized] = useState(false);
-    const [isMuted, setIsMuted] = useState(false);
-    const [showSteps, setShowSteps] = useState(false);
-    const [cameraState, setCameraState] = useState('FOLLOWING');
 
     const socket = useRef(null);
 
@@ -115,24 +108,27 @@ export default function DashboardScreen({ navigation }) {
     useEffect(() => {
         const loadPersistedState = async () => {
             try {
-                const [storedOnline, storedStatus, storedTrip, storedGeometry] = await Promise.all([
+                const [storedOnline, storedStatus, storedTrip] = await Promise.all([
                     AsyncStorage.getItem('@tot_is_online'),
                     AsyncStorage.getItem('@tot_ride_status'),
-                    AsyncStorage.getItem('@tot_active_trip'),
-                    AsyncStorage.getItem('@tot_route_geometry')
+                    AsyncStorage.getItem('@tot_active_trip')
                 ]);
 
                 if (storedOnline !== null) {
                     const status = storedOnline === 'true';
                     setIsOnline(status);
-                    if (status) checkPermissions(); // Request if already online
+                    if (status) {
+                        checkPermissions().then(hasPerm => {
+                            if (hasPerm && LocationModule) {
+                                LocationModule.startLocationUpdates();
+                            }
+                        });
+                    }
                 }
                 if (storedStatus) setRideStatus(storedStatus);
                 if (storedTrip) {
                     setActiveTrip(JSON.parse(storedTrip));
-                    setMountMap(true);
                 }
-                if (storedGeometry) setRouteGeometry(storedGeometry);
             } catch (e) {
                 console.error('Error loading persisted state:', e);
             } finally {
@@ -167,7 +163,12 @@ export default function DashboardScreen({ navigation }) {
             setIsOnline(data.isOnline);
             AsyncStorage.setItem('@tot_is_online', data.isOnline.toString());
             onlineProgress.value = withSpring(data.isOnline ? 1 : 0);
-            if (data.isOnline) fetchPendingTrips();
+            if (data.isOnline) {
+                fetchPendingTrips();
+                if (LocationModule) LocationModule.startLocationUpdates();
+            } else {
+                if (LocationModule) LocationModule.stopLocationUpdates();
+            }
             setIsLoading(false);
         });
 
@@ -214,98 +215,6 @@ export default function DashboardScreen({ navigation }) {
         }
     };
 
-    // State for display (updated less frequently)
-    const [navDisplayData, setNavDisplayData] = useState({
-        instruction: 'Navegação Iniciada',
-        distance: 0,
-        duration: 0,
-        modifier: '',
-        maneuvers: [],
-        formattedDistance: '',
-        formattedDuration: '',
-        stepFormattedDistance: '',
-        stepFormattedDuration: '',
-        formattedEta: '',
-        percentageTraveled: 0
-    });
-
-    // Ref for high-frequency updates (prevents render storm)
-    const navRef = useRef({
-        instruction: 'Navegação Iniciada',
-        distance: 0,
-        duration: 0,
-        stepDistance: 0,
-        stepDuration: 0,
-        modifier: '',
-        type: '',
-        percentageTraveled: 0
-    });
-
-    useEffect(() => {
-        // High-frequency listener writes to REF only
-        const navListener = DeviceEventEmitter.addListener('onNavigationProgress', (data) => {
-            navRef.current = {
-                instruction: data.instruction || navRef.current.instruction,
-                distance: data.distanceRemaining,
-                duration: data.durationRemaining,
-                stepDistance: data.stepDistanceRemaining || 0,
-                stepDuration: data.stepDurationRemaining || 0,
-                modifier: data.modifier,
-                type: data.type,
-                percentageTraveled: data.percentageTraveled || 0
-            };
-        });
-
-        // Sync timer updates STATE only once per second
-        const syncInterval = setInterval(() => {
-            setNavDisplayData(prev => {
-                // Only update if data changed significantly or just to keep UI fresh
-                return {
-                    ...prev,
-                    instruction: navRef.current.instruction,
-                    distance: navRef.current.distance,
-                    duration: navRef.current.duration,
-                    modifier: navRef.current.modifier,
-                    percentageTraveled: navRef.current.percentageTraveled,
-                    formattedDistance: formatDistance(navRef.current.distance),
-                    formattedDuration: formatDuration(navRef.current.duration),
-                    stepFormattedDistance: formatDistance(navRef.current.stepDistance),
-                    stepFormattedDuration: formatDuration(navRef.current.stepDuration)
-                };
-            });
-        }, 1000);
-
-        const routeListener = DeviceEventEmitter.addListener('onRouteChanged', (data) => {
-            console.log('🛣️ Route updated in Native');
-        });
-
-        const cameraListener = DeviceEventEmitter.addListener('onCameraStateChanged', (data) => {
-            setCameraState(data.state);
-        });
-
-        const onArrivalListener = DeviceEventEmitter.addListener('onArrival', (data) => {
-            console.log('🏁 Arrival detected in JS');
-            ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-        });
-
-        return () => {
-            navListener.remove();
-            routeListener.remove();
-            cameraListener.remove();
-            onArrivalListener.remove();
-            clearInterval(syncInterval);
-        };
-    }, []);
-
-    const toggleMute = () => {
-        const newState = !isMuted;
-        setIsMuted(newState);
-        MapboxNavigation.setMuted(newState);
-        process.nextTick(() => {
-            ReactNativeHapticFeedback.trigger('impactLight', hapticOptions);
-        });
-    };
-
     const onLocationUpdate = (location) => {
         if (!location?.coords || !socket.current || !user) return;
         const { longitude, latitude } = location.coords;
@@ -317,7 +226,13 @@ export default function DashboardScreen({ navigation }) {
         });
     };
 
-
+    // Native Location updates listener
+    useEffect(() => {
+        const sub = DeviceEventEmitter.addListener('onLocationUpdate', (data) => {
+            onLocationUpdate(data);
+        });
+        return () => sub.remove();
+    }, [activeTrip]);
 
     // Periodic stats refresh
     useEffect(() => {
@@ -365,6 +280,9 @@ export default function DashboardScreen({ navigation }) {
                 });
                 return;
             }
+            if (LocationModule) LocationModule.startLocationUpdates();
+        } else {
+            if (LocationModule) LocationModule.stopLocationUpdates();
         }
 
         setIsOnline(nextStatus);
@@ -561,90 +479,22 @@ export default function DashboardScreen({ navigation }) {
             >
                 <SafeAreaView edges={['top']}>
                     <View style={styles.headerContent}>
-                        {/* MANEUVER / STATUS LOGIC */}
                         <View style={styles.navInstructionArea}>
-                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                                {rideStatus === 'ongoing' && (
-                                    <View style={styles.turnIconBadge}>
-                                        {renderTurnIcon(navDisplayData.modifier)}
-                                    </View>
-                                )}
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.navInstructionText} numberOfLines={1}>
-                                        {rideStatus === 'ongoing' ? navDisplayData.instruction : (rideStatus === 'accepted' ? 'Caminho do Passageiro' : 'Fim da Viagem')}
-                                    </Text>
-                                    {(rideStatus === 'ongoing' || rideStatus === 'accepted') && navDisplayData.stepFormattedDistance !== '' && (
-                                        <Text style={{ color: colors.primary, fontWeight: '800', fontSize: 13 }}>
-                                            em {navDisplayData.stepFormattedDistance}
-                                        </Text>
-                                    )}
-                                </View>
-                            </View>
-
-                            <View style={styles.headerMetricsContainer}>
-                                <View style={styles.headerMetricBox}>
-                                    <Clock size={12} color={colors.textSecondary} />
-                                    <Text style={styles.headerMetricValue}>{navDisplayData.stepFormattedDuration}</Text>
-                                </View>
-                                <View style={styles.headerMetricBox}>
-                                    <Route size={12} color={colors.textSecondary} />
-                                    <Text style={styles.headerMetricValue}>{navDisplayData.stepFormattedDistance}</Text>
-                                </View>
-                            </View>
+                            <Text style={styles.navInstructionText} numberOfLines={1}>
+                                {rideStatus === 'accepted' ? 'Caminho do Passageiro' : rideStatus === 'ongoing' ? 'Corrida em Curso' : 'Finalizar Corrida'}
+                            </Text>
+                            <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: '600' }}>
+                                {activeTrip.userName || 'Passageiro'}
+                            </Text>
                         </View>
 
-                        {/* RIGHT: STATUS PILL + MUTE TOGGLE */}
                         <View style={styles.headerRightInfo}>
-                            <TouchableOpacity
-                                onPress={toggleMute}
-                                style={[styles.muteToggleButton, isMuted && styles.muteToggleActive]}
-                            >
-                                {isMuted ? (
-                                    <VolumeX size={18} color="#ef4444" />
-                                ) : (
-                                    <Volume2 size={18} color={colors.primary} />
-                                )}
-                            </TouchableOpacity>
-
                             <View style={[styles.statusPillPremium, { borderColor: getStatusColor() + '40' }]}>
                                 <View style={[styles.statusDotSmall, { backgroundColor: getStatusColor() }]} />
                                 <Text style={[styles.statusLabelPremium, { color: getStatusColor() }]}>{getStatusText()}</Text>
                             </View>
                         </View>
                     </View>
-
-                    {/* EXPANDABLE STEPS LIST */}
-                    {rideStatus === 'ongoing' && navDisplayData.maneuvers.length > 0 && (
-                        <TouchableOpacity
-                            activeOpacity={0.9}
-                            onPress={() => {
-                                setShowSteps(!showSteps);
-                                ReactNativeHapticFeedback.trigger('impactLight', hapticOptions);
-                            }}
-                            style={styles.expandStepsHandle}
-                        >
-                            <View style={[styles.minimizeHandleBar, { width: 40, opacity: 0.3 }]} />
-                        </TouchableOpacity>
-                    )}
-
-                    {showSteps && rideStatus === 'ongoing' && (
-                        <Animated.View style={styles.stepsListContainer}>
-                            <ScrollView style={{ maxHeight: 250 }} showsVerticalScrollIndicator={false}>
-                                {navDisplayData.maneuvers.map((step, idx) => (
-                                    <View key={`step-${idx}`} style={styles.stepItemRow}>
-                                        <View style={styles.stepIconSmall}>
-                                            {renderTurnIcon(step.modifier, 16)}
-                                        </View>
-                                        <View style={styles.stepInfoContainer}>
-                                            <Text style={styles.stepInstructionText}>{step.instruction}</Text>
-                                            <Text style={styles.stepDistanceText}>{formatDistance(step.distance)}</Text>
-                                        </View>
-                                        <ChevronRight size={14} color="rgba(255,255,255,0.2)" />
-                                    </View>
-                                ))}
-                            </ScrollView>
-                        </Animated.View>
-                    )}
                 </SafeAreaView>
             </LinearGradient>
         );
@@ -666,26 +516,30 @@ export default function DashboardScreen({ navigation }) {
                 {renderActiveRideHeader()}
 
                 <View style={{ flex: 1 }}>
-                    {mountMap ? (
-                        <MapboxNavigationLayer
-                            trip={activeTrip}
-                            rideStatus={rideStatus}
-                            isMinimized={isMinimized}
-                            onToggleMinimize={() => setIsMinimized(!isMinimized)}
-                            onLocationUpdate={onLocationUpdate}
-                            onProgressUpdate={(data) => {
-                                socket.current?.emit('trip_progress', {
-                                    ...data,
-                                    tripId: activeTrip.id,
-                                    clientId: activeTrip.clientId
-                                });
-                            }}
-                        />
-                    ) : (
-                        <View style={[styles.centered, { flex: 1, backgroundColor: colors.background }]}>
-                            <ActivityIndicator size="large" color={colors.primary} />
-                        </View>
-                    )}
+                    {(() => {
+                        const targetLat = rideStatus === 'accepted' ? activeTrip.coords?.lat : activeTrip.destPos?.lat;
+                        const targetLng = rideStatus === 'accepted' ? activeTrip.coords?.lng : activeTrip.destPos?.lng;
+                        const embedUrl = `https://www.google.com/maps?q=${targetLat || -8.839},${targetLng || 13.289}&z=16&output=embed`;
+
+                        return (
+                            <WebView
+                                source={{ uri: embedUrl }}
+                                style={{ flex: 1 }}
+                                javaScriptEnabled={true}
+                                domStorageEnabled={true}
+                                startInLoadingState={true}
+                                geolocationEnabled={true}
+                                onGeolocationPermissionsShowPrompt={(origin, callback) => {
+                                    callback(origin, true);
+                                }}
+                                renderLoading={() => (
+                                    <View style={[StyleSheet.absoluteFill, styles.centered, { backgroundColor: colors.background }]}>
+                                        <ActivityIndicator size="large" color={colors.primary} />
+                                    </View>
+                                )}
+                            />
+                        );
+                    })()}
 
                     {/* ANIMATED FLOATING CARD */}
                     <Animated.View style={[styles.activeRideFloatingPanel, animatedPanelStyle]}>
@@ -696,14 +550,6 @@ export default function DashboardScreen({ navigation }) {
                         >
                             <View style={styles.minimizeHandleBar} />
                         </TouchableOpacity>
-
-                        {/* TRIP PROGRESS BAR */}
-                        {rideStatus === 'ongoing' && (
-                            <View style={styles.progressBarContainer}>
-                                <View style={[styles.progressBarFill, { width: `${navDisplayData.percentageTraveled * 100}%` }]} />
-                                <View style={styles.progressMarker} />
-                            </View>
-                        )}
 
                         <View style={styles.reqInfoRow}>
                             <View style={styles.clientAvatar}>
@@ -734,45 +580,65 @@ export default function DashboardScreen({ navigation }) {
                             <Text style={styles.reqAddr} numberOfLines={1}>Para: {activeTrip.destAddress || 'Destino'}</Text>
                         </View>
 
-                        {/* TRIP PROGRESS SUMMARY (ETA/DISTANCE) */}
-                        {rideStatus === 'ongoing' && (
-                            <View style={styles.tripSummaryFooter}>
-                                <View style={styles.tripSummaryItem}>
-                                    <Text style={styles.tripSummaryLabel}>CHEGADA</Text>
-                                    <Text style={styles.tripSummaryValue}>{navDisplayData.formattedEta || '--:--'}</Text>
-                                </View>
-                                <View style={styles.tripSummaryDivider} />
-                                <View style={styles.tripSummaryItem}>
-                                    <Text style={styles.tripSummaryLabel}>DISTÂNCIA</Text>
-                                    <Text style={styles.tripSummaryValue}>{navDisplayData.formattedDistance || '--'}</Text>
-                                </View>
-                                <View style={styles.tripSummaryDivider} />
-                                <View style={styles.tripSummaryItem}>
-                                    <Text style={styles.tripSummaryLabel}>TEMPO</Text>
-                                    <Text style={styles.tripSummaryValue}>{navDisplayData.formattedDuration || '--'}</Text>
-                                </View>
-                            </View>
-                        )}
-
                         <View style={{ marginBottom: 15 }} />
 
                         {/* ACTIONS */}
                         {rideStatus === 'accepted' && (
-                            <TouchableOpacity style={styles.finishBtnTouch} onPress={handleStartRide}>
-                                <LinearGradient colors={colors.gradients.pink} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
-                                    <Text style={styles.acceptBtnText}>INICIAR CORRIDA</Text>
-                                    <Play size={20} color="#fff" />
-                                </LinearGradient>
-                            </TouchableOpacity>
+                            <View style={{ gap: 10 }}>
+                                <TouchableOpacity style={styles.finishBtnTouch} onPress={handleStartRide}>
+                                    <LinearGradient colors={colors.gradients.pink} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
+                                        <Text style={styles.acceptBtnText}>INICIAR CORRIDA (CLIENTE A BORDO)</Text>
+                                        <Play size={20} color="#fff" />
+                                    </LinearGradient>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity 
+                                    style={styles.finishBtnTouch} 
+                                    onPress={() => {
+                                        if (activeTrip.coords?.lat && activeTrip.coords?.lng) {
+                                            openNavigationApp(
+                                                activeTrip.coords.lat,
+                                                activeTrip.coords.lng,
+                                                activeTrip.pickupAddress || 'Passageiro'
+                                            );
+                                        }
+                                    }}
+                                >
+                                    <LinearGradient colors={colors.gradients.blue} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
+                                        <Text style={styles.acceptBtnText}>NAVEGAR ATÉ O PASSAGEIRO</Text>
+                                        <Navigation size={20} color="#fff" />
+                                    </LinearGradient>
+                                </TouchableOpacity>
+                            </View>
                         )}
 
                         {rideStatus === 'ongoing' && (
-                            <TouchableOpacity style={styles.finishBtnTouch} onPress={handleFinishRide}>
-                                <LinearGradient colors={colors.gradients.emerald} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
-                                    <Text style={styles.acceptBtnText}>FINALIZAR CORRIDA</Text>
-                                    <CheckCircle size={20} color="#fff" />
-                                </LinearGradient>
-                            </TouchableOpacity>
+                            <View style={{ gap: 10 }}>
+                                <TouchableOpacity style={styles.finishBtnTouch} onPress={handleFinishRide}>
+                                    <LinearGradient colors={colors.gradients.emerald} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
+                                        <Text style={styles.acceptBtnText}>FINALIZAR CORRIDA</Text>
+                                        <CheckCircle size={20} color="#fff" />
+                                    </LinearGradient>
+                                </TouchableOpacity>
+
+                                <TouchableOpacity 
+                                    style={styles.finishBtnTouch} 
+                                    onPress={() => {
+                                        if (activeTrip.destPos?.lat && activeTrip.destPos?.lng) {
+                                            openNavigationApp(
+                                                activeTrip.destPos.lat,
+                                                activeTrip.destPos.lng,
+                                                activeTrip.destAddress || 'Destino'
+                                            );
+                                        }
+                                    }}
+                                >
+                                    <LinearGradient colors={colors.gradients.blue} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
+                                        <Text style={styles.acceptBtnText}>ABRIR NAVEGAÇÃO</Text>
+                                        <Navigation size={20} color="#fff" />
+                                    </LinearGradient>
+                                </TouchableOpacity>
+                            </View>
                         )}
 
                         {rideStatus === 'finished' && (
@@ -933,24 +799,7 @@ export default function DashboardScreen({ navigation }) {
                     )}
                 </ScrollView>
 
-                {/* HIDDEN LOCATION TRACKER TEMPORARILY DISABLED FOR DEBUGGING */}
-                {/* 
-                {isOnline && !isRideActive && (
-                    <View style={{ height: 1, width: 1, opacity: 0, position: 'absolute', top: -100 }}>
-                        <MapboxGL.MapView
-                            logoEnabled={false}
-                            attributionEnabled={false}
-                        >
-                            <MapboxGL.UserLocation 
-                                visible={true} 
-                                onUpdate={onLocationUpdate} 
-                                minDisplacement={10}
-                                pulsing={{ enabled: false }}
-                            />
-                        </MapboxGL.MapView>
-                    </View>
-                )}
-                */}
+
 
 
 

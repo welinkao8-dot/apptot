@@ -6,9 +6,7 @@ import com.facebook.react.ReactApplication
 import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
-import com.taxitot.driver.MapboxNavigationPackage
-import com.mapbox.navigation.core.lifecycle.MapboxNavigationApp
-import com.mapbox.navigation.base.options.NavigationOptions
+import com.taxitot.driver.LocationPackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -17,20 +15,14 @@ class MainApplication : Application(), ReactApplication {
       context = applicationContext,
       packageList =
         PackageList(this).packages.apply {
-          // Packages that cannot be autolinked yet can be added manually here, for example:
-          add(MapboxNavigationPackage())
+          // Packages that cannot be autolinked yet can be added manually here
+          add(LocationPackage())
         },
     )
   }
 
   override fun onCreate() {
     super.onCreate()
-    if (!MapboxNavigationApp.isSetup()) {
-        MapboxNavigationApp.setup(
-            NavigationOptions.Builder(this)
-                .build()
-        )
-    }
     loadReactNative(this)
   }
 }
