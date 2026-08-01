@@ -58,7 +58,7 @@ jobs:
       - name: Decode Keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64_CLIENT }}" | base64 --decode > client-portal/mobile/android/app/release.keystore
 
-      - name: Build Production APK (Release)
+      - name: Build Production AAB (Release)
         working-directory: client-portal/mobile/android
         env:
           ANDROID_KEYSTORE_FILE: release.keystore
@@ -67,10 +67,10 @@ jobs:
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew bundleRelease --no-daemon
 
-      - name: Upload Production APK
+      - name: Upload Production Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: client-app-release-apk
-          path: client-portal/mobile/android/app/build/outputs/apk/release/*.apk
+          name: client-app-aab
+          path: client-portal/mobile/android/app/build/outputs/bundle/release/*.aab
