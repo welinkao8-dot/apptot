@@ -1,0 +1,11 @@
+- [x] Atualizar cores em `colors.js` para as especificações exatas do Vibrant Velocity (`#b60059`, `#1a1c1f`, `#e5bcc5`, etc.).
+- [x] Redesenhar `DashboardScreen.js` (Estatísticas de ganhos diários integradas, carrossel de banners de anúncios, pílula pulsante, lista "Ao Vivo" de corridas e modal de nova corrida com cronômetro circular).
+- [x] Redesenhar `GoingToClientView.js` (Status "Aguardando Passageiro" pulsante, grelha de métricas bento, card de passageiro com chat, rota e CTAs de ação).
+- [x] Redesenhar `OngoingRideView.js` (Status "Em Viagem" pulsante, card de destino proeminente, cards bento de passageiro com chat/chamada, ganhos estimados e dinheiro).
+- [x] Criar `AwaitingPaymentView.js` (Status "Aguardando Pagamento", card de recibo com valor total em rosa grande, card de passageiro com estrela de avaliação, e CTA de confirmação).
+- [x] Redesenhar `LoginScreen.js` (Acesso por celular/senha, logo centralizado, inputs com ícones e contorno rosa-vinho `#e5bcc5`, wizard de dados pessoais com card de segurança).
+- [x] Redesenhar `RegisterScreen.js` (Envio de documentos B.I. Frente, B.I. Verso, Carta de Condução em formato Bento, dica pro bento-box e status de revisão pendente).
+- [x] Redesenhar `ProfileScreen.js` (Avatar com estrela de avaliação, badges de verificação e ID, cards bento do veículo, listas bento de preferências e CTA vermelho de logout).
+- [x] Redesenhar `HistoryScreen.js` (Saldo de ganhos acumulados, botões bento de saque/detalhes, gráfico semanal em colunas verticais e histórico de viagens em cards com borda rosa).
+- [x] Ajustar `MainNavigator.js` (Configuração de abas inferiores para Início, Ganhos, Perfil e Menu Drawer para Documentação e Ajuda).
+- [x] Redesenhar `DocumentsScreen.js` (Inspeção de documentos em cartões Bento alinhados à identidade flat).

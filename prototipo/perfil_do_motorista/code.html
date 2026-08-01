@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Perfil do Motorista</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#e5e2e1",
+                    "background": "#f9f9fe",
+                    "tertiary-container": "#008190",
+                    "on-primary-fixed": "#3f001a",
+                    "on-tertiary-container": "#f7feff",
+                    "surface-container-low": "#f3f3f8",
+                    "surface-tint": "#ba005b",
+                    "on-secondary": "#ffffff",
+                    "tertiary": "#006672",
+                    "secondary-fixed-dim": "#c8c6c5",
+                    "on-secondary-container": "#636262",
+                    "surface-variant": "#e2e2e7",
+                    "on-tertiary-fixed": "#001f24",
+                    "surface-container-lowest": "#ffffff",
+                    "secondary": "#5f5e5e",
+                    "on-secondary-fixed": "#1c1b1b",
+                    "surface": "#f9f9fe",
+                    "on-tertiary-fixed-variant": "#004f58",
+                    "on-primary": "#ffffff",
+                    "secondary-container": "#e2dfde",
+                    "surface-container": "#ededf2",
+                    "inverse-primary": "#ffb1c4",
+                    "inverse-on-surface": "#f0f0f5",
+                    "on-surface-variant": "#5c3f46",
+                    "on-error": "#ffffff",
+                    "on-primary-fixed-variant": "#8f0044",
+                    "tertiary-fixed": "#9cf0ff",
+                    "on-primary-container": "#fffbff",
+                    "on-secondary-fixed-variant": "#474746",
+                    "primary-container": "#e30071",
+                    "surface-container-highest": "#e2e2e7",
+                    "error-container": "#ffdad6",
+                    "on-surface": "#1a1c1f",
+                    "inverse-surface": "#2e3034",
+                    "surface-container-high": "#e8e8ed",
+                    "tertiary-fixed-dim": "#00daf3",
+                    "on-error-container": "#93000a",
+                    "on-tertiary": "#ffffff",
+                    "outline-variant": "#e5bcc5",
+                    "outline": "#906e76",
+                    "error": "#ba1a1a",
+                    "surface-dim": "#d9dade",
+                    "primary": "#b60059",
+                    "surface-bright": "#f9f9fe",
+                    "on-background": "#1a1c1f",
+                    "primary-fixed": "#ffd9e1",
+                    "primary-fixed-dim": "#ffb1c4"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "edge-margin": "20px",
+                    "stack-lg": "24px",
+                    "gutter": "16px",
+                    "unit": "4px",
+                    "touch-target": "48px",
+                    "stack-md": "16px",
+                    "stack-sm": "8px"
+            },
+            "fontFamily": {
+                    "body-md": ["Montserrat"],
+                    "headline-lg": ["Montserrat"],
+                    "body-lg": ["Montserrat"],
+                    "stats-number": ["Montserrat"],
+                    "label-md": ["Montserrat"],
+                    "headline-lg-mobile": ["Montserrat"],
+                    "display-lg": ["Montserrat"],
+                    "title-md": ["Montserrat"]
+            },
+            "fontSize": {
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "26px", "fontWeight": "400"}],
+                    "stats-number": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                    "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                    "title-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body {
+            font-family: 'Montserrat', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .profile-card-shadow {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        .active-glow {
+            box-shadow: 0 0 15px rgba(227, 0, 113, 0.15);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface min-h-screen pb-24">
+<!-- Top Navigation Bar -->
+<header class="w-full top-0 sticky z-50 bg-surface dark:bg-surface-dim shadow-sm border-b border-surface-variant dark:border-on-surface-variant flex items-center justify-between px-edge-margin h-touch-target">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded-full overflow-hidden bg-surface-container-high border border-primary">
+<img class="w-full h-full object-cover" data-alt="A professional close-up portrait of a male motorcycle driver named Nguyen Tan, wearing a sleek black polo shirt. He has a friendly and confident expression, looking directly into the camera. The background is a soft-focus urban street during daylight, maintaining a clean and modern corporate aesthetic with high-contrast lighting and pink accents reflecting the brand identity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDxPI_AmzX5nbdy3KKytqTJ11yQ4DhpqvWmd9R7n8z1y5M4sQ0meAOAxEJJP0yIh4L9PDfpTBBeSuy550MmvtW3xNk07lvl4iodJ9yE5S_YqHiN6C7Me3wFAB8jvuyIjHQnUMlh7gmHGxA9GsKB8kfBUJDNmlGxsGx6rRIv1fk1LOmoFti8yKBg6bD0Yc7RSrkN6XRckU4d7MIQgw4PRCbmOnlg4EqtkgZ_zC-36eCtAVfjNk9eMeRIyXvD1uNl40v-wOGJhcE92Qa2"/>
+</div>
+<span class="font-title-md text-title-md font-bold text-primary dark:text-primary-fixed uppercase tracking-wider">TOT</span>
+</div>
+<h1 class="font-title-md text-title-md font-bold text-on-surface">Perfil do Motorista</h1>
+<button class="material-symbols-outlined text-primary hover:bg-surface-container-high transition-colors p-2 rounded-full active:scale-95 duration-100">
+            notifications
+        </button>
+</header>
+<main class="max-w-[1024px] mx-auto px-edge-margin py-stack-lg">
+<!-- Driver Profile Summary Card -->
+<section class="bg-surface-container-lowest rounded-xl p-stack-md profile-card-shadow border-l-4 border-primary mb-stack-lg flex flex-col md:flex-row gap-gutter items-center md:items-start">
+<div class="relative">
+<div class="w-24 h-24 rounded-full overflow-hidden border-2 border-primary-container p-1 bg-white">
+<img class="w-full h-full object-cover rounded-full" data-alt="A detailed headshot of Nguyen Tan, a professional motorcycle taxi driver. He has a warm smile and is positioned against a clean, minimal white background. The lighting is bright and professional, highlighting his friendly demeanor. He wears a branded uniform subtle pink details, fitting a high-energy ride-sharing app's aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCk16-63_7r3tocxiN95A6hU8_SBcrj4nb0WHbOhQ36Q_m84PsruaW2fVxZK_588jxmtibk-EPPrVfYrClORWb1dLWCu7YJqlRABBLE-ef8SpQu_8d7xYuqchkiqUrL9YNo8vEd55kydBQi37Cg1FySwaVyefoJ8t22mG_FtVkB2aKXDBWIUnq8md2ycoEpGWLS6Gpeqwtx5LlN5IwUYba8LfrASa_APe4ozVWDDmAKZUWywdvj7tx9e3aapmaqGVszx2d2F8xPXZc8"/>
+</div>
+<div class="absolute -bottom-1 -right-1 bg-primary text-white text-[12px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md">
+                    4.9 <span class="material-symbols-outlined text-[14px]" style="font-variation-settings: 'FILL' 1;">star</span>
+</div>
+</div>
+<div class="flex-1 text-center md:text-left space-y-1">
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile md:text-headline-lg md:font-headline-lg text-on-surface">Nguyen Tan</h2>
+<div class="flex flex-wrap justify-center md:justify-start gap-2">
+<span class="bg-secondary-container text-on-secondary-container px-3 py-1 rounded-full font-label-md text-label-md">ID: 88214-VN</span>
+<span class="bg-primary-fixed text-on-primary-fixed-variant px-3 py-1 rounded-full font-label-md text-label-md flex items-center gap-1">
+<span class="material-symbols-outlined text-[16px]">verified_user</span> Verificado
+                    </span>
+</div>
+</div>
+<div class="w-full md:w-auto mt-stack-sm md:mt-0">
+<button class="w-full md:w-auto bg-primary text-white font-bold font-body-md text-body-md px-6 py-3 rounded-lg active:scale-95 transition-transform duration-100 shadow-md">
+                    Editar Perfil
+                </button>
+</div>
+</section>
+<!-- Vehicle Details Grid -->
+<h3 class="font-title-md text-title-md mb-stack-md text-secondary">Veículo</h3>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-gutter mb-stack-lg">
+<div class="bg-surface-container-lowest p-stack-md rounded-xl border border-surface-variant flex items-center gap-4 active-glow transition-all">
+<div class="w-16 h-16 bg-primary-fixed rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-3xl">motorcycle</span>
+</div>
+<div>
+<p class="font-label-md text-label-md text-secondary uppercase tracking-tight">Modelo</p>
+<p class="font-title-md text-title-md text-on-surface">Honda Winner X</p>
+</div>
+</div>
+<div class="bg-surface-container-lowest p-stack-md rounded-xl border border-surface-variant flex items-center gap-4 active-glow transition-all">
+<div class="w-16 h-16 bg-primary-fixed rounded-lg flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-3xl">pin</span>
+</div>
+<div>
+<p class="font-label-md text-label-md text-secondary uppercase tracking-tight">Placa</p>
+<p class="font-title-md text-title-md text-on-surface">59-G2 882.14</p>
+</div>
+</div>
+</div>
+<!-- Action Lists -->
+<div class="space-y-stack-md">
+<!-- Documents Group -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden border border-surface-variant">
+<div class="px-stack-md py-stack-sm bg-surface-container-low border-b border-surface-variant">
+<span class="font-label-md text-label-md text-secondary uppercase tracking-widest">Documentação</span>
+</div>
+<div class="divide-y divide-surface-variant">
+<a class="flex items-center justify-between p-stack-md hover:bg-surface-container-high transition-colors group" href="#">
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-primary">badge</span>
+<span class="font-body-md text-body-md">Carteira de Habilitação</span>
+</div>
+<span class="material-symbols-outlined text-secondary group-hover:translate-x-1 transition-transform">chevron_right</span>
+</a>
+<a class="flex items-center justify-between p-stack-md hover:bg-surface-container-high transition-colors group" href="#">
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-primary">description</span>
+<span class="font-body-md text-body-md">Seguro do Veículo</span>
+</div>
+<span class="material-symbols-outlined text-secondary group-hover:translate-x-1 transition-transform">chevron_right</span>
+</a>
+<a class="flex items-center justify-between p-stack-md hover:bg-surface-container-high transition-colors group" href="#">
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-primary">assignment_turned_in</span>
+<span class="font-body-md text-body-md">Certificado de Registro</span>
+</div>
+<span class="material-symbols-outlined text-secondary group-hover:translate-x-1 transition-transform">chevron_right</span>
+</a>
+</div>
+</div>
+<!-- App Settings Group -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden border border-surface-variant">
+<div class="px-stack-md py-stack-sm bg-surface-container-low border-b border-surface-variant">
+<span class="font-label-md text-label-md text-secondary uppercase tracking-widest">Preferências</span>
+</div>
+<div class="divide-y divide-surface-variant">
+<a class="flex items-center justify-between p-stack-md hover:bg-surface-container-high transition-colors group" href="#">
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-primary">settings</span>
+<span class="font-body-md text-body-md">Configurações do App</span>
+</div>
+<span class="material-symbols-outlined text-secondary group-hover:translate-x-1 transition-transform">chevron_right</span>
+</a>
+<a class="flex items-center justify-between p-stack-md hover:bg-surface-container-high transition-colors group" href="#">
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-primary">translate</span>
+<span class="font-body-md text-body-md">Idioma</span>
+</div>
+<div class="flex items-center gap-1">
+<span class="text-label-md text-secondary">Português</span>
+<span class="material-symbols-outlined text-secondary group-hover:translate-x-1 transition-transform">chevron_right</span>
+</div>
+</a>
+<div class="flex items-center justify-between p-stack-md">
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-primary">dark_mode</span>
+<span class="font-body-md text-body-md">Modo Noturno</span>
+</div>
+<button class="w-12 h-6 rounded-full bg-secondary-container relative transition-colors duration-200 focus:outline-none" onclick="this.classList.toggle('bg-primary-container')">
+<div class="absolute left-1 top-1 w-4 h-4 rounded-full bg-white transition-transform duration-200 transform translate-x-0" id="dark-mode-toggle"></div>
+</button>
+</div>
+</div>
+</div>
+<!-- Help Group -->
+<div class="bg-surface-container-lowest rounded-xl overflow-hidden border border-surface-variant">
+<div class="px-stack-md py-stack-sm bg-surface-container-low border-b border-surface-variant">
+<span class="font-label-md text-label-md text-secondary uppercase tracking-widest">Suporte</span>
+</div>
+<div class="divide-y divide-surface-variant">
+<a class="flex items-center justify-between p-stack-md hover:bg-surface-container-high transition-colors group" href="#">
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-primary">help</span>
+<span class="font-body-md text-body-md">Central de Ajuda</span>
+</div>
+<span class="material-symbols-outlined text-secondary group-hover:translate-x-1 transition-transform">chevron_right</span>
+</a>
+<a class="flex items-center justify-between p-stack-md hover:bg-surface-container-high transition-colors group" href="#">
+<div class="flex items-center gap-stack-md">
+<span class="material-symbols-outlined text-primary">policy</span>
+<span class="font-body-md text-body-md">Termos e Privacidade</span>
+</div>
+<span class="material-symbols-outlined text-secondary group-hover:translate-x-1 transition-transform">chevron_right</span>
+</a>
+</div>
+</div>
+<!-- Logout -->
+<button class="w-full flex items-center justify-center gap-2 p-stack-md text-error font-bold font-title-md border-2 border-error/20 rounded-xl hover:bg-error-container/20 transition-colors active:scale-95 mt-stack-lg">
+<span class="material-symbols-outlined">logout</span> Sair da Conta
+            </button>
+</div>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 w-full z-50 bg-surface dark:bg-surface-container-lowest shadow-lg border-t border-surface-variant dark:border-on-surface-variant flex justify-around items-center h-20 px-2 pb-safe">
+<a class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim px-4 py-1 hover:bg-secondary-container dark:hover:bg-on-secondary-fixed-variant transition-all active:scale-90 duration-150 rounded-full" href="#">
+<span class="material-symbols-outlined">motorcycle</span>
+<span class="font-label-md text-label-md">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim px-4 py-1 hover:bg-secondary-container dark:hover:bg-on-secondary-fixed-variant transition-all active:scale-90 duration-150 rounded-full" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span class="font-label-md text-label-md">Earnings</span>
+</a>
+<a class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim px-4 py-1 hover:bg-secondary-container dark:hover:bg-on-secondary-fixed-variant transition-all active:scale-90 duration-150 rounded-full" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-label-md text-label-md">History</span>
+</a>
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-4 py-1 transition-all active:scale-90 duration-150" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">person</span>
+<span class="font-label-md text-label-md">Profile</span>
+</a>
+</nav>
+<script>
+        // Simple micro-interaction for toggle
+        const toggleBtn = document.querySelector('button[onclick*="dark-mode-toggle"]');
+        if(toggleBtn) {
+            toggleBtn.addEventListener('click', function() {
+                const dot = this.querySelector('#dark-mode-toggle');
+                if (dot.classList.contains('translate-x-0')) {
+                    dot.classList.remove('translate-x-0');
+                    dot.classList.add('translate-x-6');
+                } else {
+                    dot.classList.remove('translate-x-6');
+                    dot.classList.add('translate-x-0');
+                }
+            });
+        }
+    </script>
+</body></html>

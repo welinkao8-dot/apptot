@@ -1,32 +1,33 @@
 export default {
-    primary: '#E91E63',      // Vibrant Pink
-    primaryDark: '#C2185B',
-    secondary: '#00afea',    // TOT Blue
-    secondaryDark: '#008bbd',
+    primary: '#b60059',          // Electric Pink
+    primaryContainer: '#e30071', // Active / Highlight Pink
+    primaryLight: '#ffd9e1',     // Light Pink (primary-fixed)
+    onPrimary: '#ffffff',
+    onPrimaryContainer: '#fffbff',
 
-    background: '#0f172a',   // Modern Slate Dark
-    surface: '#1e293b',      // Lighter Slate Surface
-    surfaceLight: '#334155',
+    background: '#f9f9fe',       // Off-white background
+    surface: '#f9f9fe',
+    surfaceContainerLowest: '#ffffff', // Pure White (cards, lists)
+    surfaceContainerLow: '#f3f3f8',
+    surfaceContainer: '#ededf2',
+    surfaceContainerHigh: '#e8e8ed',
+    surfaceContainerHighest: '#e2e2e7',
 
-    text: '#f8fafc',         // Off-white text
-    textSecondary: '#94a3b8',
-    textMuted: '#64748b',
+    text: '#1a1c1f',             // Deep Onyx
+    textSecondary: '#5f5e5e',    // Muted Onyx
+    textMuted: '#906e76',        // Muted Pinkish Outline/Text
 
-    success: '#10b981',      // Emerald
-    error: '#ef4444',        // Rose
-    warning: '#f59e0b',      // Amber
-    info: '#3b82f6',         // Blue
+    outline: '#906e76',
+    outlineVariant: '#e5bcc5',   // Light border color for cards/inputs
 
-    // Gradients
-    gradients: {
-        pink: ['#E91E63', '#C2185B'],
-        blue: ['#00afea', '#0077a6'],
-        dark: ['#1e293b', '#0f172a'],
-        emerald: ['#10b981', '#059669'],
-        purple: ['#7c3aed', '#6d28d9'],
-    },
+    success: '#006672',          // Tertiary (Cyan-ish Deep Green)
+    successContainer: '#008190',
+    onSuccess: '#ffffff',
 
-    // Glassmorphism
-    glass: 'rgba(255, 255, 255, 0.1)',
-    glassBorder: 'rgba(255, 255, 255, 0.2)',
+    error: '#ba1a1a',            // Red
+    errorContainer: '#ffdad6',
+
+    buttonDark: '#1a1c1f',       // Onyx Dark
+    buttonLight: '#e5e2e1',      // Secondary-fixed light grey
+    onButtonLight: '#1c1b1b',
 };

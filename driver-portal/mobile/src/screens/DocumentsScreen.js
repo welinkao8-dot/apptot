@@ -1,19 +1,10 @@
 import React, { useState, useContext } from 'react';
 import {
-    View,
-    Text,
-    StyleSheet,
-    TouchableOpacity,
-    ScrollView,
-    ActivityIndicator,
-    Image,
-    Alert
+    View, Text, StyleSheet, TouchableOpacity, ScrollView,
+    ActivityIndicator, Alert, StatusBar, Platform, Image
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthContext } from '../context/AuthContext';
-import api from '../services/api';
-import { FileText, Camera, ChevronLeft, CheckCircle, AlertCircle, RefreshCw, Eye } from 'lucide-react-native';
-import LinearGradient from 'react-native-linear-gradient';
+import { FileText, Camera, Bell, CheckCircle, AlertCircle, RefreshCw, Eye, ArrowLeft } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
 import colors from '../theme/colors';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
@@ -27,7 +18,7 @@ export default function DocumentsScreen({ navigation }) {
     const { user, setUser } = useContext(AuthContext);
     const [loading, setLoading] = useState(false);
 
-    // MOCK STATUS (In a real app, these would come from document metadata)
+    // Document status matching
     const [docStatus, setDocStatus] = useState({
         bi_frente: user?.doc_bi_frente ? 'approved' : 'missing',
         bi_verso: user?.doc_bi_verso ? 'approved' : 'missing',
@@ -55,25 +46,12 @@ export default function DocumentsScreen({ navigation }) {
         );
     };
 
-    const renderHeader = () => (
-        <View style={styles.header}>
-            <TouchableOpacity
-                style={styles.backButton}
-                onPress={() => navigation.goBack()}
-            >
-                <ChevronLeft size={28} color="#fff" />
-            </TouchableOpacity>
-            <Text style={styles.headerTitle}>Documentos</Text>
-            <View style={{ width: 44 }} />
-        </View>
-    );
-
     const getStatusIcon = (status) => {
         switch (status) {
-            case 'approved': return <CheckCircle size={20} color="#10b981" />;
-            case 'pending': return <RefreshCw size={20} color="#f59e0b" />;
-            case 'rejected': return <AlertCircle size={20} color="#ef4444" />;
-            default: return <AlertCircle size={20} color="rgba(255,255,255,0.2)" />;
+            case 'approved': return <CheckCircle size={18} color="#10b981" />;
+            case 'pending': return <RefreshCw size={18} color="#f59e0b" />;
+            case 'rejected': return <AlertCircle size={18} color="#ba1a1a" />;
+            default: return <AlertCircle size={18} color={colors.textSecondary} />;
         }
     };
 
@@ -86,250 +64,171 @@ export default function DocumentsScreen({ navigation }) {
         }
     };
 
-    const renderDocCard = (title, status, docKey) => (
-        <View style={styles.docCard}>
-            <View style={styles.docInfo}>
-                <View style={styles.iconContainer}>
-                    <FileText size={24} color={colors.primary} />
+    const renderDocCard = (title, status, subtitle) => (
+        <View style={styles.docBentoCard}>
+            <View style={styles.docCardLeft}>
+                <View style={[styles.docIconBg, status === 'approved' && styles.docIconBgSuccess]}>
+                    <FileText size={22} color={status === 'approved' ? '#fff' : colors.primary} />
                 </View>
-                <View style={styles.docTextContainer}>
+                <View style={{ flex: 1 }}>
                     <Text style={styles.docTitle}>{title}</Text>
                     <View style={styles.statusRow}>
                         {getStatusIcon(status)}
-                        <Text style={styles.statusLabel}>{getStatusText(status)}</Text>
+                        <Text style={[styles.statusLabel, { color: status === 'approved' ? '#10b981' : colors.textSecondary }]}>
+                            {getStatusText(status)}
+                        </Text>
                     </View>
                 </View>
             </View>
 
             <View style={styles.docActions}>
                 {status === 'approved' && (
-                    <TouchableOpacity style={styles.actionBtn}>
-                        <Eye size={20} color="#fff" />
+                    <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
+                        <Eye size={18} color={colors.text} />
                     </TouchableOpacity>
                 )}
-                <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={handleUpdateDocs}>
-                    <Camera size={20} color="#fff" />
+                <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={handleUpdateDocs} activeOpacity={0.8}>
+                    <Camera size={18} color="#fff" />
                 </TouchableOpacity>
             </View>
         </View>
     );
 
     return (
-        <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.container}>
-            <SafeAreaView style={styles.safeArea}>
-                {renderHeader()}
+        <View style={styles.root}>
+            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
-                <ScrollView contentContainerStyle={styles.scrollContent}>
-                    <View style={styles.infoBox}>
-                        <AlertCircle size={24} color={colors.primary} />
-                        <View style={styles.infoTextContainer}>
-                            <Text style={styles.infoTitle}>Status da Conta</Text>
-                            <Text style={styles.infoDescription}>
-                                {user?.status === 'active'
-                                    ? 'Seus documentos estão em conformidade. Você pode receber corridas.'
-                                    : 'Sua conta está aguardando a validação final dos documentos pela nossa equipe.'}
-                            </Text>
-                        </View>
-                    </View>
-
-                    <Text style={styles.sectionTitle}>DOCUMENTOS DE IDENTIDADE</Text>
-                    {renderDocCard("B.I. Frente", docStatus.bi_frente, 'bi_frente')}
-                    {renderDocCard("B.I. Verso", docStatus.bi_verso, 'bi_verso')}
-
-                    <Text style={[styles.sectionTitle, { marginTop: 24 }]}>HABILITAÇÃO</Text>
-                    {renderDocCard("Carta de Condução", docStatus.carta, 'carta')}
-
-                    <TouchableOpacity
-                        style={styles.mainUpdateButton}
-                        onPress={handleUpdateDocs}
-                    >
-                        <LinearGradient
-                            colors={colors.gradients.pink}
-                            style={styles.mainUpdateGradient}
-                        >
-                            <RefreshCw size={20} color="#fff" />
-                            <Text style={styles.mainUpdateText}>ACTUALIZAR TUDO</Text>
-                        </LinearGradient>
+            {/* ─── TOP APP BAR ─── */}
+            <View style={styles.topBar}>
+                <View style={styles.topBarLeft}>
+                    <TouchableOpacity style={styles.headerBackBtn} onPress={() => navigation.goBack()} activeOpacity={0.8}>
+                        <ArrowLeft size={22} color={colors.primary} />
                     </TouchableOpacity>
+                    <Text style={styles.logoText}>TOT</Text>
+                </View>
+                <Text style={styles.barTitle}>Documentos</Text>
+                <TouchableOpacity style={styles.notifyBtn} activeOpacity={0.8}>
+                    <Bell size={18} color={colors.primary} />
+                </TouchableOpacity>
+            </View>
 
-                    <Text style={styles.footerNote}>
-                        * Certifique-se de que as fotos estejam nítidas e todos os dados legíveis para evitar atrasos na aprovação.
-                    </Text>
-                </ScrollView>
-            </SafeAreaView>
-        </LinearGradient>
+            {/* ─── SCROLL CANVAS ─── */}
+            <ScrollView style={styles.canvas} contentContainerStyle={styles.canvasContent} showsVerticalScrollIndicator={false}>
+                
+                {/* Info status box */}
+                <View style={styles.infoBox}>
+                    <AlertCircle size={22} color={colors.primary} style={{ marginRight: 12, marginTop: 2 }} />
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.infoTitle}>Status da Conta</Text>
+                        <Text style={styles.infoDescription}>
+                            {user?.status === 'active'
+                                ? 'Seus documentos estão em conformidade. Você está habilitado para receber corridas.'
+                                : 'A sua conta aguarda a validação final da documentação pela nossa equipa administrativa.'}
+                        </Text>
+                    </View>
+                </View>
+
+                <Text style={styles.sectionLabel}>Documentos de Identidade</Text>
+                {renderDocCard("B.I. Frente", docStatus.bi_frente, "Bilhete de Identidade (Frente)")}
+                {renderDocCard("B.I. Verso", docStatus.bi_verso, "Bilhete de Identidade (Verso)")}
+
+                <Text style={[styles.sectionLabel, { marginTop: 24 }]}>Habilitação</Text>
+                {renderDocCard("Carta de Condução", docStatus.carta, "Habilitação para Motociclos")}
+
+                <TouchableOpacity
+                    style={styles.mainUpdateButton}
+                    onPress={handleUpdateDocs}
+                    activeOpacity={0.9}
+                >
+                    <RefreshCw size={18} color="#fff" style={{ marginRight: 8 }} />
+                    <Text style={styles.mainUpdateText}>ATUALIZAR TUDO</Text>
+                </TouchableOpacity>
+
+                <Text style={styles.footerNote}>
+                    * Certifique-se de que as imagens tiradas estão nítidas e todos os campos visíveis para agilizar a validação.
+                </Text>
+            </ScrollView>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    safeArea: {
-        flex: 1,
-    },
-    header: {
+    root: { flex: 1, backgroundColor: colors.background },
+
+    // Top Bar Styles
+    topBar: {
+        height: 60,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderColor: colors.surfaceContainerHighest,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-    },
-    backButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
-    headerTitle: {
-        fontSize: 18,
-        fontWeight: '900',
-        color: '#fff',
-        letterSpacing: 1,
-    },
-    scrollContent: {
         paddingHorizontal: 20,
-        paddingTop: 10,
-        paddingBottom: 40,
+        paddingTop: Platform.OS === 'ios' ? 10 : 0
     },
+    topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+    headerBackBtn: { padding: 4 },
+    logoText: { fontSize: 18, fontWeight: '950', color: colors.primary, letterSpacing: -1 },
+    barTitle: { fontSize: 15, fontWeight: '750', color: colors.text },
+    notifyBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
+
+    // Canvas
+    canvas: { flex: 1 },
+    canvasContent: { padding: 20, paddingBottom: 40 },
+
+    // Info Box
     infoBox: {
-        backgroundColor: 'rgba(233, 30, 99, 0.05)',
-        borderRadius: 24,
-        padding: 24,
         flexDirection: 'row',
-        gap: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(233, 30, 99, 0.2)',
-        marginBottom: 32,
+        backgroundColor: colors.primaryLight, borderRadius: 16, padding: 16,
+        marginBottom: 24, borderWidth: 1, borderColor: colors.outlineVariant,
     },
-    infoTextContainer: {
-        flex: 1,
-    },
-    infoTitle: {
-        fontSize: 14,
-        fontWeight: '900',
-        color: '#fff',
-        marginBottom: 6,
-        letterSpacing: 0.5,
-    },
-    infoDescription: {
-        fontSize: 12,
-        color: 'rgba(255,255,255,0.4)',
-        lineHeight: 18,
-        fontWeight: '600',
-    },
-    sectionTitle: {
-        fontSize: 11,
-        fontWeight: '900',
-        color: 'rgba(255,255,255,0.4)',
-        letterSpacing: 2,
-        marginBottom: 16,
-        paddingHorizontal: 4,
-    },
-    docCard: {
-        backgroundColor: 'rgba(255, 255, 255, 0.02)',
-        borderRadius: 24,
-        padding: 16,
+    infoTitle: { fontSize: 14, fontWeight: '800', color: colors.text, marginBottom: 4 },
+    infoDescription: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
+
+    sectionLabel: { fontSize: 13, fontWeight: '800', color: colors.textSecondary, letterSpacing: 0.5, marginBottom: 12, textTransform: 'uppercase' },
+
+    // Bento doc card
+    docBentoCard: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        padding: 16,
+        borderRadius: 12,
+        borderLeftWidth: 4,
+        borderColor: colors.primary,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)',
-        marginBottom: 12,
+        borderTopColor: '#f1f1f5',
+        borderRightColor: '#f1f1f5',
+        borderBottomColor: '#f1f1f5',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+        elevation: 1,
+        marginBottom: 12
     },
-    docInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
-        flex: 1,
-    },
-    iconContainer: {
-        width: 52,
-        height: 52,
-        borderRadius: 16,
-        backgroundColor: 'rgba(233, 30, 99, 0.1)',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    docTextContainer: {
-        flex: 1,
-    },
-    docTitle: {
-        fontSize: 15,
-        fontWeight: '900',
-        color: '#fff',
-        marginBottom: 4,
-    },
-    statusRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-    },
-    statusLabel: {
-        fontSize: 11,
-        fontWeight: '800',
-        color: 'rgba(255,255,255,0.3)',
-        letterSpacing: 0.5,
-    },
-    docActions: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    actionBtn: {
-        width: 44,
-        height: 44,
-        borderRadius: 14,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
-    },
+    docCardLeft: { flexDirection: 'row', alignItems: 'center', gap: 14, flex: 1 },
+    docIconBg: { width: 44, height: 44, borderRadius: 8, backgroundColor: colors.primaryLight, justifyContent: 'center', alignItems: 'center' },
+    docIconBgSuccess: { backgroundColor: '#10b981' },
+    docTitle: { fontSize: 15, fontWeight: '800', color: colors.text, marginBottom: 4 },
+    statusRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+    statusLabel: { fontSize: 12, fontWeight: '750' },
+
+    docActions: { flexDirection: 'row', gap: 8 },
+    actionBtn: { width: 40, height: 40, borderRadius: 10, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
     actionBtnPrimary: {
         backgroundColor: colors.primary,
-        borderColor: colors.primary,
-        elevation: 6,
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 3,
     },
+
     mainUpdateButton: {
-        height: 64,
-        borderRadius: 20,
-        marginTop: 32,
-        overflow: 'hidden',
-        elevation: 10,
-        shadowColor: colors.primary,
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.4,
-        shadowRadius: 15,
+        flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+        backgroundColor: colors.primary, paddingVertical: 18, borderRadius: 16,
+        marginTop: 20,
+        shadowColor: colors.primary, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.25, shadowRadius: 12, elevation: 5,
     },
-    mainUpdateGradient: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 12,
-    },
-    mainUpdateText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '900',
-        letterSpacing: 1.5,
-    },
-    footerNote: {
-        marginTop: 32,
-        fontSize: 11,
-        color: 'rgba(255,255,255,0.2)',
-        textAlign: 'center',
-        paddingHorizontal: 30,
-        fontStyle: 'italic',
-        fontWeight: '600',
-        lineHeight: 18,
-    }
+    mainUpdateText: { color: '#fff', fontSize: 15, fontWeight: '900', letterSpacing: 0.5 },
+    footerNote: { fontSize: 11, color: colors.textSecondary, textAlign: 'center', marginTop: 24, fontStyle: 'italic', paddingHorizontal: 12 }
 });

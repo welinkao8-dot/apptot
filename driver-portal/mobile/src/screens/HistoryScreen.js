@@ -1,59 +1,50 @@
 import React, { useState, useEffect, useContext } from 'react';
 import {
-    View,
-    Text,
-    StyleSheet,
-    FlatList,
-    ActivityIndicator,
-    RefreshControl,
-    TouchableOpacity
+    View, Text, StyleSheet, FlatList, ActivityIndicator,
+    RefreshControl, TouchableOpacity, StatusBar, Image, Platform
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import { AuthContext } from '../context/AuthContext';
 import api from '../services/api';
-import { Clock, MapPin, DollarSign, Calendar, FileText, X } from 'lucide-react-native';
-import LinearGradient from 'react-native-linear-gradient';
-import Animated, { FadeInUp } from 'react-native-reanimated';
+import { 
+    Coins, Wallet, TrendingUp, History, Bell, Navigation, 
+    ArrowRight, MapPin, Calendar, Clock
+} from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
 import colors from '../theme/colors';
 import { formatCurrency, formatDate } from '../utils/formatters';
-
 
 export default function HistoryScreen() {
     const { user } = useContext(AuthContext);
     const [trips, setTrips] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [selectedTrip, setSelectedTrip] = useState(null);
-    const [filter, setFilter] = useState('all');
-    const [monthlyStats, setMonthlyStats] = useState({ count: 0, total: 0 });
-
-    const monthlyGoal = 150000;
-    const goalPercent = Math.min(Math.round((monthlyStats.total / monthlyGoal) * 100), 100);
-
+    const [stats, setStats] = useState({ rides: 0, earnings: 0 });
 
     useEffect(() => {
         fetchHistory();
-        fetchMonthlyStats();
-    }, [filter]);
+        fetchStats();
+    }, []);
 
-    const fetchMonthlyStats = async () => {
+    const fetchStats = async () => {
         if (!user) return;
         try {
-            const res = await api.get(`/trips/stats/monthly/${user.id}?role=driver`);
-            if (res.data) setMonthlyStats(res.data);
+            const r = await api.get(`/trips/stats/${user.id}`);
+            if (r.data) {
+                setStats({
+                    rides: r.data.count || 0,
+                    earnings: r.data.totalFare || 0
+                });
+            }
         } catch (e) {
-            console.error('Error fetching monthly stats:', e);
+            console.error('Error fetching history stats:', e);
         }
     };
-
 
     const fetchHistory = async () => {
         if (!user) return;
         try {
-            const res = await api.get(`/trips/history/${user.id}?role=driver&status=${filter}`);
+            const res = await api.get(`/trips/history/${user.id}?role=driver&status=all`);
             setTrips(res.data || []);
-
         } catch (error) {
             console.error('Error fetching history:', error);
             Toast.show({
@@ -70,578 +61,285 @@ export default function HistoryScreen() {
     const onRefresh = () => {
         setRefreshing(true);
         fetchHistory();
+        fetchStats();
     };
 
-
-    const getStatusColor = (status) => {
-        switch (status) {
-            case 'completed':
-            case 'paid':
-                return colors.success;
-            case 'cancelled':
-                return colors.error || '#ef4444';
-            case 'ongoing':
-            case 'accepted':
-            case 'finished':
-                return colors.primary;
-            default:
-                return colors.textSecondary;
-        }
-    };
-
-    const getStatusText = (status) => {
-        switch (status) {
-            case 'requested': return 'Pendente';
-            case 'accepted': return 'Em Trânsito';
-            case 'ongoing': return 'Em Curso';
-            case 'finished': return 'Finalizada';
-            case 'paid': return 'Paga';
-            case 'completed': return 'Concluída';
-            case 'cancelled': return 'Cancelada';
-            default: return status.toUpperCase();
-        }
-    };
-
-    const renderTrip = ({ item, index }) => (
-        <Animated.View
-            entering={FadeInUp.delay(index * 100)}
-            style={styles.tripCard}>
-            <View style={styles.tripHeader}>
-                <View style={styles.tripDate}>
-                    <Calendar size={16} color={colors.textSecondary} />
-                    <Text style={styles.tripDateText}>{formatDate(item.created_at)}</Text>
-                </View>
-                <View style={[styles.statusBadge, { backgroundColor: `${getStatusColor(item.status)}20` }]}>
-                    <Text style={[styles.statusText, { color: getStatusColor(item.status) }]}>
-                        {getStatusText(item.status)}
-                    </Text>
-                </View>
-            </View>
-
-            <View style={styles.tripRoute}>
-                <View style={styles.routePoint}>
-                    <View style={[styles.routeDot, { backgroundColor: colors.primary }]} />
-                    <View style={styles.routeInfo}>
-                        <Text style={styles.routeLabel}>Origem</Text>
-                        <Text style={styles.routeAddress} numberOfLines={1}>
-                            {item.pickupAddress || 'Endereço não disponível'}
+    const renderTripItem = ({ item }) => {
+        return (
+            <View style={styles.glassCard}>
+                <View style={styles.cardLeft}>
+                    <View style={styles.bikeIconBg}>
+                        <Navigation size={18} color={colors.text} style={{ transform: [{ rotate: '45deg' }] }} />
+                    </View>
+                    <View style={styles.tripMeta}>
+                        <Text style={styles.routeHeadline} numberOfLines={1}>
+                            {item.pickupAddress?.split(',')[0]} ➔ {item.destAddress?.split(',')[0] || 'Destino'}
                         </Text>
+                        <Text style={styles.tripTime}>{formatDate(item.created_at)}</Text>
                     </View>
                 </View>
-
-                <View style={styles.routeLine} />
-
-                <View style={styles.routePoint}>
-                    <View style={[styles.routeDot, { backgroundColor: colors.success }]} />
-                    <View style={styles.routeInfo}>
-                        <Text style={styles.routeLabel}>Destino</Text>
-                        <Text style={styles.routeAddress} numberOfLines={1}>
-                            {item.destAddress || 'Endereço não disponível'}
-                        </Text>
-                    </View>
+                <View style={styles.cardRight}>
+                    <Text style={styles.tripEarnings}>+ {formatCurrency(item.price || 0)}</Text>
+                    <Text style={styles.tripStatusText}>Concluída</Text>
                 </View>
             </View>
-
-
-            <View style={styles.tripFooter}>
-                <View style={styles.tripStat}>
-                    <Clock size={16} color={colors.textSecondary} />
-                    <Text style={styles.tripStatText}>
-                        {item.duration ? `${Math.round(item.duration / 60)} min` : 'N/A'}
-                    </Text>
-                </View>
-                <View style={styles.tripStat}>
-                    <MapPin size={16} color={colors.textSecondary} />
-                    <Text style={styles.tripStatText}>
-                        {item.distance ? `${(item.distance / 1000).toFixed(1)} km` : 'N/A'}
-                    </Text>
-                </View>
-                <View style={styles.tripPrice}>
-                    <DollarSign size={18} color={colors.success} />
-                    <Text style={styles.tripPriceText}>
-                        {formatCurrency(item.price || 0)}
-                    </Text>
-                    {item.status === 'completed' && (
-                        <TouchableOpacity
-                            style={styles.receiptBtn}
-                            onPress={() => setSelectedTrip(item)}
-                        >
-                            <FileText size={20} color={colors.primary} />
-                        </TouchableOpacity>
-                    )}
-                </View>
-            </View>
-        </Animated.View>
-    );
+        );
+    };
 
     if (loading) {
         return (
-            <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.container}>
-                <SafeAreaView style={styles.safeArea}>
-                    <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color={colors.primary} />
-                        <Text style={styles.loadingText}>Carregando histórico...</Text>
-                    </View>
-                </SafeAreaView>
-            </LinearGradient>
+            <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}>
+                <ActivityIndicator size="large" color={colors.primary} />
+            </View>
         );
     }
 
     return (
-        <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.container}>
-            <SafeAreaView style={styles.safeArea}>
-                <View style={styles.header}>
-                    <Text style={styles.title}>Meus Ganhos</Text>
-                    <View style={styles.statsGrid}>
-                        <View style={styles.statCard}>
-                            <LinearGradient colors={colors.gradients.pink} style={styles.statGradient}>
-                                <Text style={styles.statLabel}>Mês Atual</Text>
-                                <Text style={styles.statValue}>{formatCurrency(monthlyStats.total)}</Text>
-                                <DollarSign size={24} color="#fff" style={styles.statIcon} />
-                            </LinearGradient>
-                        </View>
-                        <View style={styles.statCard}>
-                            <LinearGradient colors={colors.gradients.blue} style={styles.statGradient}>
-                                <Text style={styles.statLabel}>Viagens</Text>
-                                <Text style={styles.statValue}>{monthlyStats.count}</Text>
-                                <Clock size={24} color="#fff" style={styles.statIcon} />
-                            </LinearGradient>
-                        </View>
-                    </View>
+        <View style={styles.root}>
+            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
-                    {/* Monthly Goal Meter */}
-                    <View style={styles.goalCard}>
-                        <View style={styles.goalHeader}>
-                            <Text style={styles.goalTitle}>META DO MÊS</Text>
-                            <Text style={styles.goalPercent}>{goalPercent}%</Text>
-                        </View>
-                        <View style={styles.goalBarBase}>
-                            <Animated.View style={[styles.goalBarFill, { width: `${goalPercent}%` }]} />
-                        </View>
-                        <Text style={styles.goalText}>Faltam {formatCurrency(Math.max(0, monthlyGoal - monthlyStats.total))} para bater sua meta!</Text>
-                    </View>
-
-                    {/* Filter Chips */}
-                    <View style={styles.filterContainer}>
-                        {[
-                            { id: 'all', label: 'Todas' },
-                            { id: 'completed', label: 'Concluídas' },
-                            { id: 'cancelled', label: 'Canceladas' }
-                        ].map((item) => (
-                            <TouchableOpacity
-                                key={item.id}
-                                style={[styles.filterChip, filter === item.id && styles.filterChipActive]}
-                                onPress={() => setFilter(item.id)}
-                            >
-                                <Text style={[styles.filterText, filter === item.id && styles.filterTextActive]}>
-                                    {item.label}
+            {/* ─── TOP APP BAR ─── */}
+            <View style={styles.topBar}>
+                <View style={styles.topBarLeft}>
+                    <View style={styles.headerAvatarBorder}>
+                        {user?.avatar_url ? (
+                            <Image source={{ uri: user.avatar_url }} style={styles.headerAvatar} />
+                        ) : (
+                            <View style={styles.avatarFallback}>
+                                <Text style={styles.avatarFallbackText}>
+                                    {user?.full_name?.[0]?.toUpperCase() || 'M'}
                                 </Text>
-                            </TouchableOpacity>
-                        ))}
+                            </View>
+                        )}
                     </View>
+                    <Text style={styles.logoText}>TOT</Text>
                 </View>
+                <TouchableOpacity style={styles.notifyBtn} activeOpacity={0.8}>
+                    <Bell size={20} color={colors.primary} />
+                </TouchableOpacity>
+            </View>
 
-                <FlatList
-                    data={trips}
-                    renderItem={renderTrip}
-                    keyExtractor={(item) => item.id}
-                    contentContainerStyle={styles.listContent}
-                    refreshControl={
-                        <RefreshControl
-                            refreshing={refreshing}
-                            onRefresh={onRefresh}
-                            tintColor={colors.primary}
-                        />
-                    }
-                    ListEmptyComponent={
-                        <View style={styles.emptyContainer}>
-                            <MapPin size={64} color={colors.textSecondary} />
-                            <Text style={styles.emptyText}>Nenhuma corrida realizada ainda</Text>
-                            <Text style={styles.emptySubtext}>
-                                Suas corridas aparecerão aqui após serem concluídas.
-                            </Text>
-                        </View>
-                    }
-                />
+            {/* ─── MAIN CONTENT ─── */}
+            <FlatList
+                data={trips}
+                renderItem={renderTripItem}
+                keyExtractor={(item) => item.id}
+                contentContainerStyle={styles.scrollCanvas}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={onRefresh}
+                        colors={[colors.primary]}
+                        tintColor={colors.primary}
+                    />
+                }
+                ListHeaderComponent={
+                    <View style={{ marginBottom: 16 }}>
+                        <Text style={styles.pageTitle}>Meus Ganhos</Text>
 
-                {selectedTrip && (
-                    <View style={styles.modalOverlay}>
-                        <Animated.View entering={FadeInUp} style={styles.receiptModal}>
-                            <View style={styles.modalHeader}>
-                                <Text style={styles.modalTitle}>Recibo de Corrida</Text>
-                                <TouchableOpacity onPress={() => setSelectedTrip(null)}>
-                                    <X size={24} color={colors.text} />
+                        {/* Balance Card */}
+                        <View style={styles.balanceCard}>
+                            <View style={styles.balanceInfo}>
+                                <View>
+                                    <Text style={styles.balanceLabel}>Saldo Atual</Text>
+                                    <Text style={styles.balanceValue}>{formatCurrency(stats.earnings)}</Text>
+                                </View>
+                                <Wallet size={32} color={colors.primaryContainer} />
+                            </View>
+                            <View style={styles.balanceActions}>
+                                <TouchableOpacity style={styles.withdrawBtn} activeOpacity={0.9}>
+                                    <Coins size={18} color="#fff" style={{ marginRight: 6 }} />
+                                    <Text style={styles.withdrawBtnTxt}>Saque</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={styles.detailsBtn} activeOpacity={0.8}>
+                                    <Text style={styles.detailsBtnTxt}>Detalhes</Text>
                                 </TouchableOpacity>
                             </View>
+                        </View>
 
-                            <View style={styles.receiptContent}>
-                                <View style={styles.receiptRow}>
-                                    <Text style={styles.receiptLabel}>ID da Corrida</Text>
-                                    <Text style={styles.receiptValue}>#{selectedTrip.id.substring(0, 8).toUpperCase()}</Text>
-                                </View>
-                                <View style={styles.receiptRow}>
-                                    <Text style={styles.receiptLabel}>Cliente</Text>
-                                    <Text style={styles.receiptValue}>{selectedTrip.userName || 'Cliente TOT'}</Text>
-                                </View>
-
-
-                                <View style={styles.receiptAddress}>
-                                    <Text style={styles.receiptLabel}>Origem</Text>
-                                    <Text style={styles.receiptValue}>{selectedTrip.pickupAddress || 'Endereço não disponível'}</Text>
-                                </View>
-
-                                <View style={styles.receiptAddress}>
-                                    <Text style={styles.receiptLabel}>Destino</Text>
-                                    <Text style={styles.receiptValue}>{selectedTrip.destAddress || 'Destino não especificado'}</Text>
-                                </View>
-
-
-                                <View style={styles.receiptDivider} />
-
-                                <View style={styles.receiptTotalRow}>
-                                    <Text style={styles.receiptTotalLabel}>Valor Total</Text>
-                                    <Text style={styles.receiptTotalValue}>{formatCurrency(selectedTrip.price)}</Text>
-                                </View>
+                        {/* Weekly Chart Card */}
+                        <View style={styles.chartCard}>
+                            <View style={styles.chartHeader}>
+                                <Text style={styles.chartTitle}>Esta Semana</Text>
+                                <Text style={styles.chartTotalText}>{formatCurrency(stats.earnings)} total</Text>
                             </View>
+                            
+                            <View style={styles.chartGrid}>
+                                {[
+                                    { day: 'Seg', val: 45, isToday: false },
+                                    { day: 'Ter', val: 65, isToday: false },
+                                    { day: 'Qua', val: 55, isToday: false },
+                                    { day: 'Qui', val: 85, isToday: false },
+                                    { day: 'Hoje', val: 100, isToday: true },
+                                    { day: 'Sab', val: 10, isToday: false },
+                                    { day: 'Dom', val: 10, isToday: false }
+                                ].map((item, idx) => (
+                                    <View key={idx} style={styles.chartColumn}>
+                                        <View style={styles.barContainer}>
+                                            <View 
+                                                style={[
+                                                    styles.chartBar, 
+                                                    { height: `${item.val}%` },
+                                                    item.isToday ? styles.chartBarActive : styles.chartBarInactive
+                                                ]} 
+                                            />
+                                        </View>
+                                        <Text style={[styles.dayText, item.isToday && styles.dayTextActive]}>
+                                            {item.day}
+                                        </Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </View>
 
-                            <TouchableOpacity
-                                style={styles.closeModalBtn}
-                                onPress={() => setSelectedTrip(null)}
-                            >
-                                <Text style={styles.closeModalText}>FECHAR</Text>
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>Corridas Recentes</Text>
+                            <TouchableOpacity activeOpacity={0.7}>
+                                <Text style={styles.sectionLink}>Ver todas</Text>
                             </TouchableOpacity>
-                        </Animated.View>
+                        </View>
                     </View>
-                )}
-            </SafeAreaView>
-        </LinearGradient>
+                }
+                ListEmptyComponent={
+                    <View style={styles.emptyState}>
+                        <History size={48} color={colors.textMuted} style={{ marginBottom: 12, opacity: 0.3 }} />
+                        <Text style={styles.emptyTitle}>Nenhuma corrida concluída</Text>
+                        <Text style={styles.emptySubtitle}>As corridas e ganhos concluídos aparecerão aqui.</Text>
+                    </View>
+                }
+                ListFooterComponent={<View style={{ height: 100 }} />}
+                showsVerticalScrollIndicator={false}
+            />
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    safeArea: {
-        flex: 1,
-    },
-    header: {
-        padding: 20,
-        backgroundColor: colors.surface,
-    },
-    title: {
-        fontSize: 28,
-        fontWeight: '900',
-        color: colors.text,
-        marginBottom: 20,
-    },
-    statsGrid: {
+    root: { flex: 1, backgroundColor: colors.background },
+
+    // Top Bar Styles
+    topBar: {
+        height: 60,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderColor: colors.surfaceContainerHighest,
         flexDirection: 'row',
-        gap: 12,
-        marginBottom: 20,
-    },
-    statCard: {
-        flex: 1,
-        borderRadius: 20,
-        overflow: 'hidden',
-        elevation: 5,
-    },
-    statGradient: {
-        padding: 20,
-        justifyContent: 'center',
-    },
-    statLabel: {
-        color: 'rgba(255,255,255,0.7)',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    statValue: {
-        color: '#fff',
-        fontSize: 18,
-        fontWeight: '900',
-        marginTop: 4,
-    },
-    statIcon: {
-        position: 'absolute',
-        right: 15,
-        bottom: 15,
-        opacity: 0.3,
-    },
-    goalCard: {
-        backgroundColor: 'rgba(255,255,255,0.03)',
-        borderRadius: 24,
-        padding: 20,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: colors.glassBorder,
-    },
-    goalHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 10,
+        justifyContent: 'space-between',
+        paddingHorizontal: 20,
+        paddingTop: Platform.OS === 'ios' ? 10 : 0
     },
-    goalTitle: {
-        color: 'rgba(255,255,255,0.5)',
-        fontSize: 10,
-        fontWeight: 'bold',
-        letterSpacing: 1,
-    },
-    goalPercent: {
-        color: '#fff',
-        fontSize: 12,
-        fontWeight: '900',
-    },
-    goalBarBase: {
-        height: 6,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        borderRadius: 3,
-        overflow: 'hidden',
-    },
-    goalBarFill: {
-        height: '100%',
-        backgroundColor: colors.primary,
-        borderRadius: 3,
-    },
-    goalText: {
-        color: 'rgba(255,255,255,0.4)',
-        fontSize: 10,
-        marginTop: 8,
-        textAlign: 'center',
-    },
-    filterContainer: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    filterChip: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        borderWidth: 1,
-        borderColor: colors.glassBorder,
-    },
-    filterChipActive: {
-        backgroundColor: colors.primary,
-        borderColor: colors.primary,
-    },
-    filterText: {
-        color: colors.textSecondary,
-        fontSize: 13,
-        fontWeight: '600',
-    },
-    filterTextActive: {
-        color: '#fff',
-    },
-    listContent: {
-        padding: 20,
-        paddingTop: 0,
-    },
-    tripCard: {
-        backgroundColor: 'rgba(255,255,255,0.05)',
+    topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    headerAvatarBorder: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: colors.primary, overflow: 'hidden' },
+    headerAvatar: { width: '100%', height: '100%', objectFit: 'cover' },
+    logoText: { fontSize: 20, fontWeight: '900', color: colors.primary, letterSpacing: -1 },
+    notifyBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
+
+    // Main Canvas
+    scrollCanvas: { padding: 20 },
+    pageTitle: { fontSize: 24, fontWeight: '800', color: colors.text, marginBottom: 16 },
+
+    // Balance Card
+    balanceCard: {
+        backgroundColor: '#fff',
         borderRadius: 16,
         padding: 16,
-        marginBottom: 16,
+        borderLeftWidth: 4,
+        borderLeftColor: colors.primary,
         borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.1)',
+        borderColor: '#f1f1f5',
+        shadowColor: '#1a1c1f',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2,
+        marginBottom: 20
     },
-    tripHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
+    balanceInfo: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' },
+    balanceLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+    balanceValue: { fontSize: 28, fontWeight: '900', color: colors.text, marginTop: 4, letterSpacing: -0.5 },
+    balanceActions: { flexDirection: 'row', gap: 12, marginTop: 16 },
+    withdrawBtn: {
+        flex: 1, height: 48, borderRadius: 8, backgroundColor: colors.primary,
+        flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
+        shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4
     },
-    tripDate: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
+    withdrawBtnTxt: { fontSize: 14, fontWeight: '850', color: '#fff' },
+    detailsBtn: {
+        flex: 1, height: 48, borderRadius: 8, borderWidth: 2, borderColor: colors.text,
+        justifyContent: 'center', alignItems: 'center', backgroundColor: '#fff'
     },
-    tripDateText: {
-        fontSize: 12,
-        color: colors.textSecondary,
-    },
-    statusBadge: {
-        paddingHorizontal: 12,
-        paddingVertical: 4,
-        borderRadius: 12,
-    },
-    statusText: {
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    tripRoute: {
-        marginBottom: 16,
-    },
-    routePoint: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-    },
-    routeDot: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-        marginTop: 4,
-        marginRight: 12,
-    },
-    routeLine: {
-        width: 2,
-        height: 24,
-        backgroundColor: 'rgba(255,255,255,0.2)',
-        marginLeft: 5,
-        marginVertical: 4,
-    },
-    routeInfo: {
-        flex: 1,
-    },
-    routeLabel: {
-        fontSize: 12,
-        color: colors.textSecondary,
-        marginBottom: 2,
-    },
-    routeAddress: {
-        fontSize: 14,
-        color: '#fff',
-        fontWeight: '500',
-    },
-    tripFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingTop: 12,
-        borderTopWidth: 1,
-        borderTopColor: 'rgba(255,255,255,0.1)',
-    },
-    tripStat: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        marginRight: 16,
-    },
-    tripStatText: {
-        fontSize: 12,
-        color: colors.textSecondary,
-    },
-    tripPrice: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 4,
-        marginLeft: 'auto',
-    },
-    tripPriceText: {
-        fontSize: 16,
-        fontWeight: 'bold',
-        color: colors.success,
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    loadingText: {
-        marginTop: 16,
-        fontSize: 16,
-        color: colors.textSecondary,
-    },
-    emptyContainer: {
-        alignItems: 'center',
-        paddingVertical: 64,
-    },
-    emptyText: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#fff',
-        marginTop: 16,
-    },
-    emptySubtext: {
-        fontSize: 14,
-        color: colors.textSecondary,
-        marginTop: 8,
-        textAlign: 'center',
-        paddingHorizontal: 32,
-    },
-    receiptBtn: {
-        marginLeft: 12,
-        padding: 4,
-        backgroundColor: 'rgba(233, 30, 99, 0.1)',
-        borderRadius: 8,
-    },
-    modalOverlay: {
-        ...StyleSheet.absoluteFillObject,
-        backgroundColor: 'rgba(0,0,0,0.8)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: 20,
-        zIndex: 1000,
-    },
-    receiptModal: {
-        backgroundColor: colors.surface,
-        width: '100%',
-        borderRadius: 24,
-        padding: 24,
-        borderWidth: 1,
-        borderColor: colors.glassBorder,
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    modalTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        color: '#fff',
-    },
-    receiptContent: {
-        gap: 16,
-    },
-    receiptRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    receiptLabel: {
-        fontSize: 14,
-        color: colors.textSecondary,
-    },
-    receiptValue: {
-        fontSize: 14,
-        color: '#fff',
-        fontWeight: '600',
-    },
-    receiptAddress: {
-        gap: 4,
-    },
-    receiptDivider: {
-        height: 1,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        marginVertical: 4,
-    },
-    receiptTotalRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    receiptTotalLabel: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#fff',
-    },
-    receiptTotalValue: {
-        fontSize: 22,
-        fontWeight: 'bold',
-        color: colors.success,
-    },
-    closeModalBtn: {
-        marginTop: 32,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-        paddingVertical: 16,
+    detailsBtnTxt: { fontSize: 14, fontWeight: '850', color: colors.text },
+
+    // Weekly Chart Card
+    chartCard: {
+        backgroundColor: '#fff',
         borderRadius: 16,
-        alignItems: 'center',
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.surfaceContainerHighest,
+        shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 1,
+        marginBottom: 24
     },
-    closeModalText: {
+    chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+    chartTitle: { fontSize: 16, fontWeight: '800', color: colors.text },
+    chartTotalText: { fontSize: 13, fontWeight: '750', color: colors.primary },
+    chartGrid: { flexDirection: 'row', height: 160, alignItems: 'flex-end', justifyContent: 'space-between', paddingTop: 10 },
+    chartColumn: { flex: 1, alignItems: 'center', gap: 8 },
+    barContainer: { height: 110, width: 14, justifyContent: 'flex-end', backgroundColor: colors.surfaceContainerLow, borderRadius: 8, overflow: 'hidden' },
+    chartBar: { width: '100%', borderRadius: 8 },
+    chartBarActive: { backgroundColor: colors.primary },
+    chartBarInactive: { backgroundColor: colors.primaryContainer, opacity: 0.4 },
+    dayText: { fontSize: 10, color: colors.textSecondary, textTransform: 'uppercase', fontWeight: '600' },
+    dayTextActive: { color: colors.primary, fontWeight: '800' },
+
+    // Recent section
+    sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
+    sectionLink: { fontSize: 14, fontWeight: '750', color: colors.primary },
+
+    // Recent items List (Glass Card styled)
+    glassCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        borderLeftWidth: 3,
+        borderLeftColor: colors.primary,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#f1f1f5',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.04,
+        shadowRadius: 8,
+        elevation: 1,
+        marginBottom: 12
+    },
+    cardLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    bikeIconBg: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
+    tripMeta: { gap: 2 },
+    routeHeadline: { fontSize: 14, fontWeight: '800', color: colors.text, maxWidth: 160 },
+    tripTime: { fontSize: 11, color: colors.textSecondary, fontWeight: '600' },
+    cardRight: { alignItems: 'flex-end', gap: 2 },
+    tripEarnings: { fontSize: 15, fontWeight: '900', color: colors.primary },
+    tripStatusText: { fontSize: 11, color: colors.successContainer, fontWeight: '750' },
+
+    // Empty state
+    emptyState: { alignItems: 'center', paddingVertical: 40 },
+    emptyTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 4 },
+    emptySubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center' },
+    avatarFallback: {
+        width: '100%',
+        height: '100%',
+        backgroundColor: colors.primary,
+        justifyContent: 'center',
+        alignItems: 'center'
+    },
+    avatarFallbackText: {
         color: '#fff',
-        fontWeight: 'bold',
-        letterSpacing: 1,
-    }
+        fontSize: 14,
+        fontWeight: '900'
+    },
 });

@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+
+<html class="light" lang="pt-BR"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#9cf0ff",
+                        "secondary-container": "#e2dfde",
+                        "on-tertiary": "#ffffff",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "error": "#ba1a1a",
+                        "on-tertiary-fixed-variant": "#004f58",
+                        "on-primary-container": "#fffbff",
+                        "surface-dim": "#d9dade",
+                        "on-error-container": "#93000a",
+                        "inverse-surface": "#2e3034",
+                        "secondary-fixed": "#e5e2e1",
+                        "tertiary-fixed-dim": "#00daf3",
+                        "on-secondary-fixed-variant": "#474746",
+                        "primary-container": "#e30071",
+                        "surface": "#f9f9fe",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "on-surface": "#1a1c1f",
+                        "surface-container-highest": "#e2e2e7",
+                        "outline-variant": "#e5bcc5",
+                        "on-secondary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "on-primary": "#ffffff",
+                        "outline": "#906e76",
+                        "surface-bright": "#f9f9fe",
+                        "on-surface-variant": "#5c3f46",
+                        "surface-container-lowest": "#ffffff",
+                        "error-container": "#ffdad6",
+                        "on-primary-fixed-variant": "#8f0044",
+                        "inverse-on-surface": "#f0f0f5",
+                        "surface-tint": "#ba005b",
+                        "surface-container-high": "#e8e8ed",
+                        "primary-fixed": "#ffd9e1",
+                        "surface-container": "#ededf2",
+                        "surface-container-low": "#f3f3f8",
+                        "on-secondary-container": "#636262",
+                        "background": "#f9f9fe",
+                        "tertiary": "#006672",
+                        "primary": "#b60059",
+                        "primary-fixed-dim": "#ffb1c4",
+                        "on-primary-fixed": "#3f001a",
+                        "inverse-primary": "#ffb1c4",
+                        "on-background": "#1a1c1f",
+                        "tertiary-container": "#008190",
+                        "on-tertiary-fixed": "#001f24",
+                        "on-tertiary-container": "#f7feff",
+                        "surface-variant": "#e2e2e7",
+                        "secondary": "#5f5e5e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-lg": "24px",
+                        "edge-margin": "20px",
+                        "stack-md": "16px",
+                        "gutter": "16px",
+                        "touch-target": "48px",
+                        "unit": "4px",
+                        "stack-sm": "8px"
+                    },
+                    "fontFamily": {
+                        "display-lg": ["Montserrat"],
+                        "headline-lg": ["Montserrat"],
+                        "body-md": ["Montserrat"],
+                        "label-md": ["Montserrat"],
+                        "stats-number": ["Montserrat"],
+                        "title-md": ["Montserrat"],
+                        "headline-lg-mobile": ["Montserrat"],
+                        "body-lg": ["Montserrat"]
+                    },
+                    "fontSize": {
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                        "stats-number": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                        "title-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "26px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        @keyframes pulse-soft {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.8; transform: scale(1.02); }
+        }
+        .animate-status-pulse {
+            animation: pulse-soft 2s infinite ease-in-out;
+        }
+        .card-shadow {
+            box-shadow: 0 4px 12px rgba(26, 28, 31, 0.1);
+        }
+        .primary-glow {
+            box-shadow: 0 4px 14px rgba(186, 0, 91, 0.25);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        body {
+            background-color: #f9f9fe;
+            font-family: 'Montserrat', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-surface">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface shadow-sm flex justify-between items-center px-edge-margin h-touch-target">
+<div class="flex items-center gap-stack-sm">
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-primary">
+<img class="w-full h-full object-cover" data-alt="A professional portrait of a Brazilian motorcycle taxi driver in his 30s, wearing a high-visibility safety vest over a sleek black jacket. He is smiling confidently at the camera in a modern urban setting with soft morning sunlight. The image has a clean, high-contrast aesthetic with vibrant pink color accents reflecting the brand identity." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDHTswfCe_BQH5585qYkzDgWrhTr_8-Tj5GxFMHg0CHlUvIQvTE1jZ4L0W2KQyKmZYPPp9CLB5FSYGN6c7HqySpIf7gt7D0G1uAYdYPwnkGBvm-sgY6hRINLDcHPzR1R2ZM5wMi4BUGsh23NlM4ea_ySL6pHi3RdwDGJzRvmxvovEkL1QUyBsLmfG_ra9I3B00UNMtzwv2PDMNd3l5VQoWnvA2RT3olN3jfQSJOGnSmG_LCfc3tYqWddCSo58bZuAP6w-ZiKrmvZX4k"/>
+</div>
+<span class="font-display-lg text-title-md font-black text-primary uppercase tracking-tighter">TOT</span>
+</div>
+<button class="w-touch-target h-touch-target flex items-center justify-center text-on-surface-variant hover:bg-surface-variant/10 transition-transform active:scale-95">
+<span class="material-symbols-outlined" data-icon="notifications">notifications</span>
+</button>
+</header>
+<main class="pt-24 pb-32 px-edge-margin min-h-screen flex flex-col gap-stack-lg">
+<!-- Status Indicator -->
+<section class="flex flex-col items-center justify-center py-stack-md">
+<div class="animate-status-pulse bg-primary-container text-on-primary-container px-6 py-3 rounded-full flex items-center gap-stack-sm primary-glow">
+<span class="material-symbols-outlined text-on-primary-container" style="font-variation-settings: 'FILL' 1;">hourglass_top</span>
+<h1 class="font-label-md text-label-md tracking-widest uppercase font-bold">Aguardando Pagamento</h1>
+</div>
+</section>
+<!-- Trip Summary Card -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-lg card-shadow border-l-4 border-primary relative overflow-hidden">
+<div class="flex flex-col gap-unit">
+<p class="font-label-md text-on-surface-variant uppercase tracking-wider">Valor Total</p>
+<div class="flex items-baseline gap-unit">
+<span class="font-headline-lg-mobile text-primary">R$</span>
+<span class="font-display-lg text-primary leading-none">18,50</span>
+</div>
+</div>
+<div class="mt-stack-lg pt-stack-lg border-t border-surface-variant flex items-center justify-between">
+<div class="flex items-center gap-stack-sm">
+<div class="w-12 h-12 bg-surface-container rounded-full flex items-center justify-center text-primary">
+<span class="material-symbols-outlined text-stats-number" data-icon="payments">payments</span>
+</div>
+<div>
+<p class="font-label-md text-on-surface-variant">Método</p>
+<p class="font-title-md text-on-surface">Dinheiro</p>
+</div>
+</div>
+<div class="w-2 h-2 rounded-full bg-primary animate-ping"></div>
+</div>
+</div>
+<!-- Passenger Info Card -->
+<div class="bg-surface-container-low rounded-xl p-stack-md flex items-center gap-stack-md outline outline-1 outline-surface-variant">
+<div class="w-14 h-14 rounded-full overflow-hidden bg-surface-container-highest">
+<img class="w-full h-full object-cover" data-alt="A candid profile photo of a young man named Marco Silva, appearing friendly and reliable. He is dressed in casual modern attire, posing in a well-lit outdoor urban plaza. The photo is sharp with professional shallow depth of field, maintaining the bright and high-contrast color scheme of the application's clean design system." src="https://lh3.googleusercontent.com/aida-public/AB6AXuBHgJ6mBin-9yR0TCAjIJIx4VKl4bF0fWjZLWRueFfc8Ij_T5St0QSKu5r5YopdavTUaskoBLRlPeHcLes1lSeaw9PK-Zh1LKjzQo6wJp9B8L-u0YLRGZFnvRaB6LmpmpfeJ7UCM202u5HeaoFquXxgnLCLP9J3iMFLMBiWMQn23C0x7VQXebhlRKOyksIVUkAWpeiTKQP9C8d0BCQpB6i4zViiMkVWc5F3iaqH7L4GVF_b-ockdi9vd6MDDFG3ZsW3aYMpZ046V0aG"/>
+</div>
+<div class="flex-1">
+<p class="font-label-md text-on-surface-variant">Passageiro</p>
+<h3 class="font-title-md text-on-surface">Marco Silva</h3>
+</div>
+<div class="flex items-center gap-1 bg-surface-container-highest px-3 py-1 rounded-full">
+<span class="material-symbols-outlined text-[18px] text-primary" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-label-md text-on-surface font-bold">4.9</span>
+</div>
+</div>
+<!-- Instructions (Subtle) -->
+<div class="mt-auto py-stack-md text-center">
+<p class="font-body-md text-on-surface-variant italic">
+                Aguarde o passageiro realizar o pagamento antes de confirmar.
+            </p>
+</div>
+<!-- Confirmation Button -->
+<div class="flex flex-col gap-stack-sm">
+<button class="w-full h-16 bg-primary text-on-primary rounded-xl font-headline-lg-mobile flex items-center justify-center gap-stack-sm primary-glow transition-all active:scale-[0.98] hover:bg-primary-container">
+<span class="material-symbols-outlined" data-icon="check_circle">check_circle</span>
+                CONFIRMAR RECEBIMENTO
+            </button>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-edge-margin py-2 bg-surface shadow-[0_-4px_12px_rgba(186,0,91,0.1)] rounded-t-xl">
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-primary/5 transition-all duration-200 active:scale-90">
+<span class="material-symbols-outlined" data-icon="home">home</span>
+<span class="font-label-md text-label-md mt-1">Início</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-primary/5 transition-all duration-200 active:scale-90">
+<span class="material-symbols-outlined" data-icon="payments">payments</span>
+<span class="font-label-md text-label-md mt-1">Ganhos</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-primary/5 transition-all duration-200 active:scale-90">
+<span class="material-symbols-outlined" data-icon="history">history</span>
+<span class="font-label-md text-label-md mt-1">Histórico</span>
+</button>
+<button class="flex flex-col items-center justify-center text-on-surface-variant hover:bg-primary/5 transition-all duration-200 active:scale-90">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+<span class="font-label-md text-label-md mt-1">Perfil</span>
+</button>
+</nav>
+<script>
+        // Micro-interaction for confirmation button
+        const confirmBtn = document.querySelector('button.bg-primary');
+        confirmBtn.addEventListener('click', () => {
+            confirmBtn.classList.add('scale-95');
+            confirmBtn.innerHTML = '<span class="material-symbols-outlined animate-spin">sync</span> PROCESSANDO...';
+            setTimeout(() => {
+                confirmBtn.innerHTML = '<span class="material-symbols-outlined">verified</span> SUCESSO';
+                confirmBtn.classList.remove('bg-primary');
+                confirmBtn.classList.add('bg-tertiary');
+            }, 1500);
+        });
+
+        // Set active nav item logic (Home is likely active context here)
+        const navButtons = document.querySelectorAll('nav button');
+        const homeBtn = navButtons[0];
+        homeBtn.className = "flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-4 py-1 transition-all duration-200 active:scale-90";
+    </script>
+</body></html>

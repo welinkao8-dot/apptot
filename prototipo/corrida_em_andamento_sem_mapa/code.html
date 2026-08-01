@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>TOT Driver - Corrida em Andamento</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "surface-container-lowest": "#ffffff",
+                        "surface-container-low": "#f3f3f8",
+                        "surface-bright": "#f9f9fe",
+                        "secondary-fixed": "#e5e2e1",
+                        "on-primary-fixed": "#3f001a",
+                        "surface-variant": "#e2e2e7",
+                        "on-secondary-fixed-variant": "#474746",
+                        "on-tertiary-container": "#f7feff",
+                        "surface": "#f9f9fe",
+                        "primary": "#b60059",
+                        "primary-fixed-dim": "#ffb1c4",
+                        "on-error-container": "#93000a",
+                        "inverse-surface": "#2e3034",
+                        "on-secondary-fixed": "#1c1b1b",
+                        "secondary-container": "#e2dfde",
+                        "outline": "#906e76",
+                        "inverse-primary": "#ffb1c4",
+                        "on-secondary": "#ffffff",
+                        "on-primary-fixed-variant": "#8f0044",
+                        "on-primary": "#ffffff",
+                        "outline-variant": "#e5bcc5",
+                        "on-tertiary": "#ffffff",
+                        "surface-tint": "#ba005b",
+                        "surface-dim": "#d9dade",
+                        "inverse-on-surface": "#f0f0f5",
+                        "surface-container-high": "#e8e8ed",
+                        "on-tertiary-fixed-variant": "#004f58",
+                        "on-secondary-container": "#636262",
+                        "on-surface-variant": "#5c3f46",
+                        "error-container": "#ffdad6",
+                        "tertiary": "#006672",
+                        "on-tertiary-fixed": "#001f24",
+                        "tertiary-fixed": "#9cf0ff",
+                        "primary-container": "#e30071",
+                        "primary-fixed": "#ffd9e1",
+                        "on-background": "#1a1c1f",
+                        "tertiary-fixed-dim": "#00daf3",
+                        "surface-container": "#ededf2",
+                        "secondary": "#5f5e5e",
+                        "on-error": "#ffffff",
+                        "surface-container-highest": "#e2e2e7",
+                        "on-primary-container": "#fffbff",
+                        "background": "#f9f9fe",
+                        "tertiary-container": "#008190",
+                        "on-surface": "#1a1c1f",
+                        "secondary-fixed-dim": "#c8c6c5",
+                        "error": "#ba1a1a"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "stack-lg": "24px",
+                        "stack-md": "16px",
+                        "stack-sm": "8px",
+                        "gutter": "16px",
+                        "unit": "4px",
+                        "touch-target": "48px",
+                        "edge-margin": "20px"
+                    },
+                    "fontFamily": {
+                        "title-md": ["Montserrat"],
+                        "stats-number": ["Montserrat"],
+                        "body-lg": ["Montserrat"],
+                        "headline-lg-mobile": ["Montserrat"],
+                        "headline-lg": ["Montserrat"],
+                        "display-lg": ["Montserrat"],
+                        "body-md": ["Montserrat"],
+                        "label-md": ["Montserrat"]
+                    },
+                    "fontSize": {
+                        "title-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}],
+                        "stats-number": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                        "body-lg": ["18px", {"lineHeight": "26px", "fontWeight": "400"}],
+                        "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                        "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                        "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                        "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                        "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "600"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        body {
+            font-family: 'Montserrat', sans-serif;
+            background-color: #f9f9fe;
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 48;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface flex flex-col min-h-screen">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-surface dark:bg-inverse-surface shadow-sm flex justify-between items-center px-edge-margin h-touch-target">
+<div class="flex items-center gap-stack-sm">
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-primary">
+<img alt="Motorcycle taxi driver" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCHf4rqEoYuu1Rc9BYrUYrPLxqwSHnGoUiaSFor-lcA2Se5UDTxDhsbL-UxOUwPz0BM3wsKCTZKFGhb5VmBEFNKxEe94cqCAbxXNZcgusXtRCT_WoHx94As8E9BThptv-iwq3AGgJjfcvjmDQpHZwNPn6dhrXzxs830OixfomA-G1XKCiEOpBPDNUSupunGUMQH0y1rnxhWJvtSCWfPlDdlqVROKQUjcMzUAMNSxtRtDzKYlNsf72oocp0JLkHq4EBilRh4Z1FeE1oX"/>
+</div>
+<span class="font-display-lg text-display-lg font-black text-primary dark:text-primary-fixed-dim text-[24px]">TOT</span>
+</div>
+<button class="material-symbols-outlined text-primary dark:text-primary-fixed-dim hover:bg-surface-variant/10 transition-transform active:scale-95 p-2 rounded-full">
+            notifications
+        </button>
+</header>
+<main class="flex-1 mt-touch-target mb-[80px] px-edge-margin pt-stack-lg flex flex-col gap-stack-md bg-surface">
+<!-- Prominent Trip Details -->
+<div class="bg-primary-container/10 rounded-2xl p-stack-lg border border-primary/10">
+<div class="flex items-center gap-stack-sm mb-4">
+<span class="flex h-3 w-3 relative">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-3 w-3 bg-primary"></span>
+</span>
+<p class="font-label-md text-label-md text-primary uppercase tracking-wider">Em Viagem</p>
+</div>
+<div class="space-y-1">
+<p class="font-label-md text-label-md text-secondary uppercase">Destino</p>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface">Estrely Park</h1>
+</div>
+<div class="mt-stack-lg grid grid-cols-2 gap-stack-md">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-secondary">Chegada</span>
+<span class="font-display-lg text-primary text-[36px] font-bold">12 min</span>
+</div>
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-secondary">Distância</span>
+<span class="font-display-lg text-on-surface text-[36px] font-bold">4.2 km</span>
+</div>
+</div>
+</div>
+<!-- Bento Layout for Info -->
+<div class="grid grid-cols-2 gap-stack-sm">
+<!-- Rider Info Card -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-surface-variant/20 col-span-2 flex items-center justify-between">
+<div class="flex items-center gap-stack-md">
+<div class="w-14 h-14 rounded-full overflow-hidden border-2 border-surface-variant">
+<img alt="Passenger Marco Silva" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCL7AU4vRvgowjL8j81drQhF__TyRAQGwdpGy_MF2ur_SrGb13ORNH5T0ZCQ-J309yHdjD4fZJGBK5yn8Cb0Br7Pt4mW4msSo8staqV2VWnLbPS-14x7L1B9oU1c6TiryaCVl-4gi_iPg7tawQqghp4vorF5Sd0r-CX2yg7JhBPAyQwrBcIICgZ9ZgEYtDzXd459qoufoP6U3Wp8zkgehQKW4188PX-CM7dW4pSSLYXxdTxQUuCsRShVH24zYpBnc4cBNSkFWjDWq-q"/>
+</div>
+<div>
+<h2 class="font-title-md text-title-md text-on-surface">Marco Silva</h2>
+<div class="flex items-center gap-1">
+<span class="material-symbols-outlined text-primary text-[16px]" style="font-variation-settings: 'FILL' 1;">star</span>
+<span class="font-label-md text-label-md text-on-surface-variant">4.9 • Passageiro VIP</span>
+</div>
+</div>
+</div>
+<div class="flex gap-2">
+<button class="w-11 h-11 rounded-full bg-surface-container-high flex items-center justify-center text-primary active:scale-90 transition-all">
+<span class="material-symbols-outlined">chat</span>
+</button>
+<button class="w-11 h-11 rounded-full bg-surface-container-high flex items-center justify-center text-primary active:scale-90 transition-all">
+<span class="material-symbols-outlined">call</span>
+</button>
+</div>
+</div>
+<!-- Price Card -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-surface-variant/20">
+<p class="font-label-md text-label-md text-on-surface-variant">Valor Estimado</p>
+<p class="font-stats-number text-stats-number text-primary">R$ 18,50</p>
+</div>
+<!-- Payment Method Card -->
+<div class="bg-surface-container-lowest rounded-xl p-stack-md shadow-sm border border-surface-variant/20 flex flex-col justify-center">
+<p class="font-label-md text-label-md text-on-surface-variant">Pagamento</p>
+<div class="flex items-center gap-2 mt-1">
+<span class="material-symbols-outlined text-secondary">payments</span>
+<span class="font-title-md text-title-md text-on-surface text-[16px]">Dinheiro</span>
+</div>
+</div>
+</div>
+<div class="mt-auto space-y-stack-sm pb-4">
+<!-- Secondary Action: Abrir Mapa -->
+<button class="w-full h-[56px] rounded-xl bg-surface-container-lowest border-2 border-on-surface flex items-center justify-center gap-2 font-title-md text-on-surface active:scale-95 transition-all shadow-sm">
+<span class="material-symbols-outlined">map</span>
+                ABRIR MAPA
+            </button>
+<!-- Primary Action: Finalizar -->
+<button class="w-full h-[64px] rounded-xl bg-primary flex items-center justify-center font-title-md text-on-primary font-bold shadow-[0_4px_12px_rgba(182,0,89,0.3)] active:scale-95 transition-all">
+                FINALIZAR CORRIDA
+            </button>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-edge-margin py-2 bg-surface dark:bg-inverse-surface shadow-[0_-4px_12px_rgba(186,0,91,0.1)] rounded-t-xl">
+<a class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-4 py-1 transition-all duration-200 active:scale-90" href="#">
+<span class="material-symbols-outlined">home</span>
+<span class="font-label-md text-label-md">Home</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant hover:bg-primary/5 p-2 rounded-full transition-all duration-200 active:scale-90" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span class="font-label-md text-label-md">Earnings</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant hover:bg-primary/5 p-2 rounded-full transition-all duration-200 active:scale-90" href="#">
+<span class="material-symbols-outlined">history</span>
+<span class="font-label-md text-label-md">History</span>
+</a>
+<a class="flex flex-col items-center justify-center text-on-surface-variant dark:text-surface-variant hover:bg-primary/5 p-2 rounded-full transition-all duration-200 active:scale-90" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-md text-label-md">Profile</span>
+</a>
+</nav>
+<script>
+        // Simple micro-interaction for the "Finalizar" button
+        const finalizeBtn = document.querySelector('button.bg-primary');
+        finalizeBtn.addEventListener('click', function() {
+            this.textContent = "PROCESSANDO...";
+            this.classList.add('opacity-80');
+            setTimeout(() => {
+                this.textContent = "FINALIZADA";
+                this.classList.remove('bg-primary');
+                this.classList.add('bg-tertiary-container');
+            }, 1200);
+        });
+    </script>
+</body></html>

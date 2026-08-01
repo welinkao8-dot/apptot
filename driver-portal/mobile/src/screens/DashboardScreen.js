@@ -1,1550 +1,532 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ScrollView, ActivityIndicator, Pressable, Platform, DeviceEventEmitter, PermissionsAndroid, Linking, NativeModules } from 'react-native';
-
+import {
+    View, Text, StyleSheet, TouchableOpacity, ScrollView,
+    ActivityIndicator, Platform, DeviceEventEmitter,
+    PermissionsAndroid, StatusBar, Dimensions, Image
+} from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { WebView } from 'react-native-webview';
 import { openNavigationApp } from '../utils/openNavigation';
-import { AuthContext, API_URL } from '../context/AuthContext';
-import { getSocket, connectSocket } from '../services/socket';
+import { AuthContext } from '../context/AuthContext';
+import { connectSocket } from '../services/socket';
 import colors from '../theme/colors';
 import api from '../services/api';
 import Toast from 'react-native-toast-message';
-import Animated, {
-    useSharedValue,
-    useAnimatedStyle,
-    withSpring,
-    withTiming,
-    withRepeat,
-    interpolate,
-    interpolateColor
-} from 'react-native-reanimated';
+import { NativeModules } from 'react-native';
+import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
+import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, interpolate } from 'react-native-reanimated';
 
-import LinearGradient from 'react-native-linear-gradient';
-import {
-    Navigation,
-    DollarSign,
-    User,
-    Bell,
-    MapPin,
-    ChevronRight,
-    XCircle,
-    TrendingUp,
-    Layers,
-    CheckCircle,
-    Clock,
-    CreditCard,
-    Play,
-    PlayCircle,
-    Square,
-    Phone,
-    MessageSquare,
-    Menu,
-    Power,
-    Minimize2,
-    Maximize2,
-    ChevronDown,
-    Route,
-    ArrowUp,
-    ArrowUpLeft,
-    ArrowUpRight,
-    CornerUpLeft,
-    CornerUpRight,
-    RotateCcw,
-    Volume2,
-    VolumeX
-} from 'lucide-react-native';
+import { Bell, User, Power, Info } from 'lucide-react-native';
+
+import GoingToClientView from '../components/ride/GoingToClientView';
+import OngoingRideView from '../components/ride/OngoingRideView';
+import AwaitingPaymentView from '../components/ride/AwaitingPaymentView';
 import { formatCurrency } from '../utils/formatters';
 
-
-import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
-
 const { LocationModule } = NativeModules;
-
-const { width, height } = Dimensions.get('window');
-
-const hapticOptions = {
-    enableVibrateFallback: true,
-    ignoreAndroidSystemSettings: false,
-};
+const { width } = Dimensions.get('window');
+const hapticOptions = { enableVibrateFallback: true, ignoreAndroidSystemSettings: false };
 
 export default function DashboardScreen({ navigation }) {
-    const { user, logout, token } = useContext(AuthContext);
+    const { user, token } = useContext(AuthContext);
     const [isOnline, setIsOnline] = useState(false);
     const [stats, setStats] = useState({ rides: 0, earnings: 0 });
     const [requests, setRequests] = useState([]);
     const [rideStatus, setRideStatus] = useState('idle');
     const [activeTrip, setActiveTrip] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
-    const [isMinimized, setIsMinimized] = useState(false);
-
     const socket = useRef(null);
 
-    // Animation Values
-    const onlineProgress = useSharedValue(0);
-    const pulseValue = useSharedValue(1);
-    const minimizeAnim = useSharedValue(0);
+    // Carousel states
+    const [currentSlide, setCurrentSlide] = useState(0);
+    const carouselRef = useRef(null);
 
-    // Sync animation with state
+    // Pulse animation for status pill
+    const pulseAnim = useSharedValue(1);
     useEffect(() => {
-        minimizeAnim.value = withTiming(isMinimized ? 1 : 0, { duration: 400 });
-    }, [isMinimized]);
+        if (isOnline) {
+            pulseAnim.value = withRepeat(
+                withSequence(withTiming(1.2, { duration: 1000 }), withTiming(1, { duration: 1000 })),
+                -1, false
+            );
+        } else {
+            pulseAnim.value = withTiming(1, { duration: 200 });
+        }
+    }, [isOnline]);
 
-    const animatedPanelStyle = useAnimatedStyle(() => {
-        return {
-            transform: [{ translateY: interpolate(minimizeAnim.value, [0, 1], [0, 500]) }],
-            opacity: interpolate(minimizeAnim.value, [0, 0.8, 1], [1, 0.5, 0]),
-        };
-    });
+    const pulseStyle = useAnimatedStyle(() => ({
+        transform: [{ scale: pulseAnim.value }],
+        opacity: interpolate(pulseAnim.value, [1, 1.2], [0.8, 0.4]),
+    }));
 
-    const animatedMaximizeBtnStyle = useAnimatedStyle(() => {
-        return {
-            transform: [{ scale: interpolate(minimizeAnim.value, [0.5, 1], [0, 1], 'clamp') }],
-            opacity: interpolate(minimizeAnim.value, [0.5, 1], [0, 1], 'clamp'),
-        };
-    });
-
+    // Slide auto-play
     useEffect(() => {
-        const loadPersistedState = async () => {
-            try {
-                const [storedOnline, storedStatus, storedTrip] = await Promise.all([
-                    AsyncStorage.getItem('@tot_is_online'),
-                    AsyncStorage.getItem('@tot_ride_status'),
-                    AsyncStorage.getItem('@tot_active_trip')
-                ]);
-
-                if (storedOnline !== null) {
-                    const status = storedOnline === 'true';
-                    setIsOnline(status);
-                    if (status) {
-                        checkPermissions().then(hasPerm => {
-                            if (hasPerm && LocationModule) {
-                                LocationModule.startLocationUpdates();
-                            }
-                        });
-                    }
-                }
-                if (storedStatus) setRideStatus(storedStatus);
-                if (storedTrip) {
-                    setActiveTrip(JSON.parse(storedTrip));
-                }
-            } catch (e) {
-                console.error('Error loading persisted state:', e);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        loadPersistedState();
+        const slideTimer = setInterval(() => {
+            setCurrentSlide(prev => {
+                const next = prev === 0 ? 1 : 0;
+                carouselRef.current?.scrollTo({ x: next * (width - 40), animated: true });
+                return next;
+            });
+        }, 4000);
+        return () => clearInterval(slideTimer);
     }, []);
 
     useEffect(() => {
-        if (token) {
-            socket.current = connectSocket(token);
-            setupSocketListeners();
-        }
-        fetchStats();
-        return () => { };
-    }, [token]);
+        const load = async () => {
+            try {
+                const [so, ss, st] = await Promise.all([
+                    AsyncStorage.getItem('@tot_is_online'),
+                    AsyncStorage.getItem('@tot_ride_status'),
+                    AsyncStorage.getItem('@tot_active_trip'),
+                ]);
+                if (so !== null) {
+                    const online = so === 'true';
+                    setIsOnline(online);
+                    if (online && LocationModule) checkPermissions().then(ok => { if (ok) LocationModule.startLocationUpdates(); });
+                }
+                if (ss) setRideStatus(ss);
+                if (st) setActiveTrip(JSON.parse(st));
+            } catch (e) { console.error(e); }
+            finally { setIsLoading(false); }
+        };
+        load();
+    }, []);
 
+    useEffect(() => {
+        if (token) { socket.current = connectSocket(token); setupSocketListeners(); }
+        fetchStats();
+        return () => {};
+    }, [token]);
 
     const setupSocketListeners = () => {
         if (!socket.current || !user) return;
-
-        socket.current.on('connect', () => {
-            console.log('✅ Connected to socket, joining room...');
-            if (user?.id) {
-                socket.current.emit('join', { userId: user.id, role: 'driver' });
-            }
-        });
-
+        socket.current.on('connect', () => { if (user?.id) socket.current.emit('join', { userId: user.id, role: 'driver' }); });
         socket.current.on('login_status', (data) => {
             setIsOnline(data.isOnline);
             AsyncStorage.setItem('@tot_is_online', data.isOnline.toString());
-            onlineProgress.value = withSpring(data.isOnline ? 1 : 0);
-            if (data.isOnline) {
-                fetchPendingTrips();
-                if (LocationModule) LocationModule.startLocationUpdates();
-            } else {
-                if (LocationModule) LocationModule.stopLocationUpdates();
-            }
-            setIsLoading(false);
+            if (data.isOnline) { fetchPendingTrips(); if (LocationModule) LocationModule.startLocationUpdates(); }
+            else { if (LocationModule) LocationModule.stopLocationUpdates(); }
         });
-
-
         socket.current.on('new_trip_available', (trip) => {
-            console.log('🏎️ DEBUG: New trip available for driver:', JSON.stringify(trip, null, 2));
-            setRequests(prev => {
-                if (prev.find(r => r.id === trip.id)) return prev;
-                return [trip, ...prev];
-            });
-            Toast.show({
-                type: 'info',
-                text1: 'Nova Corrida Disponível! 🏎️',
-                text2: `De: ${trip.pickupAddress}`,
+            setRequests(prev => prev.find(r => r.id === trip.id) ? prev : [trip, ...prev]);
+            ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
+            navigation.navigate('RequestDetails', { 
+                trip: trip, 
+                onAccept: (t) => handleAcceptRide(t)
             });
         });
-
         socket.current.on('trip_taken', (data) => {
             setRequests(prev => prev.filter(r => r.id !== data.tripId));
         });
-
         socket.current.on('restore_ride', (trip) => {
-            console.log('🔄 Restoring ride from server:', trip.id);
-            setActiveTrip(trip);
-            setRideStatus(trip.status || 'ongoing');
+            setActiveTrip(trip); setRideStatus(trip.status || 'ongoing');
             AsyncStorage.setItem('@tot_active_trip', JSON.stringify(trip));
             AsyncStorage.setItem('@tot_ride_status', trip.status || 'ongoing');
         });
-
-
-        socket.current.on('trip_cancelled', () => {
-            Toast.show({ type: 'error', text1: 'Corrida cancelada pelo passageiro' });
-            resetRide();
-        });
+        socket.current.on('trip_cancelled', () => { Toast.show({ type: 'error', text1: 'Corrida cancelada.' }); resetRide(); });
     };
 
-    const fetchStats = async () => {
-        if (!user) return;
-        try {
-            const res = await api.get(`/trips/stats/${user.id}`);
-            if (res.data) setStats(res.data);
+    const fetchStats = async () => { 
+        if (!user) return; 
+        try { 
+            const r = await api.get(`/trips/stats/${user.id}`); 
+            if (r.data) {
+                setStats({
+                    rides: r.data.count || 0,
+                    earnings: r.data.totalFare || 0
+                });
+            }
         } catch (e) {
-            console.error('Error fetching stats:', e);
-        }
+            console.error('Error fetching dashboard stats:', e);
+        } 
     };
+    const fetchPendingTrips = async () => { try { const r = await api.get('/trips/pending'); if (r.data) setRequests(r.data); } catch (e) {} };
 
-    const onLocationUpdate = (location) => {
-        if (!location?.coords || !socket.current || !user) return;
-        const { longitude, latitude } = location.coords;
-        socket.current.emit('update_location', {
-            driverId: user.id,
-            lat: latitude,
-            lng: longitude,
-            activeClientId: activeTrip?.clientId || null
-        });
-    };
-
-    // Native Location updates listener
     useEffect(() => {
-        const sub = DeviceEventEmitter.addListener('onLocationUpdate', (data) => {
-            onLocationUpdate(data);
+        const sub = DeviceEventEmitter.addListener('onLocationUpdate', (loc) => {
+            if (!loc?.coords || !socket.current || !user) return;
+            socket.current.emit('update_location', { driverId: user.id, lat: loc.coords.latitude, lng: loc.coords.longitude, activeClientId: activeTrip?.clientId || null });
         });
         return () => sub.remove();
     }, [activeTrip]);
 
-    // Periodic stats refresh
-    useEffect(() => {
-        const interval = setInterval(fetchStats, 60000); // Every minute
-        return () => clearInterval(interval);
-    }, []);
-
-
-    const fetchPendingTrips = async () => {
-        try {
-            const res = await api.get('/trips/pending');
-            if (res.data) setRequests(res.data);
-        } catch (e) {
-            console.error('Error fetching pending trips:', e);
-        }
-    };
-
     const checkPermissions = async () => {
         if (Platform.OS !== 'android') return true;
-
-        const permissions = [
-            PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION,
-            PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION,
-        ];
-
-        if (Platform.Version >= 33) {
-            permissions.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-        }
-
-        const granted = await PermissionsAndroid.requestMultiple(permissions);
-        return granted['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED;
+        const perms = [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION, PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION];
+        if (Platform.Version >= 33) perms.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
+        const g = await PermissionsAndroid.requestMultiple(perms);
+        return g['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED;
     };
 
     const toggleOnline = async () => {
         if (!user) return;
-        const nextStatus = !isOnline;
-
-        if (nextStatus) {
-            const hasPermissions = await checkPermissions();
-            if (!hasPermissions) {
-                Toast.show({
-                    type: 'error',
-                    text1: 'Permissão Necessária',
-                    text2: 'O app precisa da sua localização para receber corridas.'
-                });
-                return;
-            }
+        const next = !isOnline;
+        if (next) {
+            const ok = await checkPermissions();
+            if (!ok) { Toast.show({ type: 'error', text1: 'Permissão de localização necessária.' }); return; }
             if (LocationModule) LocationModule.startLocationUpdates();
-        } else {
-            if (LocationModule) LocationModule.stopLocationUpdates();
-        }
-
-        setIsOnline(nextStatus);
-        AsyncStorage.setItem('@tot_is_online', nextStatus.toString());
-        onlineProgress.value = nextStatus ? 1 : 0; // Static jump
-        ReactNativeHapticFeedback.trigger('impactLight', hapticOptions);
-        socket.current?.emit('toggle_online', { userId: user.id, isOnline: nextStatus });
-        if (!nextStatus) setRequests([]);
-        else fetchPendingTrips();
+        } else { if (LocationModule) LocationModule.stopLocationUpdates(); }
+        setIsOnline(next);
+        AsyncStorage.setItem('@tot_is_online', next.toString());
+        ReactNativeHapticFeedback.trigger('impactHeavy', hapticOptions);
+        socket.current?.emit('toggle_online', { userId: user.id, isOnline: next });
+        if (!next) setRequests([]); else fetchPendingTrips();
     };
-
-
-
-    const animatedToggleStyle = useAnimatedStyle(() => {
-        return {
-            transform: [{ translateX: onlineProgress.value * 28 }],
-            backgroundColor: onlineProgress.value > 0.5 ? '#10b981' : '#f8fafc'
-        };
-    });
-
-    const animatedTrackStyle = useAnimatedStyle(() => {
-        return {
-            backgroundColor: onlineProgress.value > 0.5 ? 'rgba(16, 185, 129, 0.4)' : '#334155'
-        };
-    });
-
-
-    useEffect(() => {
-        // Pulse animation temporarily disabled for stabilization
-        pulseValue.value = 1;
-    }, [isOnline]);
-
-    // Consolidate pulse styles with precise dependency management to avoid node leakage
-    const idlePulseStyle = useAnimatedStyle(() => {
-        return {
-            transform: [{ scale: pulseValue.value }],
-            opacity: interpolate(onlineProgress.value, [0, 1], [0, 0.6]),
-            backgroundColor: colors.primary
-        };
-    }, [isOnline]);
-
-    const activePulseStyle = useAnimatedStyle(() => {
-        const isActiveLine = rideStatus === 'ongoing' || rideStatus === 'finished';
-        return {
-            transform: [{ scale: pulseValue.value }],
-            opacity: interpolate(onlineProgress.value, [0, 1], [0, 0.4]),
-            backgroundColor: isActiveLine ? colors.success : colors.primary,
-        };
-    }, [rideStatus, isOnline]);
-
-
-
 
     const handleAcceptRide = (trip) => {
         if (!user) return;
         ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-        socket.current?.emit('accept_trip', {
-            tripId: trip.id,
-            driverId: user.id,
-            clientId: trip.clientId,
-            driverName: user.full_name
-        });
-        setActiveTrip(trip);
-        setRideStatus('accepted');
-        setRequests([]);
+        socket.current?.emit('accept_trip', { tripId: trip.id, driverId: user.id, clientId: trip.clientId, driverName: user.full_name });
+        setActiveTrip(trip); setRideStatus('accepted'); setRequests([]);
         AsyncStorage.setItem('@tot_active_trip', JSON.stringify(trip));
         AsyncStorage.setItem('@tot_ride_status', 'accepted');
-
-        // Safety mount for the map component
-        setTimeout(() => {
-            setMountMap(true);
-        }, 500);
     };
-
 
     const handleStartRide = () => {
         if (!activeTrip) return;
         ReactNativeHapticFeedback.trigger('impactHeavy', hapticOptions);
-        socket.current?.emit('start_ride', {
-            tripId: activeTrip.id,
-            clientId: activeTrip.clientId
-        });
-        setRideStatus('ongoing');
-        AsyncStorage.setItem('@tot_ride_status', 'ongoing');
+        socket.current?.emit('start_ride', { tripId: activeTrip.id, clientId: activeTrip.clientId });
+        setRideStatus('ongoing'); AsyncStorage.setItem('@tot_ride_status', 'ongoing');
     };
-
-    const handleRecenter = () => {
-        ReactNativeHapticFeedback.trigger('impactLight', hapticOptions);
-        // ❌ REMOVED: recenterCamera not needed - camera follows automatically in SDK 3.x
-    };
-
-    const handleOverview = () => {
-        ReactNativeHapticFeedback.trigger('impactLight', hapticOptions);
-        // ❌ REMOVED: showRouteOverview doesn't exist in Navigation SDK 3.x
-        // Camera automatically adjusts when nav.setNavigationRoutes() is called
-    };
-
 
     const handleFinishRide = () => {
         if (!activeTrip) return;
         ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-        // We'll assume a basic fare if not tracked precisely, matching web logic
-        const finalFare = activeTrip.price || '0';
-        socket.current?.emit('finish_ride', {
-            tripId: activeTrip.id,
-            clientId: activeTrip.clientId,
-            finalFare: finalFare.toString()
-        });
-        setRideStatus('finished');
-        AsyncStorage.setItem('@tot_ride_status', 'finished');
+        socket.current?.emit('finish_ride', { tripId: activeTrip.id, clientId: activeTrip.clientId, finalFare: (activeTrip.price || '0').toString() });
+        setRideStatus('finished'); AsyncStorage.setItem('@tot_ride_status', 'finished');
     };
-
 
     const handleConfirmPayment = () => {
-        if (!activeTrip) return;
         ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-        socket.current?.emit('confirm_payment', {
-            tripId: activeTrip.id,
-            clientId: activeTrip.clientId
-        });
-        setRideStatus('paid'); // Transitions to summary view
-        AsyncStorage.setItem('@tot_ride_status', 'paid');
-        fetchStats();
+        resetRide(); fetchStats();
     };
-
 
     const resetRide = () => {
-        setActiveTrip(null);
-        setRideStatus('idle');
-        AsyncStorage.removeItem('@tot_active_trip');
-        AsyncStorage.removeItem('@tot_ride_status');
+        setActiveTrip(null); setRideStatus('idle');
+        AsyncStorage.removeItem('@tot_active_trip'); AsyncStorage.removeItem('@tot_ride_status');
     };
 
+    if (isLoading) return <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View>;
 
-    const formatDistance = (meters) => {
-        if (!meters) return '0 m';
-        if (meters < 1000) return `${Math.round(meters)} m`;
-        return `${(meters / 1000).toFixed(1)} km`;
-    };
-
-    const formatDuration = (seconds) => {
-        if (!seconds) return '0 min';
-        const mins = Math.ceil(seconds / 60);
-        if (mins < 60) return `${mins} min`;
-        const hrs = Math.floor(mins / 60);
-        const remainingMins = mins % 60;
-        return `${hrs}h ${remainingMins}m`;
-    };
-
-    const renderTurnIcon = (modifier, size) => {
-        const iconSize = size || 20;
-        const iconColor = '#fff';
-
-        switch (modifier?.toLowerCase()) {
-            case 'left':
-            case 'sharp left':
-                return <CornerUpLeft size={iconSize} color={iconColor} />;
-            case 'right':
-            case 'sharp right':
-                return <CornerUpRight size={iconSize} color={iconColor} />;
-            case 'slight left':
-                return <ArrowUpLeft size={iconSize} color={iconColor} />;
-            case 'slight right':
-                return <ArrowUpRight size={iconSize} color={iconColor} />;
-            case 'uturn':
-                return <RotateCcw size={iconSize} color={iconColor} />;
-            case 'straight':
-            default:
-                return <ArrowUp size={iconSize} color={iconColor} />;
-        }
-    };
-
-    const renderActiveRideHeader = () => {
-        if (!activeTrip) return null;
-
-        const getStatusColor = () => {
-            if (rideStatus === 'accepted') return colors.primary;
-            if (rideStatus === 'ongoing') return colors.primary;
-            if (rideStatus === 'finished') return colors.success;
-            return colors.success;
-        };
-
-        const getStatusText = () => {
-            if (rideStatus === 'accepted') return 'Buscando Passageiro';
-            if (rideStatus === 'ongoing') return 'Em Viagem';
-            if (rideStatus === 'finished') return 'Chegou ao Destino';
-            return 'Viagem Concluída';
-        };
-
-        return (
-            <LinearGradient
-                colors={['#0f172a', 'rgba(15, 23, 42, 0.9)', 'transparent']}
-                style={styles.newTopHeader}
-            >
-                <SafeAreaView edges={['top']}>
-                    <View style={styles.headerContent}>
-                        <View style={styles.navInstructionArea}>
-                            <Text style={styles.navInstructionText} numberOfLines={1}>
-                                {rideStatus === 'accepted' ? 'Caminho do Passageiro' : rideStatus === 'ongoing' ? 'Corrida em Curso' : 'Finalizar Corrida'}
-                            </Text>
-                            <Text style={{ color: colors.textSecondary, fontSize: 13, fontWeight: '600' }}>
-                                {activeTrip.userName || 'Passageiro'}
-                            </Text>
-                        </View>
-
-                        <View style={styles.headerRightInfo}>
-                            <View style={[styles.statusPillPremium, { borderColor: getStatusColor() + '40' }]}>
-                                <View style={[styles.statusDotSmall, { backgroundColor: getStatusColor() }]} />
-                                <Text style={[styles.statusLabelPremium, { color: getStatusColor() }]}>{getStatusText()}</Text>
-                            </View>
-                        </View>
-                    </View>
-                </SafeAreaView>
-            </LinearGradient>
-        );
-    };
-
-    if (isLoading && !user) {
-        return (
-            <View style={[styles.container, styles.centered]}>
-                <ActivityIndicator size="large" color={colors.primary} />
-            </View>
-        );
-    }
-
-    const isRideActive = ['accepted', 'ongoing', 'finished', 'paid'].includes(rideStatus);
-
-    if (isRideActive && activeTrip) {
-        return (
-            <View style={styles.activeRideContainer}>
-                {renderActiveRideHeader()}
-
-                <View style={{ flex: 1 }}>
-                    {(() => {
-                        const targetLat = rideStatus === 'accepted' ? activeTrip.coords?.lat : activeTrip.destPos?.lat;
-                        const targetLng = rideStatus === 'accepted' ? activeTrip.coords?.lng : activeTrip.destPos?.lng;
-                        const embedUrl = `https://www.google.com/maps?q=${targetLat || -8.839},${targetLng || 13.289}&z=16&output=embed`;
-
-                        return (
-                            <WebView
-                                source={{ uri: embedUrl }}
-                                style={{ flex: 1 }}
-                                javaScriptEnabled={true}
-                                domStorageEnabled={true}
-                                startInLoadingState={true}
-                                geolocationEnabled={true}
-                                onGeolocationPermissionsShowPrompt={(origin, callback) => {
-                                    callback(origin, true);
-                                }}
-                                renderLoading={() => (
-                                    <View style={[StyleSheet.absoluteFill, styles.centered, { backgroundColor: colors.background }]}>
-                                        <ActivityIndicator size="large" color={colors.primary} />
-                                    </View>
-                                )}
-                            />
-                        );
-                    })()}
-
-                    {/* ANIMATED FLOATING CARD */}
-                    <Animated.View style={[styles.activeRideFloatingPanel, animatedPanelStyle]}>
-                        {/* INTEGRATED MINIMIZE HANDLE */}
-                        <TouchableOpacity
-                            style={styles.minimizeHandleArea}
-                            onPress={() => setIsMinimized(true)}
-                        >
-                            <View style={styles.minimizeHandleBar} />
-                        </TouchableOpacity>
-
-                        <View style={styles.reqInfoRow}>
-                            <View style={styles.clientAvatar}>
-                                <User size={22} color={colors.textSecondary} />
-                            </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.reqName}>{activeTrip.userName || 'Passageiro'}</Text>
-                                <View style={styles.activeBadgeRow}>
-                                    <View style={[styles.statusPillSmall, { backgroundColor: (rideStatus === 'accepted' || rideStatus === 'ongoing') ? 'rgba(233, 30, 99, 0.1)' : 'rgba(16, 185, 129, 0.1)' }]}>
-                                        <View style={[styles.pulseDotSmall, { backgroundColor: (rideStatus === 'accepted' || rideStatus === 'ongoing') ? colors.primary : colors.success }]} />
-                                        <View style={styles.pulseDotInnerSmall} />
-                                        <Text style={[styles.activeRideTitleSmall, { color: (rideStatus === 'accepted' || rideStatus === 'ongoing') ? colors.primary : colors.success }]}>
-                                            {rideStatus === 'accepted' ? 'A CAMINHO' : rideStatus === 'ongoing' ? 'EM CURSO' : 'CONCLUÍDA'}
-                                        </Text>
-                                    </View>
-                                    <Text style={styles.reqRating}>⭐ 4.9</Text>
-                                </View>
-                            </View>
-                        </View>
-
-                        {/* ADDRESSES */}
-                        <View style={styles.addressRow}>
-                            <MapPin size={16} color={colors.primary} />
-                            <Text style={styles.reqAddr} numberOfLines={1}>De: {activeTrip.pickupAddress}</Text>
-                        </View>
-                        <View style={[styles.addressRow, { marginTop: -8, marginBottom: 12 }]}>
-                            <Navigation size={16} color={colors.success} />
-                            <Text style={styles.reqAddr} numberOfLines={1}>Para: {activeTrip.destAddress || 'Destino'}</Text>
-                        </View>
-
-                        <View style={{ marginBottom: 15 }} />
-
-                        {/* ACTIONS */}
-                        {rideStatus === 'accepted' && (
-                            <View style={{ gap: 10 }}>
-                                <TouchableOpacity style={styles.finishBtnTouch} onPress={handleStartRide}>
-                                    <LinearGradient colors={colors.gradients.pink} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
-                                        <Text style={styles.acceptBtnText}>INICIAR CORRIDA (CLIENTE A BORDO)</Text>
-                                        <Play size={20} color="#fff" />
-                                    </LinearGradient>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity 
-                                    style={styles.finishBtnTouch} 
-                                    onPress={() => {
-                                        if (activeTrip.coords?.lat && activeTrip.coords?.lng) {
-                                            openNavigationApp(
-                                                activeTrip.coords.lat,
-                                                activeTrip.coords.lng,
-                                                activeTrip.pickupAddress || 'Passageiro'
-                                            );
-                                        }
-                                    }}
-                                >
-                                    <LinearGradient colors={colors.gradients.blue} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
-                                        <Text style={styles.acceptBtnText}>NAVEGAR ATÉ O PASSAGEIRO</Text>
-                                        <Navigation size={20} color="#fff" />
-                                    </LinearGradient>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-
-                        {rideStatus === 'ongoing' && (
-                            <View style={{ gap: 10 }}>
-                                <TouchableOpacity style={styles.finishBtnTouch} onPress={handleFinishRide}>
-                                    <LinearGradient colors={colors.gradients.emerald} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
-                                        <Text style={styles.acceptBtnText}>FINALIZAR CORRIDA</Text>
-                                        <CheckCircle size={20} color="#fff" />
-                                    </LinearGradient>
-                                </TouchableOpacity>
-
-                                <TouchableOpacity 
-                                    style={styles.finishBtnTouch} 
-                                    onPress={() => {
-                                        if (activeTrip.destPos?.lat && activeTrip.destPos?.lng) {
-                                            openNavigationApp(
-                                                activeTrip.destPos.lat,
-                                                activeTrip.destPos.lng,
-                                                activeTrip.destAddress || 'Destino'
-                                            );
-                                        }
-                                    }}
-                                >
-                                    <LinearGradient colors={colors.gradients.blue} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
-                                        <Text style={styles.acceptBtnText}>ABRIR NAVEGAÇÃO</Text>
-                                        <Navigation size={20} color="#fff" />
-                                    </LinearGradient>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-
-                        {rideStatus === 'finished' && (
-                            <View style={styles.summarySection}>
-                                <View style={styles.summaryDivider} />
-                                <View style={styles.summaryBox}>
-                                    <Text style={styles.summaryLabel}>Valor do Recebimento</Text>
-                                    <Text style={styles.summaryValueBig}>{formatCurrency(activeTrip.price)}</Text>
-                                </View>
-                                <TouchableOpacity style={styles.finishBtnTouch} onPress={handleConfirmPayment}>
-                                    <LinearGradient colors={colors.gradients.blue} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
-                                        <Text style={styles.acceptBtnText}>CONFIRMAR PAGAMENTO</Text>
-                                        <CreditCard size={20} color="#fff" />
-                                    </LinearGradient>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-
-                        {rideStatus === 'paid' && (
-                            <View style={styles.receiptSection}>
-                                <View style={styles.receiptHeaderRow}>
-                                    <CheckCircle size={24} color={colors.success} />
-                                    <Text style={styles.receiptTitleSmall}>PAGAMENTO CONFIRMADO</Text>
-                                </View>
-                                <TouchableOpacity style={styles.finishBtnTouch} onPress={resetRide}>
-                                    <LinearGradient colors={colors.gradients.emerald} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
-                                        <Text style={styles.acceptBtnText}>CONCLUIR</Text>
-                                    </LinearGradient>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-
-                        <TouchableOpacity onPress={resetRide} style={styles.closeFloatingBtn}>
-                            <XCircle size={24} color={colors.textMuted} />
-                        </TouchableOpacity>
-                    </Animated.View>
-
-                    {/* ANIMATED MAXIMIZE BUTTON */}
-                    <Animated.View style={[styles.maximizeBtnContainer, animatedMaximizeBtnStyle]}>
-                        <TouchableOpacity onPress={() => setIsMinimized(false)}>
-                            <LinearGradient
-                                colors={colors.gradients.pink}
-                                style={styles.maximizeBtn}
-                            >
-                                <Maximize2 size={30} color="#fff" />
-                            </LinearGradient>
-                        </TouchableOpacity>
-                    </Animated.View>
-                </View>
-            </View >
-        );
-    }
+    if (rideStatus === 'accepted') return <GoingToClientView user={user} activeTrip={activeTrip} onStartRide={handleStartRide} onOpenMap={() => openNavigationApp(activeTrip?.coords?.lat, activeTrip?.coords?.lng, 'Local de Recolha')} />;
+    if (rideStatus === 'ongoing') return <OngoingRideView user={user} activeTrip={activeTrip} onFinishRide={handleFinishRide} onOpenMap={() => openNavigationApp(activeTrip?.destPos?.lat, activeTrip?.destPos?.lng, 'Destino')} />;
+    if (rideStatus === 'finished') return <AwaitingPaymentView user={user} activeTrip={activeTrip} onConfirmPayment={handleConfirmPayment} />;
 
     return (
-        <LinearGradient colors={['#0f172a', '#1e293b']} style={styles.container}>
-            <SafeAreaView style={{ flex: 1 }}>
-                {/* HEADER */}
-                <View style={styles.header}>
+        <View style={styles.root}>
+            <StatusBar barStyle="dark-content" backgroundColor={colors.surface} />
 
-                    <View style={styles.userInfo}>
-                        <LinearGradient colors={colors.gradients.pink} style={styles.avatar}>
-                            <Text style={styles.avatarText}>{user?.full_name?.charAt(0) || 'D'}</Text>
-                        </LinearGradient>
-                        <View>
-                            <Text style={styles.welcomeText}>Olá, {user?.full_name?.split(' ')[0]}</Text>
-                            <Text style={[styles.statusText, { color: isOnline ? colors.success : colors.textMuted }]}>
-                                {isOnline ? 'ONLINE' : 'OFFLINE'}
-                            </Text>
-                        </View>
+            {/* ─── TOP APP BAR ─── */}
+            <View style={styles.topBar}>
+                <View style={styles.topBarLeft}>
+                    <View style={styles.avatarMiniBorder}>
+                        {user?.avatar_url ? (
+                            <Image source={{ uri: user.avatar_url }} style={styles.avatarMini} />
+                        ) : (
+                            <View style={styles.avatarMiniFallback}>
+                                <Text style={styles.avatarMiniFallbackText}>
+                                    {user?.full_name?.[0]?.toUpperCase() || 'M'}
+                                </Text>
+                            </View>
+                        )}
                     </View>
+                    <Text style={styles.logoText}>TOT</Text>
+                </View>
+                <TouchableOpacity style={styles.notifyBtn} activeOpacity={0.8}>
+                    <Bell size={20} color={colors.primary} />
+                </TouchableOpacity>
+            </View>
 
-                    <Pressable onPress={toggleOnline} style={styles.toggleContainer}>
-                        <Animated.View style={[styles.toggleTrack, animatedTrackStyle]}>
-                            <Animated.View style={[styles.toggleThumb, animatedToggleStyle]} />
-                        </Animated.View>
-                    </Pressable>
+            {/* ─── MAIN CONTENT ─── */}
+            <ScrollView style={styles.scrollCanvas} contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+                
+                {/* Daily Earnings Card */}
+                <View style={styles.earningsCard}>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.earningsLabel}>Ganhos de Hoje</Text>
+                        <Text style={styles.earningsValue}>{formatCurrency(stats.earnings)}</Text>
+                    </View>
+                    <View style={styles.ridesInfo}>
+                        <Text style={styles.earningsLabel}>Corridas</Text>
+                        <Text style={styles.ridesValue}>{stats.rides}</Text>
+                    </View>
                 </View>
 
-
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-                    {/* STATS GRID */}
-                    <View style={styles.statsGrid}>
-                        <View style={styles.statBox}>
-
-                            <LinearGradient colors={colors.gradients.pink} style={styles.statGradient}>
-                                <View style={styles.statIconBadge}>
-                                    <TrendingUp size={24} color="#fff" />
-                                </View>
-                                <Text style={styles.statValue}>{stats.rides}</Text>
-                                <Text style={styles.statLabel}>Corridas hoje</Text>
-                            </LinearGradient>
+                {/* Advertising Slider (Carousel) */}
+                <View style={styles.sliderWrapper}>
+                    <ScrollView
+                        ref={carouselRef}
+                        horizontal
+                        pagingEnabled
+                        showsHorizontalScrollIndicator={false}
+                        scrollEventThrottle={16}
+                        onScroll={(e) => {
+                            const index = Math.round(e.nativeEvent.contentOffset.x / (width - 40));
+                            setCurrentSlide(index);
+                        }}
+                        style={styles.sliderScroll}
+                    >
+                        <View style={styles.sliderItem}>
+                            <Image source={{ uri: 'https://lh3.googleusercontent.com/aida/AP1WRLujdYRp3SrZiujUZ1c03tcvXOOZEqoMcJU6Ee3rY_RD6DutWlz5P4bgkjyfQtu3gby1A-dGeO7OTSzdjrYd8QPOwo8SFqbjmaHA4WdTD06bH1SggE18LliKdsRkLO8k4iMPIobSvAZh0DvHPplNRe5LiMV1UGzvRzuHZ3ePjteH_DGACaoP7w_9eiXeq7P7DJJBYJWtCQL6k3zjAs7gvKbYcB-0-vdJnS2KT469z2IWmga3EKvwNruYj_2z' }} style={styles.sliderImg} />
                         </View>
-
-                        <View style={styles.statBox}>
-                            <LinearGradient colors={colors.gradients.blue} style={styles.statGradient}>
-                                <View style={styles.statIconBadge}>
-                                    <DollarSign size={24} color="#fff" />
-                                </View>
-                                <Text style={styles.statValue}>{formatCurrency(stats.earnings)}</Text>
-                                <Text style={styles.statLabel}>Ganhos hoje</Text>
-                            </LinearGradient>
+                        <View style={styles.sliderItem}>
+                            <Image source={{ uri: 'https://lh3.googleusercontent.com/aida/AP1WRLvxWGZKHa_xc1cUfvQVde2oqcwriPbctgBH6S44mCywNGzknmbgmqDJzH9Xb8f1YXbU8m2qYI9RYY3eurZMIUVcwqPgL7-w8S0GgCrxZxdQiPNVbkKa1Nyzb-AOUAxEpue_JTnLGrkeErOzNPagr7egYsVFxV5TYYjmx7Z5OAdG2ogSO9lFixSlhdur24uLBAoLgX5HboqZOCO67IU9nGZ7eLKuwxpZ0uGKUoz39EkR3xyINI9xdWfS8lKM' }} style={styles.sliderImg} />
                         </View>
-
-
+                    </ScrollView>
+                    {/* Indicators */}
+                    <View style={styles.dotsRow}>
+                        <View style={[styles.dot, currentSlide === 0 ? styles.dotActive : styles.dotInactive]} />
+                        <View style={[styles.dot, currentSlide === 1 ? styles.dotActive : styles.dotInactive]} />
                     </View>
+                </View>
 
-                    {/* REQUESTS LIST */}
+                {/* Ride Requests List Section */}
+                <View style={styles.requestsSection}>
                     <View style={styles.sectionHeader}>
-                        <Text style={styles.sectionTitle}>Solicitações Próximas</Text>
-                        <View style={styles.countBadge}>
-                            <Text style={styles.countText}>{requests.length}</Text>
+                        <Text style={styles.sectionTitle}>Solicitações de Corrida</Text>
+                        <View style={styles.liveBadge}>
+                            <Text style={styles.liveBadgeText}>Ao Vivo</Text>
                         </View>
                     </View>
 
                     {isOnline ? (
                         requests.length > 0 ? (
-                            requests.map((req, index) => (
-                                <View key={req.id}>
-                                    <TouchableOpacity style={styles.requestCard} onPress={() => handleAcceptRide(req)}>
-
-                                        <View style={styles.reqInfoRow}>
-                                            <View style={styles.clientAvatar}>
-                                                <User size={22} color={colors.textSecondary} />
+                            requests.map(req => (
+                                <TouchableOpacity 
+                                    key={req.id} 
+                                    style={styles.requestCard}
+                                    onPress={() => {
+                                        navigation.navigate('RequestDetails', { 
+                                            trip: req, 
+                                            onAccept: (t) => handleAcceptRide(t)
+                                        });
+                                    }}
+                                    activeOpacity={0.9}
+                                >
+                                    <View style={styles.reqTopRow}>
+                                        <View style={styles.passengerMeta}>
+                                            <View style={styles.avatarFrame}>
+                                                <User size={20} color={colors.primary} />
                                             </View>
-                                            <View style={{ flex: 1 }}>
-                                                <Text style={styles.reqName}>{req.userName || 'Passageiro'}</Text>
-                                                <Text style={styles.reqRating}>⭐ 4.9 • TOT Premium</Text>
+                                            <View>
+                                                <Text style={styles.passengerName}>{req.userName || 'Passageiro'}</Text>
+                                                <Text style={styles.ratingText}>⭐ 4.9</Text>
                                             </View>
-                                            <Text style={styles.reqPrice}>Kz {req.price}</Text>
                                         </View>
-                                        <View style={styles.addressRow}>
-                                            <MapPin size={16} color={colors.primary} />
-                                            <Text style={styles.reqAddr} numberOfLines={1}>De: {req.pickupAddress}</Text>
+                                        <View style={styles.earningsMeta}>
+                                            <Text style={styles.estLabel}>Ganhos Est.</Text>
+                                            <Text style={styles.estPrice}>{formatCurrency(req.price || 0)}</Text>
                                         </View>
-                                        <View style={[styles.addressRow, { marginTop: -8, marginBottom: 16 }]}>
-                                            <Navigation size={16} color={colors.success} />
-                                            <Text style={styles.reqAddr} numberOfLines={1}>Para: {req.destAddress || 'Destino'}</Text>
+                                    </View>
+                                    
+                                    {/* Route points */}
+                                    <View style={styles.routeContainer}>
+                                        <View style={styles.routePoint}>
+                                            <View style={styles.greenCircle} />
+                                            <Text style={styles.routeAddrText} numberOfLines={1}>{req.pickupAddress}</Text>
                                         </View>
-                                        <LinearGradient colors={colors.gradients.emerald} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.acceptBtnGradient}>
-                                            <Text style={styles.acceptBtnText}>ACEITAR CORRIDA</Text>
-                                            <ChevronRight size={20} color="#fff" />
-                                        </LinearGradient>
-                                    </TouchableOpacity>
-                                </View>
+                                        <View style={styles.connectorLine} />
+                                        <View style={styles.routePoint}>
+                                            <View style={styles.pinkPin} />
+                                            <Text style={styles.routeAddrText} numberOfLines={1}>{req.destAddress || 'Destino'}</Text>
+                                        </View>
+                                    </View>
+                                </TouchableOpacity>
                             ))
-
                         ) : (
-                            <View style={styles.emptyContainer}>
-                                <ActivityIndicator size="small" color={colors.primary} />
-                                <Text style={styles.emptyText}>Buscando passageiros próximos...</Text>
+                            <View style={styles.searchingState}>
+                                <ActivityIndicator size="small" color={colors.primary} style={{ marginBottom: 12 }} />
+                                <Text style={styles.searchingTitle}>À procura de corridas...</Text>
+                                <Text style={styles.searchingSubtitle}>As solicitações próximas a si aparecerão aqui automaticamente.</Text>
                             </View>
                         )
                     ) : (
-                        <View style={styles.offlineBox}>
-                            <Bell size={48} color={colors.textMuted} style={{ marginBottom: 16, opacity: 0.5 }} />
-                            <Text style={styles.offlineText}>Aproveite o tempo livre ou fique disponível para ganhar dinheiro hoje!</Text>
+                        <View style={styles.offlineState}>
+                            <Power size={32} color={colors.textMuted} style={{ marginBottom: 12 }} />
+                            <Text style={styles.offlineTitle}>Você está offline</Text>
+                            <Text style={styles.offlineSubtitle}>Ligue o botão abaixo para começar a receber corridas.</Text>
                         </View>
                     )}
-                </ScrollView>
+                </View>
 
+                {/* Spacing above floating UI */}
+                <View style={{ height: 100 }} />
+            </ScrollView>
 
-
-
-
-            </SafeAreaView>
-
-        </LinearGradient>
+            {/* ─── STATUS & GO ONLINE FLOATING ACTION UI ─── */}
+            <View style={styles.floatingActionArea}>
+                {isOnline && (
+                    <Animated.View style={[styles.statusDisplayPill, pulseStyle]}>
+                        <View style={styles.whitePulseDot} />
+                        <Text style={styles.statusDisplayText}>Aguardando Corridas</Text>
+                    </Animated.View>
+                )}
+                
+                <TouchableOpacity 
+                    style={[styles.mainToggleBtn, isOnline ? styles.toggleBtnOnline : styles.toggleBtnOffline]} 
+                    onPress={toggleOnline} 
+                    activeOpacity={0.9}
+                >
+                    <Power size={24} color={isOnline ? '#fff' : colors.text} style={{ marginRight: 8 }} />
+                    <Text style={[styles.toggleBtnText, { color: isOnline ? '#fff' : colors.text }]}>
+                        {isOnline ? 'Ficar Offline' : 'Ficar Online'}
+                    </Text>
+                </TouchableOpacity>
+            </View>
+        </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    centered: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 20,
-        backgroundColor: 'rgba(30, 41, 59, 0.7)',
-        marginTop: 10,
-        marginHorizontal: 16,
-        borderRadius: 24,
-        elevation: 15,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.5,
-        shadowRadius: 20,
-    },
-    scrollContent: {
-        padding: 20,
-        paddingBottom: 40,
-    },
-    userInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    avatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 12,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    avatarText: {
-        color: '#fff',
-        fontWeight: '900',
-        fontSize: 20,
-    },
-    welcomeText: {
-        fontSize: 12,
-        color: colors.textSecondary,
-        fontWeight: '600',
-    },
-    statusText: {
-        fontSize: 14,
-        fontWeight: '900',
-        letterSpacing: 1,
-    },
-    toggleContainer: {
-        width: 64,
-        height: 32,
-    },
-    toggleTrack: {
-        flex: 1,
-        backgroundColor: '#334155',
-        borderRadius: 16,
-        justifyContent: 'center',
-        padding: 4,
-    },
-    toggleThumb: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        elevation: 4,
-    },
-    mainStatusCard: {
-        backgroundColor: 'rgba(255,255,255,0.03)',
-        borderRadius: 32,
-        padding: 30,
-        alignItems: 'center',
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: colors.glassBorder,
-    },
-    radarContainer: {
-        width: 100,
-        height: 100,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    radarPulse: {
-        position: 'absolute',
-        width: 90,
-        height: 90,
-        borderRadius: 45,
-        backgroundColor: colors.primary,
-        opacity: 0.2,
-    },
-    radarInner: {
-        width: 64,
-        height: 64,
-        borderRadius: 32,
-        backgroundColor: 'rgba(233, 30, 99, 0.1)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1,
-        borderColor: 'rgba(233, 30, 99, 0.2)',
-    },
-    idleTitle: {
-        color: '#fff',
-        fontSize: 22,
-        fontWeight: '900',
-        textAlign: 'center',
-        marginBottom: 8,
-    },
-    idleSub: {
-        color: colors.textSecondary,
-        fontSize: 14,
-        textAlign: 'center',
-        lineHeight: 20,
-        paddingHorizontal: 10,
-    },
-    statsGrid: {
-        flexDirection: 'row',
-        gap: 16,
-        marginBottom: 32,
-    },
-    statBox: {
-        flex: 1,
-        borderRadius: 24,
-        overflow: 'hidden',
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
-        shadowRadius: 15,
-    },
-    statGradient: {
-        paddingVertical: 24,
-        paddingHorizontal: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    statIconBadge: {
-        width: 48,
-        height: 48,
-        borderRadius: 16,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    statValue: {
-        color: '#fff',
-        fontSize: 20,
-        fontWeight: '900',
-        marginBottom: 4,
-        textAlign: 'center',
-    },
-    statLabel: {
-        color: 'rgba(255, 255, 255, 0.7)',
-        fontSize: 12,
-        fontWeight: '600',
-        textAlign: 'center',
-    },
-    sectionHeader: {
+    root: { flex: 1, backgroundColor: colors.background },
+
+    // Top Bar Styles
+    topBar: {
+        height: 60,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderColor: colors.surfaceContainerHighest,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 16,
-    },
-    sectionTitle: {
-        fontSize: 18,
-        fontWeight: '900',
-        color: colors.text,
-    },
-    countBadge: {
-        backgroundColor: colors.primary,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12,
-    },
-    countText: {
-        color: '#fff',
-        fontWeight: 'bold',
-        fontSize: 12,
-    },
-    requestCard: {
-        backgroundColor: colors.surfaceLight,
-        padding: 20,
-        borderRadius: 28,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: colors.glassBorder,
-    },
-    reqInfoRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        marginBottom: 12,
-    },
-    clientAvatar: {
-        width: 44,
-        height: 44,
-        borderRadius: 12,
-        backgroundColor: colors.surface,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    reqName: {
-        fontSize: 17,
-        fontWeight: 'bold',
-        color: colors.text,
-    },
-    reqRating: {
-        fontSize: 12,
-        color: colors.textSecondary,
-    },
-    reqPrice: {
-        fontSize: 18,
-        fontWeight: '900',
-        color: colors.success,
-    },
-    addressRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginBottom: 16,
-    },
-    reqAddr: {
-        fontSize: 14,
-        color: colors.textSecondary,
-        flex: 1,
-    },
-    acceptBtnGradient: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 14,
-        borderRadius: 16,
-        gap: 8,
-    },
-    acceptBtnText: {
-        color: '#fff',
-        fontWeight: '900',
-        fontSize: 15,
-        letterSpacing: 0.5,
-    },
-    emptyContainer: {
-        padding: 30,
-        alignItems: 'center',
-        gap: 12,
-    },
-    emptyText: {
-        color: colors.textMuted,
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    offlineBox: {
-        padding: 40,
-        alignItems: 'center',
-    },
-    offlineText: {
-        color: colors.textMuted,
-        fontWeight: '600',
-        textAlign: 'center',
-        fontSize: 15,
-    },
-    activeRideFloatingPanel: {
-        position: 'absolute',
-        bottom: 30,
-        left: 20,
-        right: 20,
-        backgroundColor: colors.surface,
-        borderRadius: 32,
-        padding: 24,
-        borderWidth: 1,
-        borderColor: colors.glassBorder,
-        elevation: 20,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.5,
-        shadowRadius: 20,
-    },
-    header: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
         paddingHorizontal: 20,
-        paddingTop: 10,
-        paddingBottom: 20,
-        marginTop: 10,
-        marginHorizontal: 15,
-        backgroundColor: 'rgba(30, 41, 59, 0.8)',
-        borderRadius: 24,
-        borderWidth: 1,
-        borderColor: colors.glassBorder,
-        elevation: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 10 },
-        shadowOpacity: 0.3,
-        shadowRadius: 15,
-        zIndex: 100,
+        paddingTop: Platform.OS === 'ios' ? 10 : 0
     },
-    statusPill: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 10,
-        borderRadius: 20,
-        gap: 12,
-        backgroundColor: 'rgba(255,255,255,0.05)',
-    },
-    activeRideHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    activeBadge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        backgroundColor: 'rgba(233, 30, 99, 0.1)',
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
-    },
-    pulseDot: {
-        width: 10,
-        height: 10,
-        borderRadius: 5,
-        backgroundColor: colors.primary,
-        position: 'absolute',
-    },
-    pulseDotInner: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: colors.primary,
-        zIndex: 2,
-    },
-    activeRideTitle: {
-        fontSize: 10,
-        fontWeight: '900',
-        color: colors.primary,
-        letterSpacing: 1.5,
-    },
-    activeRideDest: {
-        fontSize: 22,
-        fontWeight: '900',
-        color: colors.text,
-        marginBottom: 20,
-        lineHeight: 28,
-    },
-    finishBtnGradient: {
-        paddingVertical: 16,
-    },
-    receiptRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    receiptLabel: {
-        color: colors.textSecondary,
-        fontSize: 14,
-    },
-    receiptValueBig: {
-        color: colors.success,
-        fontSize: 20,
-        fontWeight: 'bold',
-    },
-    receiptDivider: {
-        height: 1,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-        marginVertical: 15,
-    },
-    receiptFooterText: {
-        color: 'rgba(255,255,255,0.3)',
-        fontSize: 12,
-        textAlign: 'center',
-        fontStyle: 'italic',
-    },
-    closeBtn: {
-        padding: 4,
-    },
-    activeBadgeRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-        marginTop: 4,
-    },
-    statusPillSmall: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 12,
-        gap: 6,
-    },
-    pulseDotSmall: {
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        zIndex: 2,
-    },
-    pulseDotInnerSmall: {
-        width: 12,
-        height: 12,
-        borderRadius: 6,
-        backgroundColor: 'rgba(255, 255, 255, 0.4)',
-        position: 'absolute',
-        left: 6,
-        zIndex: 1,
-    },
+    topBarLeft: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    avatarMiniBorder: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: colors.primary, overflow: 'hidden' },
+    avatarMini: { width: '100%', height: '100%', objectFit: 'cover' },
+    logoText: { fontSize: 20, fontWeight: '900', color: colors.primary, letterSpacing: -1 },
+    notifyBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
 
-    activeRideTitleSmall: {
-        fontSize: 10,
-        fontWeight: '900',
-        letterSpacing: 1,
-    },
-    summarySection: {
-        marginTop: 10,
-    },
-    summaryDivider: {
-        height: 1,
-        backgroundColor: colors.glassBorder,
-        marginBottom: 20,
-    },
-    summaryLabel: {
-        color: colors.textSecondary,
-        fontSize: 13,
-        fontWeight: '600',
-        marginBottom: 4,
-    },
-    summaryValueBig: {
-        color: colors.success,
-        fontSize: 28,
-        fontWeight: '900',
-        marginBottom: 20,
-    },
-    receiptSection: {
-        paddingVertical: 10,
-    },
-    receiptHeaderRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-        marginBottom: 20,
-    },
-    receiptTitleSmall: {
-        color: colors.success,
-        fontSize: 16,
-        fontWeight: '900',
-        letterSpacing: 1,
-    },
-    closeFloatingBtn: {
-        position: 'absolute',
-        top: 20,
-        right: 20,
-    },
+    // Scroll View canvas
+    scrollCanvas: { flex: 1 },
+    scrollContent: { paddingHorizontal: 20, paddingTop: 16 },
 
-    // NEW ACTIVE RIDE UI STYLES
-    activeRideContainer: {
-        flex: 1,
-        backgroundColor: colors.background,
-    },
-    newTopHeader: {
-        width: '100%',
-        paddingBottom: 12,
-        backgroundColor: '#0f172a',
-        borderBottomWidth: 1.5,
-        borderBottomColor: 'rgba(233, 30, 99, 0.4)', // Subtle pink accent
-        zIndex: 1000,
-        elevation: 15,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 8 },
-        shadowOpacity: 0.4,
-        shadowRadius: 12,
-    },
-    headerContent: {
+    // Earnings Daily Card
+    earningsCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        borderLeftWidth: 4,
+        borderColor: colors.primary,
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingTop: Platform.OS === 'ios' ? 0 : 20,
-    },
-    navInstructionArea: {
-        flex: 1,
-        marginRight: 10,
-    },
-    navInstructionText: {
-        color: '#f8fafc',
-        fontSize: 16,
-        fontWeight: '900',
-        marginBottom: 4,
-        letterSpacing: -0.2,
-    },
-    headerMetricsContainer: {
-        flexDirection: 'row',
         alignItems: 'center',
-        gap: 10,
-    },
-    headerMetricBox: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        backgroundColor: 'rgba(148, 163, 184, 0.1)',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 12,
-    },
-    headerMetricValue: {
-        color: '#f8fafc',
-        fontSize: 13,
-        fontWeight: '700',
-    },
-    headerRightInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    headerPriceContainer: {
-        alignItems: 'flex-end',
-    },
-    headerPriceValueRefined: {
-        color: '#f8fafc',
-        fontSize: 18,
-        fontWeight: '900',
-        letterSpacing: -0.5,
-    },
-    statusPillPremium: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 20,
         borderWidth: 1,
-        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+        borderTopColor: '#f1f1f5',
+        borderRightColor: '#f1f1f5',
+        borderBottomColor: '#f1f1f5',
+        shadowColor: '#1a1c1f',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.05,
+        shadowRadius: 10,
+        elevation: 2,
+        marginBottom: 20,
     },
-    statusDotSmall: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+    earningsLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '600' },
+    earningsValue: { fontSize: 22, fontWeight: '800', color: colors.text, marginTop: 4 },
+    ridesInfo: { alignItems: 'flex-end' },
+    ridesValue: { fontSize: 22, fontWeight: '800', color: colors.primary, marginTop: 4 },
+
+    // Slider Ads Carousel
+    sliderWrapper: { width: '100%', height: 180, marginBottom: 24, borderRadius: 16, overflow: 'hidden' },
+    sliderScroll: { width: '100%', height: '100%' },
+    sliderItem: { width: width - 40, height: 180 },
+    sliderImg: { width: '100%', height: '100%', objectFit: 'cover' },
+    dotsRow: { position: 'absolute', bottom: 12, left: 0, right: 0, flexDirection: 'row', justifyContent: 'center', gap: 6 },
+    dot: { width: 8, height: 8, borderRadius: 4 },
+    dotActive: { backgroundColor: colors.primary },
+    dotInactive: { backgroundColor: 'rgba(255, 255, 255, 0.5)' },
+
+    // Requests List Section
+    requestsSection: { flex: 1 },
+    sectionHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
+    sectionTitle: { fontSize: 18, fontWeight: '800', color: colors.text },
+    liveBadge: { backgroundColor: colors.primaryContainer, paddingHorizontal: 10, paddingVertical: 3, borderRadius: 12 },
+    liveBadgeText: { fontSize: 10, fontWeight: '800', color: '#fff', textTransform: 'uppercase', letterSpacing: 0.5 },
+
+    requestCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: colors.outlineVariant,
+        marginBottom: 16,
+        shadowColor: '#1a1c1f',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 1,
     },
-    statusLabelPremium: {
-        fontSize: 11,
-        fontWeight: '900',
-        letterSpacing: 0.5,
-    },
-    headerRowSpace: {
+    reqTopRow: { flexDirection: 'row', justify: 'space-between', alignItems: 'flex-start', marginBottom: 12 },
+    passengerMeta: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    avatarFrame: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceContainer, justifyContent: 'center', alignItems: 'center' },
+    passengerName: { fontSize: 15, fontWeight: '750', color: colors.text },
+    ratingText: { fontSize: 12, color: colors.primary, fontWeight: '600', marginTop: 2 },
+    earningsMeta: { alignItems: 'flex-end' },
+    estLabel: { fontSize: 11, color: colors.textSecondary, textTransform: 'uppercase' },
+    estPrice: { fontSize: 17, fontWeight: '900', color: colors.primary, marginTop: 2 },
+
+    routeContainer: { paddingLeft: 6, position: 'relative' },
+    routePoint: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+    greenCircle: { width: 12, height: 12, borderRadius: 6, borderWidth: 2, borderColor: colors.primary, backgroundColor: '#fff' },
+    pinkPin: { width: 12, height: 12, borderRadius: 6, backgroundColor: colors.primary },
+    connectorLine: { width: 2, height: 16, backgroundColor: colors.outlineVariant, marginLeft: 5, marginVertical: 3 },
+    routeAddrText: { flex: 1, fontSize: 13, color: colors.text, fontWeight: '600' },
+
+    searchingState: { alignItems: 'center', paddingVertical: 44 },
+    searchingTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 4 },
+    searchingSubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: 20 },
+
+    offlineState: { alignItems: 'center', paddingVertical: 44 },
+    offlineTitle: { fontSize: 16, fontWeight: '800', color: colors.text, marginBottom: 4 },
+    offlineSubtitle: { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, paddingHorizontal: 20 },
+
+    // Floating actions
+    floatingActionArea: { position: 'absolute', bottom: 20, left: 20, right: 20, alignItems: 'center', gap: 12 },
+    statusDisplayPill: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 4,
-    },
-    // NEW MINIMIZE HANDLE STYLES
-    minimizeHandleArea: {
-        width: '100%',
-        height: 20,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: -12,
-        marginBottom: 8,
-    },
-    minimizeHandleBar: {
-        width: 36,
-        height: 4,
-        borderRadius: 2,
-        backgroundColor: 'rgba(255,255,255,0.15)',
-    },
-    maximizeBtn: {
-        width: 70,
-        height: 70,
-        borderRadius: 35,
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 2,
-        borderColor: 'rgba(255,255,255,0.3)',
-    },
-    maximizeBtnContainer: {
-        position: 'absolute',
-        bottom: 50,
-        left: 30,
-        elevation: 25,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 12 },
-        shadowOpacity: 0.6,
-        shadowRadius: 15,
-        zIndex: 9999,
-    },
-    turnIconBadge: {
-        width: 36,
-        height: 36,
-        borderRadius: 10,
-        backgroundColor: colors.primary,
-        justifyContent: 'center',
-        alignItems: 'center',
+        backgroundColor: colors.primaryContainer,
+        paddingHorizontal: 20,
+        paddingVertical: 8,
+        borderRadius: 20,
         shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
+        shadowOpacity: 0.25,
+        shadowRadius: 10,
+        elevation: 5,
     },
-    muteToggleButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        backgroundColor: 'rgba(15, 23, 42, 0.8)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1.5,
-        borderColor: 'rgba(148, 163, 184, 0.2)',
-    },
-    muteToggleActive: {
-        borderColor: 'rgba(239, 68, 68, 0.4)',
-        backgroundColor: 'rgba(239, 68, 68, 0.1)',
-    },
-    expandStepsHandle: {
+    whitePulseDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#fff', marginRight: 8 },
+    statusDisplayText: { fontSize: 11, fontWeight: '900', color: '#fff', textTransform: 'uppercase', letterSpacing: 1 },
+
+    mainToggleBtn: {
         width: '100%',
-        height: 15,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginTop: -5,
-    },
-    stepsListContainer: {
-        paddingHorizontal: 16,
-        paddingBottom: 16,
-        backgroundColor: 'rgba(15, 23, 42, 0.5)',
-        borderBottomLeftRadius: 20,
-        borderBottomRightRadius: 20,
-    },
-    stepItemRow: {
+        height: 60,
+        borderRadius: 30,
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.05)',
-    },
-    stepIconSmall: {
-        width: 30,
-        height: 30,
         justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-        opacity: 0.7,
+        borderWidth: 4,
+        borderColor: '#fff',
+        shadowColor: '#1a1c1f',
+        shadowOffset: { width: 0, height: 8 },
+        shadowOpacity: 0.15,
+        shadowRadius: 16,
+        elevation: 6,
     },
-    stepInfoContainer: {
-        flex: 1,
-    },
-    stepInstructionText: {
-        color: '#f8fafc',
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    stepDistanceText: {
-        color: colors.primary,
-        fontSize: 12,
-        fontWeight: '800',
-        marginTop: 2,
-    },
-    // TRIP PROGRESS STYLES
-    progressBarContainer: {
-        height: 6,
+    toggleBtnOffline: { backgroundColor: colors.buttonLight },
+    toggleBtnOnline: { backgroundColor: colors.primary },
+    toggleBtnText: { fontSize: 16, fontWeight: '900', textTransform: 'uppercase', letterSpacing: 0.5 },
+    avatarMiniFallback: {
         width: '100%',
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
-        borderRadius: 3,
-        marginBottom: 20,
-        overflow: 'hidden',
-        position: 'relative',
-    },
-    progressBarFill: {
         height: '100%',
         backgroundColor: colors.primary,
-        borderRadius: 3,
-    },
-    progressMarker: {
-        position: 'absolute',
-        right: 0,
-        top: 0,
-        bottom: 0,
-        width: 2,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-    },
-    tripSummaryFooter: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        backgroundColor: 'rgba(0,0,0,0.15)',
-        padding: 12,
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: 'rgba(255,255,255,0.05)',
-    },
-    tripSummaryItem: {
-        flex: 1,
-        alignItems: 'center',
-    },
-    tripSummaryLabel: {
-        color: colors.textSecondary,
-        fontSize: 10,
-        fontWeight: '900',
-        letterSpacing: 1,
-        marginBottom: 4,
-    },
-    tripSummaryValue: {
-        color: '#f8fafc',
-        fontSize: 14,
-        fontWeight: '800',
-    },
-    tripSummaryDivider: {
-        width: 1,
-        height: 20,
-        backgroundColor: 'rgba(255,255,255,0.1)',
-    },
-    // CAMERA CONTROLS
-    cameraControlsContainer: {
-        position: 'absolute',
-        right: 16,
-        bottom: 300, // Above the floating panel
-        alignItems: 'center',
-        gap: 12,
-        zIndex: 1000,
-    },
-    cameraControlBtn: {
-        width: 48,
-        height: 48,
-        borderRadius: 24,
-        backgroundColor: 'rgba(15, 23, 42, 0.9)',
         justifyContent: 'center',
-        alignItems: 'center',
-        borderWidth: 1.5,
-        borderColor: 'rgba(255, 255, 255, 0.1)',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 10,
+        alignItems: 'center'
+    },
+    avatarMiniFallbackText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '900'
     },
 });
-

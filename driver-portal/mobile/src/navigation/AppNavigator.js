@@ -7,6 +7,7 @@ import { View, ActivityIndicator, StyleSheet } from 'react-native';
 import LoginScreen from '../screens/LoginScreen';
 import RegisterScreen from '../screens/RegisterScreen';
 import MainNavigator from './MainNavigator';
+import RequestDetailsScreen from '../screens/RequestDetailsScreen';
 
 // Context
 import { AuthContext } from '../context/AuthContext';
@@ -30,21 +31,24 @@ export default function AppNavigator() {
             <Stack.Navigator
                 screenOptions={{
                     headerShown: false,
-                    cardStyle: { backgroundColor: '#0f172a' },
+                    cardStyle: { backgroundColor: '#f8fafc' },
                     animationEnabled: false,
                 }}>
                 {!user ? (
                     // 1. NÃO LOGADO → Tela de Login
                     <Stack.Screen name="Login" component={LoginScreen} />
-                ) : user.status === 'pending_docs' ? (
+                ) : user?.status?.toLowerCase() === 'pending_docs' ? (
                     // 2. LOGADO MAS SEM DOCS → Tela de envio de documentos
                     <Stack.Screen name="Register" component={RegisterScreen} />
-                ) : user.status === 'pending' ? (
+                ) : user?.status?.toLowerCase() === 'pending' ? (
                     // 3. DOCS ENVIADOS, AGUARDANDO APROVAÇÃO → Tela de status pendente
                     <Stack.Screen name="Register" component={RegisterScreen} />
-                ) : user.status === 'active' ? (
+                ) : user?.status?.toLowerCase() === 'active' || !user?.status ? (
                     // 4. APROVADO → Acesso ao Dashboard com Bottom Tabs e Drawer
-                    <Stack.Screen name="Main" component={MainNavigator} />
+                    <>
+                        <Stack.Screen name="Main" component={MainNavigator} />
+                        <Stack.Screen name="RequestDetails" component={RequestDetailsScreen} />
+                    </>
                 ) : (
                     // 5. QUALQUER OUTRO STATUS (suspended, etc) → Volta pro Login
                     <Stack.Screen name="Login" component={LoginScreen} />
@@ -59,6 +63,6 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#0f172a',
+        backgroundColor: '#f8fafc',
     },
 });

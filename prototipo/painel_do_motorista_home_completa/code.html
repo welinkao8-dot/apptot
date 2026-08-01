@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+
+<html class="light" lang="pt-BR"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
+<title>Painel do Motorista - TOT</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "secondary-fixed": "#e5e2e1",
+                    "background": "#f9f9fe",
+                    "tertiary-container": "#008190",
+                    "on-primary-fixed": "#3f001a",
+                    "on-tertiary-container": "#f7feff",
+                    "surface-container-low": "#f3f3f8",
+                    "surface-tint": "#ba005b",
+                    "on-secondary": "#ffffff",
+                    "tertiary": "#006672",
+                    "secondary-fixed-dim": "#c8c6c5",
+                    "on-secondary-container": "#636262",
+                    "surface-variant": "#e2e2e7",
+                    "on-tertiary-fixed": "#001f24",
+                    "surface-container-lowest": "#ffffff",
+                    "secondary": "#5f5e5e",
+                    "on-secondary-fixed": "#1c1b1b",
+                    "surface": "#f9f9fe",
+                    "on-tertiary-fixed-variant": "#004f58",
+                    "on-primary": "#ffffff",
+                    "secondary-container": "#e2dfde",
+                    "surface-container": "#ededf2",
+                    "inverse-primary": "#ffb1c4",
+                    "inverse-on-surface": "#f0f0f5",
+                    "on-surface-variant": "#5c3f46",
+                    "on-error": "#ffffff",
+                    "on-primary-fixed-variant": "#8f0044",
+                    "tertiary-fixed": "#9cf0ff",
+                    "on-primary-container": "#fffbff",
+                    "on-secondary-fixed-variant": "#474746",
+                    "primary-container": "#e30071",
+                    "surface-container-highest": "#e2e2e7",
+                    "error-container": "#ffdad6",
+                    "on-surface": "#1a1c1f",
+                    "inverse-surface": "#2e3034",
+                    "surface-container-high": "#e8e8ed",
+                    "tertiary-fixed-dim": "#00daf3",
+                    "on-error-container": "#93000a",
+                    "on-tertiary": "#ffffff",
+                    "outline-variant": "#e5bcc5",
+                    "outline": "#906e76",
+                    "error": "#ba1a1a",
+                    "surface-dim": "#d9dade",
+                    "primary": "#b60059",
+                    "surface-bright": "#f9f9fe",
+                    "on-background": "#1a1c1f",
+                    "primary-fixed": "#ffd9e1",
+                    "primary-fixed-dim": "#ffb1c4"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "edge-margin": "20px",
+                    "stack-lg": "24px",
+                    "gutter": "16px",
+                    "unit": "4px",
+                    "touch-target": "48px",
+                    "stack-md": "16px",
+                    "stack-sm": "8px"
+            },
+            "fontFamily": {
+                    "body-md": ["Montserrat"],
+                    "headline-lg": ["Montserrat"],
+                    "body-lg": ["Montserrat"],
+                    "stats-number": ["Montserrat"],
+                    "label-md": ["Montserrat"],
+                    "headline-lg-mobile": ["Montserrat"],
+                    "display-lg": ["Montserrat"],
+                    "title-md": ["Montserrat"]
+            },
+            "fontSize": {
+                    "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+                    "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+                    "body-lg": ["18px", {"lineHeight": "26px", "fontWeight": "400"}],
+                    "stats-number": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+                    "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+                    "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+                    "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+                    "title-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Montserrat', sans-serif; -webkit-tap-highlight-color: transparent; }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .pulse-container {
+            animation: pulse-animation 2s infinite;
+        }
+        @keyframes pulse-animation {
+            0% { transform: scale(0.95); opacity: 0.5; }
+            50% { transform: scale(1.05); opacity: 0.8; }
+            100% { transform: scale(0.95); opacity: 0.5; }
+        }
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</head>
+<body class="bg-surface text-on-surface antialiased overflow-hidden h-screen flex flex-col">
+<!-- Top Navigation Bar -->
+<header class="w-full top-0 sticky z-50 bg-surface dark:bg-surface-dim shadow-sm border-b border-surface-variant dark:border-on-surface-variant flex items-center justify-between px-edge-margin h-touch-target flex-shrink-0">
+<div class="flex items-center gap-3">
+<div class="w-10 h-10 rounded-full overflow-hidden border-2 border-primary">
+<img alt="Profile" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBa57CY-SUbKJgj6gyhmzEls78_yXa1bcBmRZIa_E9gVf7snSxEIWZGZ20a3oiBPeYlW5nI0qMoJ_bAaTmDikHJUXm4xzJAcwHtrzA1dmir0dtJYlldpoh1wT1VgqFr8E0jKoJ1nKna_2oPmV5EZ145SRUlG4uhzZ0Kmo1mAv7Dp9JDw_RdhEvkvwBTjV93Suy44PmPenv_FzlsTSlD09uwDBP7u1Wi3k1BHEMPOwuQXMkuG1tlV3RdAjO19lvuifdVUiifGJ6tg5x-"/>
+</div>
+<h1 class="font-display-lg text-title-md font-black text-primary dark:text-primary-fixed tracking-tight">TOT</h1>
+</div>
+<div class="flex items-center gap-4">
+<button class="hover:bg-surface-container-high transition-colors p-2 rounded-full active:scale-95 duration-100">
+<span class="material-symbols-outlined text-primary">notifications</span>
+</button>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow relative overflow-y-auto hide-scrollbar bg-surface pb-24">
+<!-- Driver Earnings Summary -->
+<div class="px-edge-margin mt-4">
+<div class="bg-surface-container-lowest rounded-xl p-4 shadow-md border border-surface-variant flex items-center justify-between">
+<div>
+<p class="font-label-md text-label-md text-secondary">Ganhos de Hoje</p>
+<p class="font-stats-number text-stats-number text-on-surface">R$ 148,50</p>
+</div>
+<div class="text-right">
+<p class="font-label-md text-label-md text-secondary">Corridas</p>
+<p class="font-stats-number text-stats-number text-primary">12</p>
+</div>
+</div>
+</div>
+<!-- Advertising Slider (Prominent Carousel) -->
+<div class="mt-6">
+<div class="relative w-full aspect-[16/9] overflow-hidden">
+<div class="flex h-full transition-transform duration-500 ease-in-out" id="carousel-track">
+<div class="w-full h-full flex-shrink-0 relative">
+<img alt="Promotional Banner 1" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDmpk66h53Lkxz1M8HsyfSjouSdcbju3W737xBPUCONfiYBSj2oJRdmhhyY6C8ZiaxmFHzHg8xOziWoGuEW-OkU6wd0jEjE02nueofcz1feeSYwuPTW8N3qNBz9GBs0PqHU7wOdQ8qK5stjmq0cFlo4DpEKF8Nu7eK86TQNPM5BHpp7t6p0PMIkLg6gWxHXu1lFv9-pJloYGbq95VSq54_SawovNkHadOHS4mMFBcwp5pPQ1vvC5Bm6J-PSyFZTYAVF-pY1VzanUTxh"/>
+</div>
+<div class="w-full h-full flex-shrink-0 relative">
+<img alt="Promotional Banner 2" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBG5HEER7vnPCuqlM8agu_VSFzsGTjRA9RP91pFShxQ7db8J2aY-jFtBKApSrK7at8mTsC4I5Z2RavBspWC4VY-nhIsa7eEUpnWaq9pAO8vbI2Zloe2Nn_I-rgTt89P_LDe_O4u2iny9ImrdA5nccNvcd6m750V7Z8q8f8_awzn16SAqNeneN3Ec4mLAov_u6Jgg71GWefskIAwBXQ4zvDIE80lNwpn9327yxFQGLA3KNxwB9gLMzgRN8A6Rx6kC6whC8PMq3m_7MGf"/>
+</div>
+</div>
+<!-- Slider Indicators -->
+<div class="absolute bottom-4 left-0 right-0 flex justify-center gap-2 z-20">
+<div class="w-2 h-2 rounded-full bg-primary" id="dot-0"></div>
+<div class="w-2 h-2 rounded-full bg-white/50" id="dot-1"></div>
+</div>
+</div>
+</div>
+<!-- Ride Requests Section -->
+<section class="mt-8 px-edge-margin">
+<div class="flex items-center justify-between mb-4">
+<h2 class="font-headline-lg-mobile text-title-md text-on-surface font-bold">Solicitações de Corrida</h2>
+<span class="bg-primary-container text-on-primary-container text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Ao Vivo</span>
+</div>
+<div class="space-y-4">
+<!-- Ride Card 1 -->
+<div class="bg-surface-container-lowest border border-surface-variant rounded-2xl p-4 shadow-sm hover:border-primary transition-colors cursor-pointer">
+<div class="flex items-start justify-between mb-3">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 rounded-full overflow-hidden bg-surface-container">
+<img alt="Rider" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuD8f7tB4H2V0M-gU0o_D3t5W4a6fS6G3y7z8x9C0v1B2n3m4L5k6j7h8G9F0e-D=s128-c"/>
+</div>
+<div>
+<h3 class="font-title-md text-body-md font-bold text-on-surface">Ana Clara</h3>
+<div class="flex items-center gap-1 text-primary">
+<span class="material-symbols-outlined text-[16px] fill-1">star</span>
+<span class="font-label-md text-[14px]">4.9</span>
+</div>
+</div>
+</div>
+<div class="text-right">
+<p class="font-label-md text-secondary text-[12px] uppercase">Ganhos Est.</p>
+<p class="font-title-md text-primary text-body-lg font-extrabold">R$ 18,50</p>
+</div>
+</div>
+<div class="space-y-3 relative before:content-[''] before:absolute before:left-[9px] before:top-3 before:bottom-3 before:w-[2px] before:bg-outline-variant">
+<div class="flex items-start gap-3 relative z-10">
+<div class="w-5 h-5 rounded-full bg-white border-2 border-primary flex items-center justify-center mt-1">
+<div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+</div>
+<div>
+<p class="font-label-md text-secondary text-[10px] uppercase leading-tight">Origem</p>
+<p class="font-body-md text-[14px] text-on-surface line-clamp-1">Av. Paulista, 1578 - Bela Vista</p>
+</div>
+</div>
+<div class="flex items-start gap-3 relative z-10">
+<div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center mt-1">
+<span class="material-symbols-outlined text-white text-[12px]">location_on</span>
+</div>
+<div>
+<p class="font-label-md text-secondary text-[10px] uppercase leading-tight">Destino</p>
+<p class="font-body-md text-[14px] text-on-surface line-clamp-1">Shopping Ibirapuera - Moema</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Ride Card 2 -->
+<div class="bg-surface-container-lowest border border-surface-variant rounded-2xl p-4 shadow-sm hover:border-primary transition-colors cursor-pointer">
+<div class="flex items-start justify-between mb-3">
+<div class="flex items-center gap-3">
+<div class="w-12 h-12 rounded-full overflow-hidden bg-surface-container">
+<img alt="Rider" class="w-full h-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCp9M8N7L6k5j4H3g2f1e0D9c8B7A6Z5y4x3W2v1U0T9S8R7Q6P5o4n=s128-c"/>
+</div>
+<div>
+<h3 class="font-title-md text-body-md font-bold text-on-surface">Ricardo Silva</h3>
+<div class="flex items-center gap-1 text-primary">
+<span class="material-symbols-outlined text-[16px] fill-1">star</span>
+<span class="font-label-md text-[14px]">4.7</span>
+</div>
+</div>
+</div>
+<div class="text-right">
+<p class="font-label-md text-secondary text-[12px] uppercase">Ganhos Est.</p>
+<p class="font-title-md text-primary text-body-lg font-extrabold">R$ 12,20</p>
+</div>
+</div>
+<div class="space-y-3 relative before:content-[''] before:absolute before:left-[9px] before:top-3 before:bottom-3 before:w-[2px] before:bg-outline-variant">
+<div class="flex items-start gap-3 relative z-10">
+<div class="w-5 h-5 rounded-full bg-white border-2 border-primary flex items-center justify-center mt-1">
+<div class="w-1.5 h-1.5 rounded-full bg-primary"></div>
+</div>
+<div>
+<p class="font-label-md text-secondary text-[10px] uppercase leading-tight">Origem</p>
+<p class="font-body-md text-[14px] text-on-surface line-clamp-1">Rua Augusta, 1000 - Consolação</p>
+</div>
+</div>
+<div class="flex items-start gap-3 relative z-10">
+<div class="w-5 h-5 rounded-full bg-primary flex items-center justify-center mt-1">
+<span class="material-symbols-outlined text-white text-[12px]">location_on</span>
+</div>
+<div>
+<p class="font-label-md text-secondary text-[10px] uppercase leading-tight">Destino</p>
+<p class="font-body-md text-[14px] text-on-surface line-clamp-1">Parque do Ibirapuera - Portão 3</p>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Status & Go Online Floating UI -->
+<div class="fixed bottom-24 left-edge-margin right-edge-margin z-30 flex flex-col items-center gap-4">
+<div class="bg-primary-container text-on-primary-container px-6 py-2 rounded-full shadow-lg flex items-center gap-3 transition-all duration-500 opacity-0 transform translate-y-4" id="status-display">
+<div class="w-2 h-2 bg-white rounded-full pulse-container"></div>
+<span class="font-label-md text-[12px] font-bold uppercase tracking-widest">Aguardando Corridas</span>
+</div>
+<button class="w-full h-[64px] bg-secondary-fixed text-on-secondary-fixed rounded-full shadow-2xl flex items-center justify-center gap-4 transition-all duration-300 active:scale-95 pointer-events-auto border-4 border-surface" id="main-toggle" onclick="toggleOnlineState()">
+<span class="material-symbols-outlined text-3xl" id="toggle-icon">power_settings_new</span>
+<span class="font-title-md text-title-md font-extrabold uppercase tracking-tight" id="toggle-text">Ficar Online</span>
+</button>
+</div>
+</main>
+<!-- Bottom Navigation Bar -->
+<nav class="fixed bottom-0 w-full z-50 bg-surface dark:bg-surface-container-lowest shadow-[0_-4px_10px_rgba(0,0,0,0.05)] border-t border-surface-variant dark:border-on-surface-variant flex justify-around items-center h-20 px-2 pb-safe">
+<button class="flex flex-col items-center justify-center bg-primary-container text-on-primary-container rounded-full px-4 py-1 transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">motorcycle</span>
+<span class="font-label-md text-[12px]">Início</span>
+</button>
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim px-4 py-1 transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined">payments</span>
+<span class="font-label-md text-[12px]">Ganhos</span>
+</button>
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim px-4 py-1 transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined">history</span>
+<span class="font-label-md text-[12px]">Histórico</span>
+</button>
+<button class="flex flex-col items-center justify-center text-secondary dark:text-secondary-fixed-dim px-4 py-1 transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined">person</span>
+<span class="font-label-md text-[12px]">Perfil</span>
+</button>
+</nav>
+<script>
+        let isOnline = false;
+        
+        function toggleOnlineState() {
+            isOnline = !isOnline;
+            const toggleBtn = document.getElementById('main-toggle');
+            const toggleIcon = document.getElementById('toggle-icon');
+            const toggleText = document.getElementById('toggle-text');
+            const statusDisplay = document.getElementById('status-display');
+
+            if (isOnline) {
+                toggleBtn.classList.remove('bg-secondary-fixed', 'text-on-secondary-fixed');
+                toggleBtn.classList.add('bg-primary', 'text-on-primary');
+                toggleIcon.textContent = 'pause';
+                toggleText.textContent = 'Ficar Offline';
+                statusDisplay.classList.remove('opacity-0', 'translate-y-4');
+                statusDisplay.classList.add('opacity-100', 'translate-y-0');
+            } else {
+                toggleBtn.classList.add('bg-secondary-fixed', 'text-on-secondary-fixed');
+                toggleBtn.classList.remove('bg-primary', 'text-on-primary');
+                toggleIcon.textContent = 'power_settings_new';
+                toggleText.textContent = 'Ficar Online';
+                statusDisplay.classList.add('opacity-0', 'translate-y-4');
+                statusDisplay.classList.remove('opacity-100', 'translate-y-0');
+            }
+        }
+
+        // Simple Carousel Logic
+        let currentSlide = 0;
+        const totalSlides = 2;
+        const track = document.getElementById('carousel-track');
+        
+        setInterval(() => {
+            currentSlide = (currentSlide + 1) % totalSlides;
+            track.style.transform = `translateX(-${currentSlide * 100}%)`;
+            
+            // Update dots
+            document.getElementById('dot-0').classList.toggle('bg-primary', currentSlide === 0);
+            document.getElementById('dot-0').classList.toggle('bg-white/50', currentSlide !== 0);
+            document.getElementById('dot-1').classList.toggle('bg-primary', currentSlide === 1);
+            document.getElementById('dot-1').classList.toggle('bg-white/50', currentSlide !== 1);
+        }, 4000);
+    </script>
+</body></html>

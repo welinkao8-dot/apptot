@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+
+<html lang="pt-BR"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>TOT Driver - Envio de Documentos</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800&family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@100..900&display=swap" rel="stylesheet"/>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 48;
+    }
+    .pulsing-accent {
+      box-shadow: 0 0 0 0 rgba(182, 0, 89, 0.4);
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% { box-shadow: 0 0 0 0 rgba(182, 0, 89, 0.4); }
+      70% { box-shadow: 0 0 0 10px rgba(182, 0, 89, 0); }
+      100% { box-shadow: 0 0 0 0 rgba(182, 0, 89, 0); }
+    }
+    body {
+      -webkit-tap-highlight-color: transparent;
+      scroll-behavior: smooth;
+    }
+  </style>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          "colors": {
+            "tertiary-fixed": "#9cf0ff",
+            "outline": "#906e76",
+            "on-tertiary": "#ffffff",
+            "on-secondary": "#ffffff",
+            "on-primary-fixed": "#3f001a",
+            "on-surface-variant": "#5c3f46",
+            "surface-dim": "#d9dade",
+            "primary-container": "#e30071",
+            "on-error-container": "#93000a",
+            "tertiary-container": "#008190",
+            "secondary-fixed-dim": "#c8c6c5",
+            "inverse-surface": "#2e3034",
+            "surface-container": "#ededf2",
+            "on-secondary-fixed-variant": "#474746",
+            "secondary": "#5f5e5e",
+            "on-primary": "#ffffff",
+            "primary-fixed-dim": "#ffb1c4",
+            "surface": "#f9f9fe",
+            "on-background": "#1a1c1f",
+            "background": "#f9f9fe",
+            "on-primary-container": "#fffbff",
+            "error": "#ba1a1a",
+            "on-error": "#ffffff",
+            "primary": "#b60059",
+            "on-tertiary-fixed-variant": "#004f58",
+            "secondary-container": "#e2dfde",
+            "primary-fixed": "#ffd9e1",
+            "surface-container-high": "#e8e8ed",
+            "on-surface": "#1a1c1f",
+            "inverse-on-surface": "#f0f0f5",
+            "error-container": "#ffdad6",
+            "surface-bright": "#f9f9fe",
+            "tertiary-fixed-dim": "#00daf3",
+            "tertiary": "#006672",
+            "secondary-fixed": "#e5e2e1",
+            "on-secondary-container": "#636262",
+            "surface-variant": "#e2e2e7"
+          },
+          "borderRadius": {
+            "DEFAULT": "0.25rem",
+            "lg": "0.5rem",
+            "xl": "0.75rem",
+            "full": "9999px"
+          },
+          "spacing": {
+            "stack-lg": "24px",
+            "unit": "4px",
+            "stack-md": "16px",
+            "gutter": "16px",
+            "touch-target": "48px",
+            "stack-sm": "8px",
+            "edge-margin": "20px"
+          },
+          "fontFamily": {
+            "stats-number": ["Montserrat"],
+            "headline-lg": ["Montserrat"],
+            "body-lg": ["Montserrat"],
+            "label-md": ["Montserrat"],
+            "headline-lg-mobile": ["Montserrat"],
+            "display-lg": ["Montserrat"],
+            "body-md": ["Montserrat"],
+            "title-md": ["Montserrat"]
+          },
+          "fontSize": {
+            "stats-number": ["24px", {"lineHeight": "32px", "fontWeight": "700"}],
+            "headline-lg": ["32px", {"lineHeight": "40px", "fontWeight": "700"}],
+            "body-lg": ["18px", {"lineHeight": "26px", "fontWeight": "400"}],
+            "label-md": ["14px", {"lineHeight": "20px", "letterSpacing": "0.05em", "fontWeight": "600"}],
+            "headline-lg-mobile": ["28px", {"lineHeight": "36px", "fontWeight": "700"}],
+            "display-lg": ["48px", {"lineHeight": "56px", "letterSpacing": "-0.02em", "fontWeight": "800"}],
+            "body-md": ["16px", {"lineHeight": "24px", "fontWeight": "400"}],
+            "title-md": ["20px", {"lineHeight": "28px", "fontWeight": "600"}]
+          }
+        },
+      },
+    }
+  </script>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md min-h-screen flex flex-col">
+<!-- TopAppBar (JSON Contextualized) -->
+<header class="fixed top-0 w-full z-50 flex items-center justify-between px-edge-margin h-touch-target bg-surface shadow-[0px_4px_12px_rgba(0,0,0,0.1)]">
+<div class="flex items-center gap-spacing-md">
+<button class="active:scale-95 transition-transform hover:opacity-80 p-2" onclick="window.history.back()">
+<span class="material-symbols-outlined text-primary">arrow_back</span>
+</button>
+<h1 class="font-headline-lg-mobile text-headline-lg-mobile text-primary">TOT</h1>
+</div>
+<div class="flex items-center">
+<div class="w-10 h-10 rounded-full border-2 border-primary overflow-hidden">
+<img class="w-full h-full object-cover" data-alt="A professional headshot of a smiling young male motorcycle courier wearing a high-visibility jacket, captured in bright daylight with a soft urban background. The image has a clean, light-mode aesthetic with vibrant colors and sharp focus, reflecting a trustworthy and energetic corporate driver profile." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDQa5yRQJe1Vx1s44pLKSfb45xfnwvcNX5F_DLjRIhqCYORfdWtG-MN1_Y7P_REjmtoDqISXTofcwKZyZ-r7yfC6c-tgmWvON2jeLgTXK3ZCnbRYfylMhq-H4KjKFYu-nQozD76Txqy633eY3h1XGCiWMJRjiBesQjINj7c5tsjpXUTNU56fxugDqCgApE1dnhVL04ZfOC80Ra1dcjGXcejMONB0FjYl7J8OaJYikwAfE1E-BFqIj5aC-vZ8_Xtp5yhwZrEorWsYAgZ"/>
+</div>
+</div>
+</header>
+<main class="mt-20 px-edge-margin pb-32 flex-grow overflow-y-auto">
+<!-- Instruction Header -->
+<section class="mb-stack-lg animate-in slide-in-from-bottom-2 duration-700">
+<div class="flex items-center gap-2 mb-2 text-primary">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">verified_user</span>
+<span class="font-label-md text-label-md">VERIFICAÇÃO DE PERFIL</span>
+</div>
+<h2 class="font-headline-lg-mobile text-headline-lg-mobile text-on-surface leading-tight mb-2">Envio de Documentos</h2>
+<p class="font-body-md text-secondary leading-relaxed">
+        Tire fotos nítidas dos seus documentos para agilizar sua aprovação.
+      </p>
+</section>
+<!-- Document List (Bento-style layout for mobile efficiency) -->
+<div class="space-y-4">
+<!-- CNH Card -->
+<div class="bg-surface-container-lowest p-stack-md rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.05)] border-l-4 border-primary flex items-center justify-between group hover:shadow-md transition-all">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-primary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-3xl">badge</span>
+</div>
+<div>
+<h3 class="font-title-md text-title-md text-on-surface">CNH</h3>
+<p class="font-label-md text-label-md text-secondary">Carteira Nacional de Habilitação</p>
+</div>
+</div>
+<button class="w-12 h-12 rounded-full border-2 border-primary text-primary flex items-center justify-center active:scale-90 transition-all hover:bg-primary-fixed">
+<span class="material-symbols-outlined">add_a_photo</span>
+</button>
+</div>
+<!-- CRLV Card -->
+<div class="bg-surface-container-lowest p-stack-md rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.05)] border-l-4 border-primary flex items-center justify-between group hover:shadow-md transition-all">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-primary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-3xl">two_wheeler</span>
+</div>
+<div>
+<h3 class="font-title-md text-title-md text-on-surface">CRLV</h3>
+<p class="font-label-md text-label-md text-secondary">Documento do Veículo</p>
+</div>
+</div>
+<button class="w-12 h-12 rounded-full border-2 border-primary text-primary flex items-center justify-center active:scale-90 transition-all hover:bg-primary-fixed">
+<span class="material-symbols-outlined">add_a_photo</span>
+</button>
+</div>
+<!-- Antecedentes Card -->
+<div class="bg-surface-container-lowest p-stack-md rounded-xl shadow-[0px_4px_12px_rgba(0,0,0,0.05)] border-l-4 border-primary flex items-center justify-between group hover:shadow-md transition-all">
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-lg bg-primary-fixed flex items-center justify-center">
+<span class="material-symbols-outlined text-primary text-3xl">gavel</span>
+</div>
+<div>
+<h3 class="font-title-md text-title-md text-on-surface">Antecedentes Criminais</h3>
+<p class="font-label-md text-label-md text-secondary">Certidão de Antecedentes</p>
+</div>
+</div>
+<button class="w-12 h-12 rounded-full border-2 border-primary text-primary flex items-center justify-center active:scale-90 transition-all hover:bg-primary-fixed">
+<span class="material-symbols-outlined">upload_file</span>
+</button>
+</div>
+</div>
+<!-- Tips Section -->
+<div class="mt-stack-lg p-stack-md bg-tertiary-fixed rounded-xl border border-tertiary-container/20 flex gap-4">
+<span class="material-symbols-outlined text-tertiary">lightbulb</span>
+<div>
+<p class="font-label-md text-label-md text-tertiary-container font-bold mb-1">DICA PRO</p>
+<p class="text-on-tertiary-fixed-variant text-sm leading-relaxed">
+          Evite reflexos e use locais bem iluminados. Certifique-se de que todas as bordas do documento estão visíveis.
+        </p>
+</div>
+</div>
+</main>
+<!-- Submit Button (Fixed at Bottom with separation logic from JSON) -->
+<div class="fixed bottom-0 w-full p-edge-margin bg-surface dark:bg-surface-dim shadow-[0px_-4px_12px_rgba(186,0,89,0.1)] z-50">
+<button class="w-full bg-primary text-on-primary py-spacing-stack-md rounded-xl font-bold text-lg active:scale-[0.98] transition-all flex items-center justify-center gap-3 pulsing-accent" onclick="submitAnalysis()">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">send</span>
+      ENVIAR PARA ANÁLISE
+    </button>
+</div>
+<script>
+    function submitAnalysis() {
+      const btn = document.querySelector('button.pulsing-accent');
+      btn.innerHTML = `
+        <div class="w-6 h-6 border-4 border-white/30 border-t-white rounded-full animate-spin"></div>
+        ENVIANDO...
+      `;
+      btn.classList.remove('pulsing-accent');
+      btn.disabled = true;
+      
+      setTimeout(() => {
+        alert('Documentos enviados com sucesso! Nossa equipe analisará em até 24 horas.');
+        btn.innerHTML = `
+          <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+          ENVIADO
+        `;
+        btn.classList.add('bg-on-tertiary-container', 'text-tertiary');
+      }, 2000);
+    }
+
+    // Micro-interactions for document cards
+    document.querySelectorAll('.group').forEach(card => {
+      card.addEventListener('click', () => {
+        const icon = card.querySelector('.material-symbols-outlined:last-child');
+        icon.classList.add('animate-bounce');
+        setTimeout(() => icon.classList.remove('animate-bounce'), 1000);
+      });
+    });
+  </script>
+</body></html>
