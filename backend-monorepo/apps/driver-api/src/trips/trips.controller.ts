@@ -1,9 +1,12 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { RidesGateway } from '../rides/rides.gateway';
+import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
+import type { AuthUser } from '@app/auth';
 
 @Controller('trips')
+@UseGuards(JwtAuthGuard, RolesGuard)
 export class TripsController {
     constructor(
         private readonly tripsService: TripsService,
@@ -11,32 +14,35 @@ export class TripsController {
     ) { }
 
     @Post()
-    create(@Body() createTripDto: CreateTripDto) {
-        return this.tripsService.create(createTripDto);
+    @Roles('client')
+    create(@Body() createTripDto: CreateTripDto, @CurrentUser() user: AuthUser) {
+        return this.tripsService.create(createTripDto, user.sub);
     }
 
     @Get('pending')
+    @Roles('driver')
     findPending() {
         return this.tripsService.findAllPending();
     }
 
     @Get()
-    findAll() {
-        return this.tripsService.findAll();
+    @Roles('driver')
+    findAll(@CurrentUser() user: AuthUser) {
+        return this.tripsService.findAllForDriver(user.sub);
     }
 
     @Get('history/:userId')
+    @Roles('driver')
     getHistory(
-        @Param('userId') userId: string,
-        @Query('role') role: 'client' | 'driver',
+        @CurrentUser() user: AuthUser,
         @Query('limit') limit?: string,
         @Query('status') status?: string,
         @Query('month') month?: string,
-        @Query('year') year?: string
+        @Query('year') year?: string,
     ) {
         return this.tripsService.getHistory(
-            userId,
-            role,
+            user.sub,
+            'driver',
             limit ? parseInt(limit) : 20,
             status,
             month ? parseInt(month) : undefined,
@@ -45,17 +51,20 @@ export class TripsController {
     }
 
     @Get('stats/monthly/:userId')
-    getMonthlyStats(@Param('userId') userId: string, @Query('role') role: 'client' | 'driver') {
-        return this.tripsService.getMonthlyStats(userId, role);
+    @Roles('driver')
+    getMonthlyStats(@CurrentUser() user: AuthUser) {
+        return this.tripsService.getMonthlyStats(user.sub, 'driver');
     }
 
     @Get('stats/:userId')
-    getDailyStats(@Param('userId') userId: string) {
-        return this.tripsService.getDailyStats(userId);
+    @Roles('driver')
+    getDailyStats(@CurrentUser() user: AuthUser) {
+        return this.tripsService.getDailyStats(user.sub);
     }
 
     @Get(':id')
-    findOne(@Param('id') id: string) {
-        return this.tripsService.findOne(id);
+    @Roles('driver')
+    findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+        return this.tripsService.findOneForDriver(id, user.sub);
     }
 }

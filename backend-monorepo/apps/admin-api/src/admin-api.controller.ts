@@ -1,11 +1,14 @@
-import { Controller, Get, Post, Param, Body, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { AdminApiService } from './admin-api.service';
+import { JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
 
 @Controller('admin')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('admin')
 export class AdminApiController {
   constructor(private readonly adminApiService: AdminApiService) { }
 

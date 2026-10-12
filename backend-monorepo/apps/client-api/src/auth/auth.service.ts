@@ -25,13 +25,14 @@ export class AuthService {
     }
 
     async login(user: any) {
+        const { password_hash, ...safeUser } = user;
         const payload = {
-            phone: user.phone,
-            ...validateJwtClaims({ sub: user.id, role: 'client' }),
+            phone: safeUser.phone,
+            ...validateJwtClaims({ sub: safeUser.id, role: 'client' }),
         };
         return {
             token: this.jwtService.sign(payload), // Changed from access_token
-            user: user, // Frontend expects 'user'
+            user: safeUser, // Frontend expects 'user'
         };
     }
 

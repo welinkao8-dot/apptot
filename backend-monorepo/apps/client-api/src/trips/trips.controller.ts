@@ -1,32 +1,33 @@
-import { Controller, Post, Body, UseGuards, Request, Get, Param, Query } from '@nestjs/common';
+import { Controller, Post, Body, UseGuards, Get, Param, Query } from '@nestjs/common';
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
-// import { JwtAuthGuard } from ... (Would implementation JWT Guard later)
-// For now, passing ID or assuming middleware usage, but let's be cleaner.
+import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
+import type { AuthUser } from '@app/auth';
 
 @Controller('trips')
+@UseGuards(JwtAuthGuard, RolesGuard)
+@Roles('client')
 export class TripsController {
     constructor(private readonly tripsService: TripsService) { }
 
     @Post()
-    create(@Body() createTripDto: CreateTripDto, @Body('userId') userId: string) {
-        // In real app, get userId from @Request() req.user
-        return this.tripsService.create(createTripDto, userId);
+    create(@Body() createTripDto: CreateTripDto, @CurrentUser() user: AuthUser) {
+        return this.tripsService.create(createTripDto, user.sub);
     }
 
     @Get(':id')
-    findOne(@Param('id') id: string) {
-        return this.tripsService.findOne(id);
+    findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+        return this.tripsService.findOneForClient(id, user.sub);
     }
 
     @Get('active/:userId')
-    findActive(@Param('userId') userId: string) {
-        return this.tripsService.findActive(userId);
+    findActive(@CurrentUser() user: AuthUser) {
+        return this.tripsService.findActive(user.sub);
     }
 
     @Get('history/:userId')
     getHistory(
-        @Param('userId') userId: string,
+        @CurrentUser() user: AuthUser,
         @Query('limit') limit?: string,
         @Query('status') status?: string,
         @Query('month') month?: string,
@@ -34,7 +35,7 @@ export class TripsController {
         @Query('category') category?: string
     ) {
         return this.tripsService.getHistory(
-            userId,
+            user.sub,
             limit ? parseInt(limit) : 20,
             status,
             month ? parseInt(month) : undefined,
@@ -44,7 +45,7 @@ export class TripsController {
     }
 
     @Get('stats/monthly/:userId')
-    getMonthlyStats(@Param('userId') userId: string) {
-        return this.tripsService.getMonthlyStats(userId);
+    getMonthlyStats(@CurrentUser() user: AuthUser) {
+        return this.tripsService.getMonthlyStats(user.sub);
     }
 }

@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@app/database';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
@@ -7,18 +7,15 @@ import { UpdateTripDto } from './dto/update-trip.dto';
 export class TripsService {
     constructor(private prisma: PrismaService) { }
 
-    async create(createTripDto: CreateTripDto) {
-        console.log(`\n[DEBUG-SERVICE] >>> Entrou em TripsService.create`);
+    async create(createTripDto: CreateTripDto, clientId = createTripDto.clientId) {
         // Validation COMPLETELY REMOVED as per user order. All requests allowed.
         const category = createTripDto.category || 'ride';
         const configId = createTripDto.serviceConfigId || (createTripDto as any).serviceId;
 
-        console.log(`[DEBUG-SERVICE] Dados para criação: category=${category}, configId=${configId}, client=${createTripDto.clientId}`);
-
         try {
             const result = await this.prisma.trips.create({
                 data: {
-                    client_id: createTripDto.clientId,
+                    client_id: clientId,
                     origin_address: createTripDto.originAddress,
                     origin_lat: createTripDto.originLat,
                     origin_lng: createTripDto.originLng,
@@ -35,11 +32,9 @@ export class TripsService {
                     profiles_trips_client_idToprofiles: true
                 }
             });
-            console.log(`[DEBUG-SERVICE] <<< Prisma.trips.create SUCESSO. ID=${result.id}`);
             return result;
-        } catch (error) {
-            console.error(`[DEBUG-SERVICE] !!! ERROR NO PRISMA.CREATE:`, error);
-            throw error;
+        } catch {
+            throw new BadRequestException('Não foi possível criar a viagem.');
         }
     }
 
@@ -52,6 +47,17 @@ export class TripsService {
                 service_configs: true
             }
         });
+    }
+
+    async findOneForDriver(id: string, driverId: string) {
+        const trip = await this.findOne(id);
+        if (!trip) {
+            throw new NotFoundException('Viagem não encontrada.');
+        }
+        if (trip.driver_id !== driverId) {
+            throw new ForbiddenException('Sem permissão para aceder a esta viagem.');
+        }
+        return trip;
     }
 
     async findAllPending() {
@@ -138,6 +144,18 @@ export class TripsService {
 
     async findAll() {
         return this.prisma.trips.findMany({
+            include: {
+                profiles_trips_client_idToprofiles: true,
+                profiles_trips_driver_idToprofiles: true,
+                service_configs: true
+            },
+            orderBy: { created_at: 'desc' }
+        });
+    }
+
+    async findAllForDriver(driverId: string) {
+        return this.prisma.trips.findMany({
+            where: { driver_id: driverId },
             include: {
                 profiles_trips_client_idToprofiles: true,
                 profiles_trips_driver_idToprofiles: true,

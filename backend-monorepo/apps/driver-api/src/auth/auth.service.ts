@@ -33,13 +33,21 @@ export class AuthService {
     }
 
     async login(user: any) {
+        const {
+            password_hash,
+            password,
+            doc_bi_frente,
+            doc_bi_verso,
+            doc_carta_conducao,
+            ...safeUser
+        } = user;
         const payload = {
-            phone: user.phone,
-            ...validateJwtClaims({ sub: user.id, role: 'driver' }),
+            phone: safeUser.phone,
+            ...validateJwtClaims({ sub: safeUser.id, role: 'driver' }),
         };
         return {
             token: this.jwtService.sign(payload), // Changed from access_token
-            driver: user,
+            driver: safeUser,
         };
     }
 
@@ -57,8 +65,7 @@ export class AuthService {
                 throw new BadRequestException('Motorista já cadastrado com este telefone.');
             }
 
-            // If user is a client, we will upgrade them to driver and create driver details below
-            console.log(`[Register] Upgrading existing client ${phone} to driver`);
+            // If user is a client, upgrade their profile and create driver details below.
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -153,10 +160,21 @@ export class AuthService {
                 }
             });
 
+            const {
+                password_hash,
+                ...safeProfile
+            } = updatedProfile;
+            const {
+                password: ignoredDriverPassword,
+                doc_bi_frente,
+                doc_bi_verso,
+                doc_carta_conducao,
+                ...safeDriver
+            } = updatedDriver;
             return {
-                ...updatedProfile,
-                ...updatedDriver,
-                id: updatedProfile.id
+                ...safeProfile,
+                ...safeDriver,
+                id: safeProfile.id
             };
         });
     }

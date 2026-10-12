@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@app/database';
 import { CreateTripDto } from './dto/create-trip.dto';
 import axios from 'axios';
@@ -124,11 +124,25 @@ export class TripsService {
         });
     }
 
+    async findOneForClient(id: string, clientId: string) {
+        const trip = await this.findOne(id);
+        if (!trip) {
+            throw new NotFoundException('Viagem não encontrada.');
+        }
+        if (trip.client_id !== clientId) {
+            throw new ForbiddenException('Sem permissão para aceder a esta viagem.');
+        }
+        return trip;
+    }
+
     async cancel(tripId: string, userId: string) {
-        // Ensure ownership
-        return this.prisma.trips.updateMany({
+        const result = await this.prisma.trips.updateMany({
             where: { id: tripId, client_id: userId },
             data: { status: 'cancelled' }
         });
+        if (result.count === 0) {
+            throw new ForbiddenException('Sem permissão para cancelar esta viagem.');
+        }
+        return result;
     }
 }

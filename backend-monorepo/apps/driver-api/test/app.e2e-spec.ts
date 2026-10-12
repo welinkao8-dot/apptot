@@ -1,24 +1,89 @@
-import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
-import * as request from 'supertest';
+import { JwtService } from '@nestjs/jwt';
+import { Test, TestingModule } from '@nestjs/testing';
+import request from 'supertest';
+import { PrismaService } from '@app/database';
 import { DriverApiModule } from './../src/driver-api.module';
 
 describe('DriverApiController (e2e)', () => {
   let app: INestApplication;
+  let jwt: JwtService;
+  const trip = { id: 'trip-b', client_id: 'client-a', driver_id: 'driver-b' };
+
+  beforeAll(() => {
+    process.env.JWT_SECRET = 'task-3-e2e-secret';
+    jest.useFakeTimers();
+  });
 
   beforeEach(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [DriverApiModule],
-    }).compile();
+    })
+      .overrideProvider(PrismaService)
+      .useValue({
+        trips: {
+          findMany: jest.fn().mockResolvedValue([]),
+          findUnique: jest.fn().mockResolvedValue(trip),
+          create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
+        },
+      })
+      .compile();
 
     app = moduleFixture.createNestApplication();
     await app.init();
+    jwt = app.get(JwtService);
   });
 
-  it('/ (GET)', () => {
+  afterEach(async () => {
+    await app.close();
+    jest.clearAllTimers();
+  });
+
+  afterAll(() => {
+    jest.useRealTimers();
+  });
+
+  it('rejects an unauthenticated pending-trip list request', () => {
+    return request(app.getHttpServer()).get('/trips/pending').expect(401);
+  });
+
+  it('rejects a client token on a driver pending-trip route', () => {
+    const token = jwt.sign({ sub: 'client-a', role: 'client' });
     return request(app.getHttpServer())
-      .get('/')
+      .get('/trips/pending')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+  });
+
+  it('allows a driver token to access pending trips', () => {
+    const token = jwt.sign({ sub: 'driver-a', role: 'driver' });
+    return request(app.getHttpServer())
+      .get('/trips/pending')
+      .set('Authorization', `Bearer ${token}`)
       .expect(200)
-      .expect('Hello World!');
+      .expect([]);
+  });
+
+  it('rejects a driver reading a trip assigned to another driver', () => {
+    const token = jwt.sign({ sub: 'driver-a', role: 'driver' });
+    return request(app.getHttpServer())
+      .get('/trips/trip-b')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(403);
+  });
+
+  it('creates a trip for the authenticated client instead of body clientId', () => {
+    const token = jwt.sign({ sub: 'client-a', role: 'client' });
+    return request(app.getHttpServer())
+      .post('/trips')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        clientId: 'client-b',
+        originAddress: 'Origin',
+        destAddress: 'Destination',
+        price: '100',
+      })
+      .expect(201)
+      .expect((response) => expect(response.body).toMatchObject({ client_id: 'client-a' }));
   });
 });

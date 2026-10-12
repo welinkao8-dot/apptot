@@ -1,6 +1,8 @@
-import { Controller, Post, Body, Get, UseGuards, Request, BadRequestException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '@app/database';
+import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
+import type { AuthUser } from '@app/auth';
 
 @Controller('auth')
 export class AuthController {
@@ -21,13 +23,9 @@ export class AuthController {
     @Post('register')
     async register(@Body() body) {
         try {
-            console.log('Client registration request:', body);
-            const result = await this.authService.register(body);
-            console.log('Client registration success');
-            return result;
-        } catch (error) {
-            console.error('Client registration error:', error.message, error.stack);
-            throw error;
+            return await this.authService.register(body);
+        } catch {
+            throw new BadRequestException('Não foi possível concluir o cadastro.');
         }
     }
 
@@ -38,21 +36,22 @@ export class AuthController {
                 where: { phone: body.phone }
             });
             return { exists: !!user };
-        } catch (error) {
-            console.error('Check phone error:', error);
+        } catch {
             return { exists: false };
         }
     }
 
     @Post('change-password')
-    async changePassword(@Body() body) {
-        const { userId, oldPassword, newPassword } = body;
-        return this.authService.changePassword(userId, oldPassword, newPassword);
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('client')
+    async changePassword(@Body() body, @CurrentUser() user: AuthUser) {
+        return this.authService.changePassword(user.sub, body.oldPassword, body.newPassword);
     }
 
     @Post('update-profile')
-    async updateProfile(@Body() body) {
-        const { userId, fullName, email } = body;
-        return this.authService.updateProfile(userId, { fullName, email });
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('client')
+    async updateProfile(@Body() body, @CurrentUser() user: AuthUser) {
+        return this.authService.updateProfile(user.sub, { fullName: body.fullName, email: body.email });
     }
 }
