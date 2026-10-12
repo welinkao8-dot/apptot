@@ -2,6 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@app/database';
 import { AdminGateway } from './admin-api.gateway';
 
+function publicDriver(driver: any) {
+  if (!driver) return driver;
+  const { password, password_hash, doc_bi_frente, doc_bi_verso, doc_carta_conducao, ...safeDriver } = driver;
+  return safeDriver;
+}
+
+function publicProfile(profile: any) {
+  if (!profile) return profile;
+  const { password, password_hash, doc_bi_frente, doc_bi_verso, doc_carta_conducao, ...safeProfile } = profile;
+  return safeProfile;
+}
+
 @Injectable()
 export class AdminApiService {
   constructor(
@@ -18,20 +30,20 @@ export class AdminApiService {
       where: { status: 'pending' },
       orderBy: { created_at: 'desc' }
     });
-    return drivers || [];
+    return (drivers || []).map(publicDriver);
   }
 
   async getAllDrivers() {
     const drivers = await this.prisma.drivers.findMany({
       orderBy: { created_at: 'desc' }
     });
-    return drivers || [];
+    return (drivers || []).map(publicDriver);
   }
 
   async getDriverById(id: string) {
-    return this.prisma.drivers.findUnique({
+    return publicDriver(await this.prisma.drivers.findUnique({
       where: { id: id as any }
-    });
+    }));
   }
 
   async getTripById(id: string) {
@@ -129,7 +141,7 @@ export class AdminApiService {
     });
 
     return clients.map(c => ({
-      ...c,
+      ...publicProfile(c),
       paidTripsCount: (c as any)._count?.trips_trips_client_idToprofiles || 0
     }));
   }
@@ -141,13 +153,13 @@ export class AdminApiService {
       data: { status: 'active' },
     });
 
-    return this.prisma.profiles.update({
+    return publicProfile(await this.prisma.profiles.update({
       where: { id },
       data: { status: 'active' },
-    });
+    }));
   }
 
-  async updateDriverStatus(id: string, status: string) {
+  async updateDriverStatus(id: string, status: string, authorization?: string) {
     // Update both drivers and profiles tables to keep them in sync
     await this.prisma.drivers.update({
       where: { id: id as any },
@@ -179,10 +191,11 @@ export class AdminApiService {
       try {
         console.log(`🔔 Attempting to notify driver ${id} of status: ${status}`);
         const axios = require('axios');
-        const response = await axios.post(`http://localhost:3004/notify-driver-status`, {
-          driverId: id,
-          status
-        });
+        const response = await axios.post(
+          'http://localhost:3004/notify-driver-status',
+          { driverId: id, status },
+          { headers: { Authorization: authorization } },
+        );
         console.log(`✅ Successfully notified driver ${id}:`, response.data);
       } catch (error) {
         console.error(`❌ Failed to notify driver ${id}:`, error.message);

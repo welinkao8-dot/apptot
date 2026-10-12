@@ -3,6 +3,25 @@ import { PrismaService } from '@app/database';
 import { CreateTripDto } from './dto/create-trip.dto';
 import axios from 'axios';
 
+function sanitizeTrip(trip: any) {
+    if (!trip) return trip;
+    const {
+        profiles_trips_client_idToprofiles,
+        profiles_trips_driver_idToprofiles,
+        ...safeTrip
+    } = trip;
+    const sanitizeProfile = (profile: any) => {
+        if (!profile) return profile;
+        const { password, password_hash, doc_bi_frente, doc_bi_verso, doc_carta_conducao, ...safeProfile } = profile;
+        return safeProfile;
+    };
+    return {
+        ...safeTrip,
+        profiles_trips_client_idToprofiles: sanitizeProfile(profiles_trips_client_idToprofiles),
+        profiles_trips_driver_idToprofiles: sanitizeProfile(profiles_trips_driver_idToprofiles),
+    };
+}
+
 @Injectable()
 export class TripsService {
     constructor(private prisma: PrismaService) { }
@@ -64,7 +83,7 @@ export class TripsService {
                 }
             });
 
-            return trips;
+            return trips.map(sanitizeTrip);
         } catch (error) {
             console.error(`❌ [HISTORY_ERROR] User: ${userId}`, error);
             throw error;
@@ -95,7 +114,7 @@ export class TripsService {
     }
 
     async findActive(userId: string) {
-        return this.prisma.trips.findMany({
+        const trips = await this.prisma.trips.findMany({
             where: {
                 client_id: userId,
                 OR: [
@@ -112,16 +131,17 @@ export class TripsService {
                 invoices: true
             }
         });
+        return trips.map(sanitizeTrip);
     }
 
     async findOne(id: string) {
-        return this.prisma.trips.findUnique({
+        return sanitizeTrip(await this.prisma.trips.findUnique({
             where: { id },
             include: {
                 profiles_trips_driver_idToprofiles: true,
                 invoices: true
             }
-        });
+        }));
     }
 
     async findOneForClient(id: string, clientId: string) {

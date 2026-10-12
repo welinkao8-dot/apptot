@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Headers, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { extname, join } from 'path';
@@ -48,8 +48,8 @@ export class AdminApiController {
   }
 
   @Post('drivers/:id/status')
-  updateStatus(@Param('id') id: string, @Body('status') status: string) {
-    return this.adminApiService.updateDriverStatus(id, status);
+  updateStatus(@Param('id') id: string, @Body('status') status: string, @Headers('authorization') authorization: string) {
+    return this.adminApiService.updateDriverStatus(id, status, authorization);
   }
 
   @Get('configs')
@@ -113,9 +113,9 @@ export class AdminApiController {
   }
 
   @Post('drivers/:id/toggle-status')
-  toggleDriverStatus(@Param('id') id: string, @Body() body: { action: 'activate' | 'deactivate' }) {
+  toggleDriverStatus(@Param('id') id: string, @Body() body: { action: 'activate' | 'deactivate' }, @Headers('authorization') authorization: string) {
     const newStatus = body.action === 'activate' ? 'active' : 'suspended';
-    return this.adminApiService.updateDriverStatus(id, newStatus);
+    return this.adminApiService.updateDriverStatus(id, newStatus, authorization);
   }
 
   @Post('clients/:id/status')

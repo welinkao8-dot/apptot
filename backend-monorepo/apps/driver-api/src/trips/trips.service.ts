@@ -3,6 +3,25 @@ import { PrismaService } from '@app/database';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { UpdateTripDto } from './dto/update-trip.dto';
 
+function sanitizeTrip(trip: any) {
+    if (!trip) return trip;
+    const {
+        profiles_trips_client_idToprofiles,
+        profiles_trips_driver_idToprofiles,
+        ...safeTrip
+    } = trip;
+    const sanitizeProfile = (profile: any) => {
+        if (!profile) return profile;
+        const { password, password_hash, doc_bi_frente, doc_bi_verso, doc_carta_conducao, ...safeProfile } = profile;
+        return safeProfile;
+    };
+    return {
+        ...safeTrip,
+        profiles_trips_client_idToprofiles: sanitizeProfile(profiles_trips_client_idToprofiles),
+        profiles_trips_driver_idToprofiles: sanitizeProfile(profiles_trips_driver_idToprofiles),
+    };
+}
+
 @Injectable()
 export class TripsService {
     constructor(private prisma: PrismaService) { }
@@ -32,21 +51,21 @@ export class TripsService {
                     profiles_trips_client_idToprofiles: true
                 }
             });
-            return result;
+            return sanitizeTrip(result);
         } catch {
             throw new BadRequestException('Não foi possível criar a viagem.');
         }
     }
 
     async findOne(id: string) {
-        return this.prisma.trips.findUnique({
+        return sanitizeTrip(await this.prisma.trips.findUnique({
             where: { id },
             include: {
                 profiles_trips_client_idToprofiles: true,
                 profiles_trips_driver_idToprofiles: true,
                 service_configs: true
             }
-        });
+        }));
     }
 
     async findOneForDriver(id: string, driverId: string) {
@@ -117,7 +136,7 @@ export class TripsService {
     }
 
     async findActiveByDriver(driverId: string) {
-        return this.prisma.trips.findFirst({
+        return sanitizeTrip(await this.prisma.trips.findFirst({
             where: {
                 driver_id: driverId,
                 status: { in: ['accepted', 'ongoing'] }
@@ -128,22 +147,22 @@ export class TripsService {
                 profiles_trips_driver_idToprofiles: true,
                 service_configs: true
             }
-        });
+        }));
     }
 
     async findActiveByClient(clientId: string) {
-        return this.prisma.trips.findFirst({
+        return sanitizeTrip(await this.prisma.trips.findFirst({
             where: {
                 client_id: clientId,
                 status: { in: ['requested', 'accepted', 'ongoing'] }
             },
             include: { profiles_trips_driver_idToprofiles: true },
             orderBy: { created_at: 'desc' }
-        });
+        }));
     }
 
     async findAll() {
-        return this.prisma.trips.findMany({
+        const trips = await this.prisma.trips.findMany({
             include: {
                 profiles_trips_client_idToprofiles: true,
                 profiles_trips_driver_idToprofiles: true,
@@ -151,10 +170,11 @@ export class TripsService {
             },
             orderBy: { created_at: 'desc' }
         });
+        return trips.map(sanitizeTrip);
     }
 
     async findAllForDriver(driverId: string) {
-        return this.prisma.trips.findMany({
+        const trips = await this.prisma.trips.findMany({
             where: { driver_id: driverId },
             include: {
                 profiles_trips_client_idToprofiles: true,
@@ -163,6 +183,7 @@ export class TripsService {
             },
             orderBy: { created_at: 'desc' }
         });
+        return trips.map(sanitizeTrip);
     }
 
     async getHistory(userId: string, role: 'client' | 'driver', limit = 20, status?: string, month?: number, year?: number) {
@@ -181,7 +202,7 @@ export class TripsService {
             where.created_at = { gte: start, lte: end };
         }
 
-        return this.prisma.trips.findMany({
+        const trips = await this.prisma.trips.findMany({
             where,
             include: {
                 profiles_trips_client_idToprofiles: true,
@@ -191,6 +212,7 @@ export class TripsService {
             orderBy: { created_at: 'desc' },
             take: limit
         });
+        return trips.map(sanitizeTrip);
     }
 
     async getMonthlyStats(userId: string, role: 'client' | 'driver') {
@@ -243,21 +265,21 @@ export class TripsService {
             throw new BadRequestException('Trip already accepted by another driver');
         }
 
-        return this.prisma.trips.findUnique({
+        return sanitizeTrip(await this.prisma.trips.findUnique({
             where: { id: tripId },
             include: {
                 profiles_trips_client_idToprofiles: true,
                 profiles_trips_driver_idToprofiles: true
             }
-        });
+        }));
     }
 
     async cancel(tripId: string) {
-        return this.prisma.trips.update({
+        return sanitizeTrip(await this.prisma.trips.update({
             where: { id: tripId },
             data: { status: 'cancelled' },
             include: { profiles_trips_driver_idToprofiles: true }
-        });
+        }));
     }
 
     async start(tripId: string) {

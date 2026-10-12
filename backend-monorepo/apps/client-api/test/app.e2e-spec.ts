@@ -8,7 +8,13 @@ import { ClientApiModule } from './../src/client-api.module';
 describe('ClientApiController (e2e)', () => {
   let app: INestApplication;
   let jwt: JwtService;
-  const trip = { id: 'trip-b', client_id: 'client-b' };
+  const trip = {
+    id: 'trip-b', client_id: 'client-b',
+    profiles_trips_driver_idToprofiles: {
+      id: 'driver-a', full_name: 'Driver A', password_hash: 'driver-hash',
+      password: 'driver-password', doc_bi_frente: 'front-document',
+    },
+  };
 
   beforeAll(() => {
     process.env.JWT_SECRET = 'task-3-e2e-secret';
@@ -62,7 +68,14 @@ describe('ClientApiController (e2e)', () => {
       .get('/trips/trip-b')
       .set('Authorization', `Bearer ${token}`)
       .expect(200)
-      .expect(trip);
+      .expect((response) => {
+        expect(response.body).toMatchObject({ id: 'trip-b', client_id: 'client-b' });
+        const driver = response.body.profiles_trips_driver_idToprofiles;
+        expect(driver).toMatchObject({ id: 'driver-a', full_name: 'Driver A' });
+        expect(driver).not.toHaveProperty('password');
+        expect(driver).not.toHaveProperty('password_hash');
+        expect(driver).not.toHaveProperty('doc_bi_frente');
+      });
   });
 
   it('creates a trip for the authenticated client instead of a body userId', () => {
