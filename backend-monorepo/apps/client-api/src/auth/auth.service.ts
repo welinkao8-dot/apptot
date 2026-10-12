@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '@app/database';
+import { validateJwtClaims } from '@app/auth';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -24,7 +25,10 @@ export class AuthService {
     }
 
     async login(user: any) {
-        const payload = { phone: user.phone, sub: user.id, role: 'client' }; // Enforce role client
+        const payload = {
+            phone: user.phone,
+            ...validateJwtClaims({ sub: user.id, role: 'client' }),
+        };
         return {
             token: this.jwtService.sign(payload), // Changed from access_token
             user: user, // Frontend expects 'user'

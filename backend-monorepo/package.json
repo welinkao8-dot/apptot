@@ -92,6 +92,7 @@
       "<rootDir>/libs/"
     ],
     "moduleNameMapper": {
+      "^@app/auth(|/.*)$": "<rootDir>/libs/auth/src/$1",
       "^@app/database(|/.*)$": "<rootDir>/libs/database/src/$1"
     }
   }

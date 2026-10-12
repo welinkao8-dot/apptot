@@ -1,6 +1,7 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '@app/database';
+import { validateJwtClaims } from '@app/auth';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -26,7 +27,10 @@ export class AuthService {
     }
 
     async login(admin: any) {
-        const payload = { email: admin.email, sub: admin.id, role: 'admin' };
+        const payload = {
+            email: admin.email,
+            ...validateJwtClaims({ sub: admin.id, role: 'admin' }),
+        };
         return {
             token: this.jwtService.sign(payload),
             user: admin,
