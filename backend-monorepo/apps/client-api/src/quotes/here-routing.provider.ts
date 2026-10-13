@@ -15,19 +15,22 @@ export class HereRoutingProvider {
           transportMode: 'car',
           origin: `${coords.originLat},${coords.originLng}`,
           destination: `${coords.destLat},${coords.destLng}`,
-          return: 'summary',
+          return: 'polyline,summary',
           apiKey,
         },
         timeout: 8000,
       });
       const summary = response.data?.routes?.[0]?.sections?.[0]?.summary;
-      if (!Number.isFinite(summary?.length) || !Number.isFinite(summary?.duration) || summary.length <= 0 || summary.duration <= 0) {
+      const polyline = response.data?.routes?.[0]?.sections?.[0]?.polyline;
+      if (!Number.isFinite(summary?.length) || !Number.isFinite(summary?.duration)
+        || summary.length <= 0 || summary.duration <= 0
+        || typeof polyline !== 'string' || polyline.length === 0) {
         throw new Error('Invalid HERE route summary');
       }
       return {
         distanceMeters: summary.length,
         durationSeconds: summary.duration,
-        polyline: response.data.routes[0].sections[0].polyline,
+        polyline,
       };
     } catch {
       throw new ServiceUnavailableException('Não foi possível obter uma rota para calcular a cotação.');

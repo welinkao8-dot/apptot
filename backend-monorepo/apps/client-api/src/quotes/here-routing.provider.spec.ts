@@ -21,9 +21,17 @@ describe('HereRoutingProvider', () => {
     await expect(provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }))
       .resolves.toEqual({ distanceMeters: 5400, durationSeconds: 720, polyline: 'encoded-route' });
     expect(axios.get).toHaveBeenCalledWith('https://router.hereapi.com/v8/routes', expect.objectContaining({
-      params: expect.objectContaining({ origin: '1,2', destination: '3,4', return: 'summary' }),
+      params: expect.objectContaining({ origin: '1,2', destination: '3,4', return: 'polyline,summary' }),
       timeout: 8000,
     }));
+  });
+
+  it('fails closed when HERE omits route geometry required by the customer map', async () => {
+    process.env.HERE_ROUTING_API_KEY = 'test-routing-key';
+    jest.mocked(axios.get).mockResolvedValue({ data: { routes: [{ sections: [{ summary: { length: 5400, duration: 720 } }] }] } } as never);
+
+    await expect(provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }))
+      .rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
   it('fails closed when the server routing key is missing', async () => {
