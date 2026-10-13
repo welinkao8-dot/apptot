@@ -101,6 +101,7 @@ public class LocationService extends Service implements LocationListener {
         coords.putDouble("accuracy", location.getAccuracy());
         coords.putDouble("speed", location.getSpeed());
         coords.putDouble("heading", location.getBearing());
+        coords.putDouble("timestamp", location.getTime());
         params.putMap("coords", coords);
 
         MainApplication app = (MainApplication) getApplication();

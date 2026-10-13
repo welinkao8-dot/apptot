@@ -11,6 +11,7 @@ import { JwtService } from '@nestjs/jwt';
 import { OnModuleInit } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { TripsService } from '../trips/trips.service';
+import { isImplausibleLocationJump } from './location-validation';
 import { CreateTripDto } from '../trips/dto/create-trip.dto';
 import { PaymentsService } from '../payments/payments.service';
 
@@ -36,6 +37,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   private readonly connectedUsers = new Map<string, ConnectedUser>();
   private readonly lastLocationUpdates = new Map<string, number>();
+  private readonly lastLocationFixes = new Map<string, { lat: number; lng: number; timestamp: number }>();
 
   constructor(
     private readonly tripsService: TripsService,
@@ -55,6 +57,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
         }
       }
     }, 60000);
+    setInterval(() => void this.dispatchAvailableTrips(), 10000);
   }
 
   async handleConnection(client: Socket) {
@@ -106,7 +109,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       if (activeTrip) {
         client.emit('restore_ride', this.tripsService.formatTrip(activeTrip));
       } else if (isOnline) {
-        const pending = await this.tripsService.findAllPending();
+        const pending = await this.tripsService.findAllPending(actor.id);
         if (pending.length) client.emit('pending_trips', pending);
       }
     } else {
@@ -133,7 +136,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       await this.tripsService.updateDriverStatus(actor.id, data.isOnline);
       const connected = this.connectedUsers.get(this.actorKey(actor));
       if (connected) connected.isOnline = data.isOnline;
-      if (data.isOnline) client.emit('pending_trips', await this.tripsService.findAllPending());
+      if (data.isOnline) client.emit('pending_trips', await this.tripsService.findAllPending(actor.id));
       return { success: true };
     } catch (error) {
       return this.failure(error);
@@ -142,17 +145,33 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('update_location')
   async handleUpdateLocation(
-    @MessageBody() data: { lat: number; lng: number },
+    @MessageBody() data: { lat: number; lng: number; accuracy?: number; timestamp?: number; heading?: number },
     @ConnectedSocket() client: Socket,
   ) {
     try {
       const actor = this.requireRole(client, 'driver');
+      if (!Number.isFinite(data?.lat) || !Number.isFinite(data?.lng) || data.lat < -90 || data.lat > 90 || data.lng < -180 || data.lng > 180) {
+        throw new Error('Coordenadas GPS inválidas.');
+      }
+      if (data.accuracy !== undefined && (!Number.isFinite(data.accuracy) || data.accuracy < 0 || data.accuracy > 100)) {
+        throw new Error('Precisão GPS insuficiente.');
+      }
+      if (data.timestamp !== undefined && (!Number.isFinite(data.timestamp) || Math.abs(Date.now() - data.timestamp) > 120_000)) {
+        throw new Error('Localização GPS desatualizada.');
+      }
+      const fix = { lat: data.lat, lng: data.lng, timestamp: data.timestamp ?? Date.now() };
+      const previousFix = this.lastLocationFixes.get(actor.id);
+      if (isImplausibleLocationJump(previousFix, fix)) throw new Error('Salto de localização GPS inválido.');
       const trip = await this.tripsService.findActiveByDriver(actor.id);
       if (trip?.client_id) {
-        this.server.to(this.room('client', trip.client_id)).emit('driver_location_update', {
+        this.server.to(this.room('client', trip.client_id)).emit('trip_update', {
           driverId: actor.id,
           lat: data.lat,
           lng: data.lng,
+          coords: { lat: data.lat, lng: data.lng },
+          accuracy: data.accuracy ?? null,
+          heading: data.heading ?? null,
+          timestamp: fix.timestamp,
         });
       }
       const now = Date.now();
@@ -160,6 +179,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
         await this.tripsService.updateDriverLocation(actor.id, data.lat, data.lng);
         this.lastLocationUpdates.set(actor.id, now);
       }
+      this.lastLocationFixes.set(actor.id, fix);
       return { success: true };
     } catch (error) {
       return this.failure(error);
@@ -181,11 +201,12 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       const trip = await this.tripsService.create(dto, actor.id);
       const formattedTrip = this.tripsService.formatTrip(trip);
       client.emit('trip_created', { tripId: trip.id, trip: formattedTrip });
-      this.notifyNewTrip(formattedTrip);
-      return { success: true, tripId: trip.id };
+      void this.dispatchTrip(trip.id);
+      return { success: true, tripId: trip.id, trip: formattedTrip, status: trip.status, committedAt: new Date().toISOString() };
     } catch (error) {
-      client.emit('trip_error', { message: 'Não foi possível criar a viagem.' });
-      return this.failure(error);
+      const result = this.failure(error);
+      client.emit('trip_error', { message: result.error });
+      return result;
     }
   }
 
@@ -203,6 +224,18 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
         driver: { id: actor.id, name: trip.profiles_trips_driver_idToprofiles?.full_name || 'Motorista' },
       });
       this.emitToOnlineDrivers('trip_taken', { tripId: trip.id, acceptedBy: actor.id });
+      return { success: true };
+    } catch (error) {
+      return this.failure(error);
+    }
+  }
+
+  @SubscribeMessage('decline_trip')
+  async handleDeclineTrip(@MessageBody() data: { tripId: string }, @ConnectedSocket() client: Socket) {
+    try {
+      const actor = this.requireRole(client, 'driver');
+      await this.tripsService.declineOffer(data.tripId, actor.id);
+      await this.dispatchTrip(data.tripId);
       return { success: true };
     } catch (error) {
       return this.failure(error);
@@ -307,8 +340,35 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     }
   }
 
-  notifyNewTrip(formattedTrip: any) {
-    this.emitToOnlineDrivers('new_trip_available', formattedTrip);
+  async notifyNewTrip(formattedTrip: any) {
+    await this.dispatchTrip(formattedTrip.id);
+  }
+
+  private async dispatchAvailableTrips() {
+    try {
+      const requested = await this.tripsService.findRequestedTripIds();
+      for (const trip of requested) await this.dispatchTrip(trip.id);
+    } catch (error) {
+      console.error('[DISPATCH] Failed to schedule pending trip offers', error);
+    }
+  }
+
+  private async dispatchTrip(tripId: string) {
+    try {
+      const connectedDrivers = [...this.connectedUsers.values()]
+        .filter((user) => user.role === 'driver' && user.isOnline && user.socketIds.size > 0)
+        .map((user) => user.id);
+      const offers = await this.tripsService.dispatchNextBatch(tripId, connectedDrivers);
+      for (const offer of offers) {
+        this.server.to(this.room('driver', offer.driverId)).emit('new_trip_available', {
+          ...offer.trip,
+          offerExpiresAt: offer.expiresAt,
+          driverDistanceKm: offer.distanceKm,
+        });
+      }
+    } catch (error) {
+      console.error(`[DISPATCH] Failed to offer trip ${tripId}`, error);
+    }
   }
 
   private room(role: ActorRole, id: string) {

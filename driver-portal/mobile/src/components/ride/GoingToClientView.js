@@ -6,13 +6,8 @@ import { User, Bell, MessageSquare, Map, Bolt, Navigation } from 'lucide-react-n
 export default function GoingToClientView({ user, activeTrip, onOpenMap, onStartRide }) {
     if (!activeTrip) return null;
 
-    const distanceText = activeTrip.distance
-        ? `${parseFloat(activeTrip.distance).toFixed(1)}`
-        : '4.8';
-
-    const durationText = activeTrip.duration
-        ? `${Math.round(activeTrip.duration / 60)}`
-        : '12';
+    const distanceKm = Number(activeTrip.distanceToPickupKm);
+    const durationMinutes = Number(activeTrip.etaToPickupMinutes);
 
     return (
         <View style={styles.root}>
@@ -53,21 +48,21 @@ export default function GoingToClientView({ user, activeTrip, onOpenMap, onStart
                         <View style={styles.metricItem}>
                             <Text style={styles.metricLabel}>Tempo Est.</Text>
                             <View style={styles.metricValRow}>
-                                <Text style={styles.metricValuePrimary}>{durationText}</Text>
-                                <Text style={styles.metricValueUnit}>min</Text>
+                                <Text style={styles.metricValuePrimary}>{Number.isFinite(durationMinutes) ? Math.ceil(durationMinutes) : '—'}</Text>
+                                <Text style={styles.metricValueUnit}>{Number.isFinite(durationMinutes) ? 'min' : ''}</Text>
                             </View>
                         </View>
                         <View style={styles.metricItem}>
                             <Text style={styles.metricLabel}>Distância</Text>
                             <View style={styles.metricValRow}>
-                                <Text style={styles.metricValuePrimary}>{distanceText}</Text>
-                                <Text style={styles.metricValueUnit}>km</Text>
+                                <Text style={styles.metricValuePrimary}>{Number.isFinite(distanceKm) ? distanceKm.toFixed(1) : '—'}</Text>
+                                <Text style={styles.metricValueUnit}>{Number.isFinite(distanceKm) ? 'km' : ''}</Text>
                             </View>
                         </View>
                     </View>
                     <View style={styles.trafficBadge}>
                         <Navigation size={14} color={colors.primary} style={{ marginRight: 6 }} />
-                        <Text style={styles.trafficText}>Trânsito Moderado</Text>
+                        <Text style={styles.trafficText}>Use o mapa escolhido para ver trânsito e percurso</Text>
                     </View>
                 </View>
 
@@ -79,8 +74,8 @@ export default function GoingToClientView({ user, activeTrip, onOpenMap, onStart
                                 <User size={28} color={colors.primary} />
                             </View>
                             <View>
-                                <Text style={styles.passengerName}>{activeTrip.userName || activeTrip.clientName || 'Marco Silva'}</Text>
-                                <Text style={styles.ratingText}>⭐ {activeTrip.userRating || 4.9} • {activeTrip.userTrips || '240 viagens'}</Text>
+                                <Text style={styles.passengerName}>{activeTrip.userName || activeTrip.clientName || 'Cliente'}</Text>
+                                {!!activeTrip.userRating && <Text style={styles.ratingText}>⭐ {activeTrip.userRating}</Text>}
                             </View>
                         </View>
                         <TouchableOpacity style={styles.chatBtn} activeOpacity={0.8}>

@@ -48,11 +48,11 @@
 - Modify: `client-portal/mobile/src/screens/RideFlowScreen.js`, `DeliveryFlowScreen.js`
 - Test: new quote/route presentation tests under each mobile app's `src/__tests__/`.
 
-- [ ] Change provider test to assert `return` includes both `summary` and `polyline`; make mocked API omit geometry unless requested.
-- [ ] Run provider test and observe RED because current request asks for `summary` only.
-- [ ] Request `summary,polyline`; reject missing/empty summary or geometry instead of returning a quote that cannot display a route.
-- [ ] Update mobile tests to assert quote selection draws the selected service's server geometry, not just origin/destination markers.
-- [ ] Run focused provider and screen tests; verify all route options render matching geometry and ETA.
+- [x] Change provider test to assert `return` includes both `summary` and `polyline`; make mocked API omit geometry unless requested.
+- [x] Run provider test and observe RED because current request asks for `summary` only.
+- [x] Request `summary,polyline`; reject missing/empty summary or geometry instead of returning a quote that cannot display a route.
+- [~] Existing client screen already calls `drawRoute` when a quote contains geometry; per-service route choice is tested in Task 3.
+- [x] Focused HERE provider suite passed 4/4; per-service route geometry remains in Task 3.
 
 **Deliverable:** quote metrics and displayed line originate from one valid HERE route response.
 
@@ -64,10 +64,10 @@
 - Review: `backend-monorepo/libs/database/prisma/schema.prisma` service vehicle/category fields and admin service configuration.
 
 - [ ] Add tests that a car service requests `car` and a configured moto service requests HERE `scooter` mode.
-- [ ] Run tests RED against the current unconditional `transportMode=car`.
-- [ ] Derive routing mode from the persisted service configuration; compute/cache one route per unique mode per quote request; return correct route metrics/polyline alongside each service quote.
-- [ ] Test unknown vehicle class fails with an explicit configuration error rather than silently selecting car.
-- [ ] Verify Prisma and quote tests and ensure pricing snapshots store route/mode inputs used to quote.
+- [x] Run tests RED against the current unconditional `transportMode=car`.
+- [x] Derive routing mode from persisted service configuration; compute one route per unique mode per quote request; return matching metrics/polyline with each service quote.
+- [x] Test unsupported route mode and vehicle/mode mismatch fail explicitly instead of silently selecting car.
+- [x] Verify Prisma and quote tests and ensure pricing snapshots store route/mode inputs used to quote.
 
 **Deliverable:** service comparisons use road rules and price inputs for the actual vehicle class.
 
@@ -77,11 +77,11 @@
 - Modify: `client-portal/mobile/src/screens/DashboardScreen.js`, `RideFlowScreen.js`, `DeliveryFlowScreen.js`, `services/hereService.js`, location permission config as required.
 - Test: mobile tests for permission denied, location timeout/stale location, manual map pin, address search and reverse geocode failure.
 
-- [ ] Add failing tests proving a denied GPS request cannot silently quote from the Luanda fallback and user can explicitly set/confirm pickup.
-- [ ] Replace silent fallback with states `locating`, `ready`, `permission_required`, `location_unavailable`; retain a map pin/manual-address option.
-- [ ] Validate coordinate bounds and reject zero/missing/out-of-market coordinates on API quote DTO; validate address corresponds to selected coordinates where provider support allows.
-- [ ] Show the confirmed pickup and selected destination before quote; ensure location updates do not overwrite a manually pinned pickup without user action.
-- [ ] Test ride and delivery location states and verify API contract/typecheck.
+- [~] Backend RED/GREEN tests reject the fallback and invalid coordinates; automated device permission-denied test remains outstanding.
+- [~] Removed silent pickup fallback; GPS is time-bounded and both mobile apps support manually placing pickup on the map when GPS is unavailable. Explicit permission-state UI remains outstanding.
+- [~] Quote service rejects zero, out-of-Angola and legacy placeholder coordinates before routing; address/coordinate correspondence is not verified against HERE.
+- [~] Manual pickup is reflected in address/map state; a dedicated final confirmation screen and device-level location override test remain outstanding.
+- [~] Quote service tests passed and the changed mobile screens passed Babel parsing; no device permission/location test or client API typecheck is available.
 
 **Deliverable:** the app never creates a trip from an unconfirmed placeholder location.
 
@@ -92,11 +92,11 @@
 - Modify: both mobile flow screens and quote API service.
 - Test: quote service and mobile quote UX specs; client/driver API e2e.
 
-- [ ] Add RED tests for category/service mismatch, invalid coordinate pairs, expired quote, used quote, wrong owner and per-service route/pricing snapshot.
-- [ ] Ensure quote id is bound to owner/category/service/mode/coordinates/route/pricing and expires after its stated TTL.
-- [ ] Display server-returned distance, ETA and exact Kz amount for each service; selecting a service selects its matching geometry and quote id.
-- [ ] When quote expires before request, request a fresh quote and require customer to reconfirm if amount changed; never silently submit a new price.
-- [ ] Test ride and delivery quote creation, single use, price rounding/minimum and snapshot stability.
+- [~] Service tests cover invalid coordinates, mode/service mismatch, expired/used quote and wrong owner; no client/driver API e2e added for every mismatch case.
+- [x] Quote id is persisted with the server-side owner/category/service/coordinates/price snapshot and atomic TTL/single-use consumption.
+- [x] Both client mobile flows display server-returned distance, ETA and price; selected service retains its matching quote id and route geometry.
+- [x] Expired client quote is recalculated and service selection is cleared, requiring the customer to inspect and select the refreshed quote again.
+- [~] Quote/trip focused tests and client mobile tests pass; device UX and full ride/delivery e2e remain outstanding.
 
 **Deliverable:** every request has a fresh, customer-visible server quote tied to exact route inputs.
 
@@ -110,12 +110,12 @@
 - Modify: client mobile socket service and `RideFlowScreen.js`, `DeliveryFlowScreen.js`.
 - Test: trips service/gateway specs, API e2e, mobile socket/request specs.
 
-- [ ] Test RED: accepted quote request is persisted before ACK; replay after ACK loss returns the same trip; quote rejection is surfaced to the customer.
-- [ ] Make create-from-quote idempotent by quote ID + authenticated owner; do not create duplicate trip/payment on retry.
-- [ ] Return structured ACK with `tripId`, committed status and timestamp; subscribe client to events before emitting and handle both ACK and event idempotently.
-- [ ] Make client request loading/retry states explicit; handle socket disconnected, timeout, validation error and quote expiry with REST reconciliation.
-- [ ] Do not show indefinite “searching” when request was rejected or not persisted.
-- [ ] Run service/gateway/e2e/mobile tests and verify reconnect recovers active trip through REST.
+- [~] Persisted trip ACK and retry idempotency tests pass; REST reconciliation was added, but end-to-end ACK loss/rejection UI simulation remains outstanding.
+- [x] Create-from-quote now returns the existing trip for the same authenticated owner and quote, including concurrent retry recovery after a unique conflict.
+- [x] Gateway returns structured ACK (`tripId`, committed status/time); existing trip-created subscriptions and ACK update the same client state idempotently.
+- [~] Mobile request waits up to 10 seconds for ACK then reconciles active trip via REST and reports failure; socket reconnect/retry UI and server-side transport-error e2e remain outstanding.
+- [x] Client does not enter searching until ACK/event or REST confirms a persisted trip.
+- [~] Trip/gateway suites (16), mobile suites (4), Nest build and Babel parse pass; API e2e and physical reconnect tests remain outstanding.
 
 **Deliverable:** client request has one durable result even when socket acknowledgement is delayed or lost.
 
@@ -127,13 +127,13 @@
 - Modify: `driver-portal/mobile/src/screens/DashboardScreen.js`, request service.
 - Test: new dispatch service specs, gateway specs, e2e for driver eligibility/race/reconnect.
 
-- [ ] Test RED for drivers offline, disconnected, suspended, already assigned a trip, stale/no GPS, and far vs nearest candidate; only eligible online-connected drivers are offered.
-- [ ] Add durable offer records with trip/driver, offered/accepted/rejected/expired state, offered/expiry timestamps, unique `(trip_id, driver_id)`; add indexes and migration rollback/runbook.
-- [ ] Select candidates using fresh persisted coordinates and a tested Haversine helper; offer nearest eligible candidates in configurable batches, then expand to next batch after 15-second offer window; do not invent a max radius.
-- [ ] Use database conditional update/transaction so one driver wins; persist winning offer and expire other offers before notifying clients.
-- [ ] Replace generic pending list with the authenticated driver's unexpired offers; reconnect returns only actionable offers and active trip.
-- [ ] When candidates are exhausted, persist terminal no-driver/cancelled reason immediately and emit a customer-visible retry state; do not wait for orphan cleanup.
-- [ ] Test parallel accepts, cancelled trip, expired offer, driver going offline during offer, duplicate notifications and service restart recovery.
+- [~] Nearest/rank and eligible-offer tests added; offline, stale, busy-driver DB and live scheduler tests remain.
+- [x] Added `trip_driver_offers`, unique trip/driver, response/expiry fields, indexes and migration; timeout expires unanswered offers.
+- [~] Haversine selects nearest 5 connected, active, online drivers with location ≤120 s old; scheduler expands batches after 15 s. Batch size/time are code defaults, not operational config.
+- [x] One transaction claims the unexpired offer, conditionally assigns the trip, and cancels remaining offers; losing races roll back.
+- [x] Pending REST and reconnect return only authenticated-driver unexpired persisted offers; active work is restored separately.
+- [ ] Still open: persist immediate no-driver terminal reason and expose customer retry/edit; cleanup currently waits for orphan timeout.
+- [~] Service, ranking and targeted gateway tests pass; concurrent offer/DB migration, offline transition and restart-scheduler integration tests remain.
 
 **Deliverable:** offers are targeted, recoverable and cannot be accepted by the wrong or multiple drivers.
 
@@ -144,11 +144,11 @@
 - Modify: API offer response and optional push-token registration/provider only if project configuration supports it.
 - Test: driver mobile notification event, duplicate suppression, foreground/background reconnection, pending-offer recovery.
 
-- [ ] Replace haptic-only new request handling with a visible in-app offer list/card and actionable notification while the app process/socket is available.
-- [ ] On foreground/resume/reconnect fetch unexpired offers and reconcile accepted/cancelled/expired state before navigating.
-- [ ] Add real Android notification permission/channel and local notification for a received socket offer; avoid navigating over an unrelated active screen without user action.
-- [ ] If FCM credentials/configuration already exist, register/rotate device token and send high-priority data notification through server; otherwise keep token provider disabled with explicit config requirement and do not claim push works when app is killed.
-- [ ] Test notification duplicates, app resume, socket reconnect and lost/expired offer; document FCM/APNs as an external readiness requirement if not configured.
+- [~] New offers are deduplicated, added to the visible dashboard list and announce by haptic/in-app toast; no automatic route navigation. Android local notification channel is not added.
+- [x] Dashboard fetches authenticated driver offers on focus, app resume and socket online/reconnect; cards remove expired offers and trip_taken updates the list.
+- [ ] Local Android notification channel/runtime notification flow remains open; only in-app toast/haptic is implemented.
+- [x] No FCM provider/credentials are configured in this app; no push token or app-killed push is claimed.
+- [~] Gateway/service suites and driver mobile socket/UI tests pass; duplicate event/reconnect behavior still needs device/integration QA.
 
 **Deliverable:** no offer is lost merely because the driver's screen changed; true app-killed push is only claimed when configured and tested.
 
@@ -161,11 +161,10 @@
 - Modify: `driver-portal/mobile/src/screens/RequestDetailsScreen.js`, `components/ride/GoingToClientView.js`, `OngoingRideView.js`, `utils/openNavigation.js`.
 - Test: formatter unit tests and driver screen/navigation helper tests.
 
-- [ ] Test RED that request payload includes real route distance/ETA/vehicle/name and no fake `4.2 km`, `Marco Silva`, rating or trip-count fallback.
-- [ ] Expose persisted quote distance/duration/price snapshot safely in offered trip format; display those figures as estimates.
-- [ ] Keep pickup and destination coordinates distinct; open external chooser to pickup before start and destination only after accepted start; validate coordinates and show fallback error if no compatible app/browser opens.
-- [ ] Remove misleading trip timer unless it matches persisted offer expiry; display server `expiresAt` and close/refresh only for that offer.
-- [ ] Verify external URI on Android unit-level and document manual checks for Google Maps, Waze/HERE and fallback.
+- [~] Remove fabricated pickup distance/time and Marco/rating/trip-count fallbacks; server route distance/ETA remain quote estimates. Formatter test added; component rendering checks remain.
+- [x] Keep pickup and destination targets separate; validate coordinate range (including zero), use platform map URI, try Google Maps web fallback and return visible failure result.
+- [x] Offer timer is tied to persisted `offerExpiresAt`; missing/invalid expiry now displays unavailable and does not run a NaN countdown.
+- [~] Android URI/fallback unit tests pass; manual checks with Google Maps, Waze/HERE and device fallback remain.
 
 **Deliverable:** driver sees truthful order data and navigation always targets the correct stage.
 
@@ -176,11 +175,11 @@
 - Modify: `backend-monorepo/apps/driver-api/src/rides/rides.gateway.ts`, trips location service, client mobile trip screens.
 - Test: location validation/broadcast service tests and client map update tests; manual Android foreground/background matrix.
 
-- [ ] Add RED tests for no active trip, wrong driver, invalid/out-of-range coordinates, stale/poor accuracy, implausible jumps and unauthorized client subscription; only assigned trip client receives location.
-- [ ] Send location payload with accuracy, timestamp and heading; validate finite bounds and reject bad fixes before database/broadcast.
+- [~] RED tests reject invalid/out-of-range coordinates, stale timestamps and poor accuracy. Location events require the authenticated driver and broadcast only to the active trip client; implausible-jump and multi-socket integration tests remain.
+- [~] Android now sends accuracy/timestamp/heading; API validates finite coordinate bounds, accuracy ≤100m and timestamp within 120s, and broadcasts metadata. DB only stores coarse lat/lng every 30s; persist full telemetry remains open.
 - [ ] Maintain Android foreground service when navigating externally; start only after permission/online and stop on offline/logout; handle service start failures and settings revocation visibly.
 - [ ] Persist current driver location with timestamp at bounded cadence; broadcast live fixes only to active trip client, rate-limited and with accuracy metadata.
-- [ ] Client displays last update/stale state instead of implying live position forever; clear driver marker after terminal transition.
+- [~] Client shows waiting/fresh/stale state, removes stale marker after 30 s, and clears map at terminal trip; physical timing/device behavior remains unverified.
 - [ ] Ensure actual observed GPS distance (if collected) is labeled telemetry and never changes accepted fare; avoid treating external Maps distance as server data.
 - [ ] Run Android lint/unit/build tasks available; leave background-kill/doze proof pending device QA where an emulator cannot guarantee it.
 
@@ -282,4 +281,3 @@
 - [ ] Update Obsidian `01`, `03`, `05`, `06`, `10`, and `PLANS/Progress.md` with final implementation, results, unresolved external requirements, and next task.
 
 **Deliverable:** an auditable, testable handoff with every flow and exception accounted for; deployment/FCM/device configuration remains clearly separated from code verification.
-

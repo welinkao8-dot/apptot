@@ -11,6 +11,7 @@ export const hereService = {
      */
     async fetchSuggestions(query, center = { lat: -8.839, lng: 13.289 }) {
         if (!query || query.length < 3) return [];
+        center = center || { lat: -8.839, lng: 13.289 }; // Search bias only; never used as a trip pickup.
 
         const url = `${BASE_URL}/autosuggest?q=${encodeURIComponent(query)}&apiKey=${HERE_API_KEY}&lang=pt&in=countryCode:AGO&limit=5&show=details&at=${center.lat},${center.lng}`;
 

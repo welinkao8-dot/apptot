@@ -2,17 +2,18 @@ import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import axios from 'axios';
 
 export type RouteCoordinates = { originLat: number; originLng: number; destLat: number; destLng: number };
+export type HereTransportMode = 'car' | 'scooter' | 'truck';
 
 @Injectable()
 export class HereRoutingProvider {
-  async getRoute(coords: RouteCoordinates): Promise<{ distanceMeters: number; durationSeconds: number; polyline?: string }> {
+  async getRoute(coords: RouteCoordinates, transportMode: HereTransportMode = 'car'): Promise<{ distanceMeters: number; durationSeconds: number; polyline: string }> {
     const apiKey = process.env.HERE_ROUTING_API_KEY?.trim();
     if (!apiKey) throw new ServiceUnavailableException('O serviço de cotação de rotas não está configurado.');
 
     try {
       const response = await axios.get('https://router.hereapi.com/v8/routes', {
         params: {
-          transportMode: 'car',
+          transportMode,
           origin: `${coords.originLat},${coords.originLng}`,
           destination: `${coords.destLat},${coords.destLng}`,
           return: 'polyline,summary',

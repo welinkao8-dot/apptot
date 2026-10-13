@@ -38,6 +38,7 @@ export default function Pricing({ onBack }) {
         category: 'ride',
         service_type: 'express',
         vehicle_category: 'car',
+        routing_mode: 'car',
         description: '',
         image_url: '',
         base_fare: 500,
@@ -259,7 +260,17 @@ export default function Pricing({ onBack }) {
                                             <label>Tipo de Veículo</label>
                                             <select
                                                 value={editingService.vehicle_category}
-                                                onChange={e => setEditingService({ ...editingService, vehicle_category: e.target.value })}
+                                                onChange={e => {
+                                                    const vehicle_category = e.target.value;
+                                                    const routing_mode = /moto|motorcycle|scooter|bike/i.test(vehicle_category)
+                                                        ? 'scooter'
+                                                        : /truck|caminh|van/i.test(vehicle_category)
+                                                            ? 'truck'
+                                                            : /car|automovel|automóvel/i.test(vehicle_category)
+                                                                ? 'car'
+                                                                : editingService.routing_mode;
+                                                    setEditingService({ ...editingService, vehicle_category, routing_mode });
+                                                }}
                                             >
                                                 <option value="moto">Moto</option>
                                                 <option value="car">Carro</option>
@@ -267,6 +278,20 @@ export default function Pricing({ onBack }) {
                                                 <option value="truck">Camião</option>
                                             </select>
                                         </div>
+                                    </div>
+                                    <div className="input-group">
+                                        <label>Tipo de rota usado na cotação</label>
+                                        <select
+                                            value={editingService.routing_mode || 'car'}
+                                            onChange={e => setEditingService({ ...editingService, routing_mode: e.target.value })}
+                                        >
+                                            <option value="car">Carro</option>
+                                            <option value="scooter">Moto</option>
+                                            <option value="truck">Carrinha ou camião</option>
+                                        </select>
+                                        <p className="text-[10px] text-slate-400 mt-2 font-semibold">
+                                            Esta opção define as estradas, a distância e o tempo usados para estimar o preço.
+                                        </p>
                                     </div>
                                     <div className="input-group">
                                         <label>Descrição</label>

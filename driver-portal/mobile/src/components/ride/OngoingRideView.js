@@ -7,13 +7,15 @@ import { formatCurrency } from '../../utils/formatters';
 export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishRide }) {
     if (!activeTrip) return null;
 
-    const distanceText = activeTrip.distance
-        ? `${parseFloat(activeTrip.distance).toFixed(1)} km`
-        : '4.2 km';
+    const estimatedDistanceKm = Number(activeTrip.distance ?? activeTrip.routeDistanceKm);
+    const distanceText = Number.isFinite(estimatedDistanceKm) && estimatedDistanceKm > 0
+        ? `${estimatedDistanceKm.toFixed(1)} km`
+        : 'Indisponível';
 
-    const durationText = activeTrip.duration
-        ? `${Math.round(activeTrip.duration / 60)} min`
-        : '12 min';
+    const estimatedMinutes = Number(activeTrip.duration ?? activeTrip.routeDurationMinutes);
+    const durationText = Number.isFinite(estimatedMinutes) && estimatedMinutes > 0
+        ? `${Math.round(estimatedMinutes)} min`
+        : 'Indisponível';
 
     return (
         <View style={styles.root}>
@@ -57,11 +59,11 @@ export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishR
 
                     <View style={styles.metricsGrid}>
                         <View style={styles.metricItem}>
-                            <Text style={styles.metricLabel}>Chegada</Text>
+                            <Text style={styles.metricLabel}>Tempo estimado</Text>
                             <Text style={styles.metricValue}>{durationText}</Text>
                         </View>
                         <View style={styles.metricItem}>
-                            <Text style={styles.metricLabel}>Distância</Text>
+                            <Text style={styles.metricLabel}>Distância estimada</Text>
                             <Text style={styles.metricValue}>{distanceText}</Text>
                         </View>
                     </View>
@@ -76,8 +78,8 @@ export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishR
                                 <User size={24} color={colors.primary} />
                             </View>
                             <View>
-                                <Text style={styles.passengerName}>{activeTrip.userName || activeTrip.clientName || 'Marco Silva'}</Text>
-                                <Text style={styles.ratingText}>⭐ {activeTrip.userRating || 4.9} • {activeTrip.userType || 'Passageiro VIP'}</Text>
+                                <Text style={styles.passengerName}>{activeTrip.userName || activeTrip.clientName || 'Cliente'}</Text>
+                                {!!activeTrip.userRating && <Text style={styles.ratingText}>⭐ {activeTrip.userRating}</Text>}
                             </View>
                         </View>
                         <View style={styles.actionBtns}>

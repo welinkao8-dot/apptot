@@ -9,34 +9,42 @@ import { formatCurrency } from '../utils/formatters';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import { getSocket } from '../services/socket';
 import Toast from 'react-native-toast-message';
+import { getOfferSecondsRemaining } from '../utils/offerExpiry';
 
 const { width } = Dimensions.get('window');
 const hapticOptions = { enableVibrateFallback: true, ignoreAndroidSystemSettings: false };
 
 export default function RequestDetailsScreen({ route, navigation }) {
-    const { trip, onAccept } = route.params || {};
-    const [timer, setTimer] = useState(15);
+    const { trip, onAccept, onReject } = route.params || {};
+    const [timer, setTimer] = useState(null);
     const timerInterval = useRef(null);
 
     // Timer logic
     useEffect(() => {
-        setTimer(15);
+        const expiry = Date.parse(trip?.offerExpiresAt || '');
+        if (!Number.isFinite(expiry)) {
+            setTimer(null);
+            return undefined;
+        }
+        const updateCountdown = () => getOfferSecondsRemaining(trip?.offerExpiresAt);
+        setTimer(updateCountdown());
         timerInterval.current = setInterval(() => {
-            setTimer(prev => {
-                if (prev <= 1) {
+            setTimer(() => {
+                const remaining = updateCountdown();
+                if (remaining <= 0) {
                     clearInterval(timerInterval.current);
                     ReactNativeHapticFeedback.trigger('notificationError', hapticOptions);
                     navigation.goBack();
                     return 0;
                 }
-                return prev - 1;
+                return remaining;
             });
         }, 1000);
 
         return () => {
             if (timerInterval.current) clearInterval(timerInterval.current);
         };
-    }, []);
+    }, [trip?.id, trip?.offerExpiresAt]);
 
     // Socket listeners for background cancellations or assignment to other drivers
     useEffect(() => {
@@ -86,6 +94,7 @@ export default function RequestDetailsScreen({ route, navigation }) {
 
     const handleReject = () => {
         ReactNativeHapticFeedback.trigger('impactLight', hapticOptions);
+        if (onReject && trip) onReject(trip);
         navigation.goBack();
     };
 
@@ -107,9 +116,9 @@ export default function RequestDetailsScreen({ route, navigation }) {
                     <Info size={16} color={colors.primary} style={{ marginRight: 6 }} />
                     <Text style={styles.titleText}>Nova Corrida</Text>
                 </View>
-                <View style={[styles.timerPill, timer <= 5 && styles.timerPillWarning]}>
+                <View style={[styles.timerPill, timer !== null && timer <= 5 && styles.timerPillWarning]}>
                     <Text style={styles.timerPillText}>
-                        Expira em: <Text style={{ fontWeight: '950' }}>{timer}s</Text>
+                        {timer === null ? 'Validade indisponível' : <>Expira em: <Text style={{ fontWeight: '950' }}>{timer}s</Text></>}
                     </Text>
                 </View>
             </View>
@@ -134,8 +143,8 @@ export default function RequestDetailsScreen({ route, navigation }) {
                                 <User size={24} color={colors.primary} />
                             </View>
                             <View>
-                                <Text style={styles.passengerName}>{trip.userName || 'Marco Silva'}</Text>
-                                <Text style={styles.ratingText}>⭐ {trip.userRating || 4.9} • {trip.userTrips || '240 viagens'}</Text>
+                                <Text style={styles.passengerName}>{trip.userName || 'Cliente'}</Text>
+                                {!!trip.userRating && <Text style={styles.ratingText}>⭐ {trip.userRating}</Text>}
                             </View>
                         </View>
                         <View style={styles.earningsMeta}>
@@ -166,7 +175,7 @@ export default function RequestDetailsScreen({ route, navigation }) {
                                     <Text style={styles.routeValue}>{trip.destAddress || 'Destino'}</Text>
                                 </View>
                                 <View style={styles.distanceBadge}>
-                                    <Text style={styles.distanceText}>4.2 km</Text>
+                                    <Text style={styles.distanceText}>{Number.isFinite(trip.routeDistanceKm) ? `${trip.routeDistanceKm.toFixed(1)} km` : 'Distância indisponível'}</Text>
                                 </View>
                             </View>
                         </View>

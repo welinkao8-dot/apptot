@@ -28,9 +28,20 @@ export class TripsService {
     constructor(private prisma: PrismaService, private readonly quotesService: QuotesService) { }
 
     async create(createTripDto: CreateTripDto, userId: string) {
-        return this.prisma.$transaction(async (tx) => {
-            const quote = await this.quotesService.consume(createTripDto.quoteId, userId, tx);
-            return tx.trips.create({
+        const existing = await this.prisma.trips.findUnique({ where: { quote_id: createTripDto.quoteId } });
+        if (existing) {
+            if (existing.client_id !== userId) throw new ForbiddenException('Esta cotação pertence a outro cliente.');
+            return existing;
+        }
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                const racedExisting = await tx.trips.findUnique({ where: { quote_id: createTripDto.quoteId } });
+                if (racedExisting) {
+                    if (racedExisting.client_id !== userId) throw new ForbiddenException('Esta cotação pertence a outro cliente.');
+                    return racedExisting;
+                }
+                const quote = await this.quotesService.consume(createTripDto.quoteId, userId, tx);
+                return tx.trips.create({
                 data: {
                     client_id: userId,
                     origin_address: quote.origin_address,
@@ -46,8 +57,16 @@ export class TripsService {
                     category: quote.category,
                     delivery_info: (quote.delivery_info ?? undefined) as Prisma.InputJsonValue | undefined,
                 },
+                });
             });
-        });
+        } catch (error) {
+            const committed = await this.prisma.trips.findUnique({ where: { quote_id: createTripDto.quoteId } });
+            if (committed) {
+                if (committed.client_id !== userId) throw new ForbiddenException('Esta cotação pertence a outro cliente.');
+                return committed;
+            }
+            throw error;
+        }
     }
 
     async getHistory(userId: string, limit: number = 20, status?: string, month?: number, year?: number, category?: string) {
@@ -157,17 +176,20 @@ export class TripsService {
     }
 
     async cancel(tripId: string, userId: string) {
-        const result = await this.prisma.trips.updateMany({
-            where: { id: tripId, client_id: userId, status: { in: ['requested', 'accepted'] } },
-            data: { status: 'cancelled' }
-        });
-        if (result.count === 0) {
-            const trip = await this.prisma.trips.findUnique({ where: { id: tripId }, select: { id: true, client_id: true } });
-            if (!trip || trip.client_id !== userId) {
-                throw new ForbiddenException('Sem permissão para cancelar esta viagem.');
+        return this.prisma.$transaction(async (tx) => {
+            const result = await tx.trips.updateMany({
+                where: { id: tripId, client_id: userId, status: { in: ['requested', 'accepted'] } },
+                data: { status: 'cancelled' }
+            });
+            if (result.count === 0) {
+                const trip = await tx.trips.findUnique({ where: { id: tripId }, select: { id: true, client_id: true } });
+                if (!trip || trip.client_id !== userId) {
+                    throw new ForbiddenException('Sem permissão para cancelar esta viagem.');
+                }
+                throw new NotFoundException('Esta viagem já começou ou não pode ser cancelada.');
             }
-            throw new NotFoundException('Esta viagem já começou ou não pode ser cancelada.');
-        }
-        return result;
+            await tx.trip_driver_offers.updateMany({ where: { trip_id: tripId, status: { in: ['offered', 'accepted'] } }, data: { status: 'cancelled', responded_at: new Date() } });
+            return result;
+        });
     }
 }

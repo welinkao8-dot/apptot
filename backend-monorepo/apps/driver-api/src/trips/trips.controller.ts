@@ -23,8 +23,8 @@ export class TripsController {
 
     @Get('pending')
     @Roles('driver')
-    findPending() {
-        return this.tripsService.findAllPending();
+    findPending(@CurrentUser() user: AuthUser) {
+        return this.tripsService.findAllPending(user.sub);
     }
 
     @Get()

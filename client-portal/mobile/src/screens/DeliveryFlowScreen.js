@@ -43,7 +43,10 @@ import api from '../services/api';
 import hereService from '../services/hereService';
 import HereMap from '../components/HereMap';
 import { useAuth } from '../context/AuthContext';
+import { isQuoteExpired } from '../utils/quoteSelection';
 import Toast from 'react-native-toast-message';
+import { drawSelectedQuoteRoute } from '../utils/quoteSelection';
+import DriverLocationStatus from '../components/DriverLocationStatus';
 
 const { width, height } = Dimensions.get('window');
 
@@ -52,13 +55,14 @@ export default function DeliveryFlowScreen({ navigation, route }) {
     const [step, setStep] = useState('home'); // home -> searching_address -> delivery_details -> service_selection ...
     const [loading, setLoading] = useState(false);
     const [destination, setDestination] = useState(null);
-    const [pickupAddress, setPickupAddress] = useState('Obtendo localização...');
-    const [pickupCoords, setPickupCoords] = useState(route.params?.pickupCoords || { lat: -8.839, lng: 13.289 });
+    const [pickupAddress, setPickupAddress] = useState('A obter localização...');
+    const [pickupCoords, setPickupCoords] = useState(route.params?.pickupCoords || null);
     const [selectedService, setSelectedService] = useState(null);
     const [availableServices, setAvailableServices] = useState([]);
     const [calculatedServices, setCalculatedServices] = useState([]);
     const [tripId, setTripId] = useState(null);
     const [acceptedDriver, setAcceptedDriver] = useState(null);
+    const [driverLocationUpdatedAt, setDriverLocationUpdatedAt] = useState(null);
     const [currentFare, setCurrentFare] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
@@ -67,6 +71,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
         recipientPhone: '',
         packageDescription: ''
     });
+    const [selectingPickup, setSelectingPickup] = useState(false);
 
     const [mapReady, setMapReady] = useState(false);
 
@@ -94,8 +99,8 @@ export default function DeliveryFlowScreen({ navigation, route }) {
                     const addr = await hereService.reverseGeocode(coords.lat, coords.lng);
                     if (addr) setPickupAddress(addr);
                 },
-                (err) => console.log(err),
-                { enableHighAccuracy: true }
+                (err) => { console.log(err); setPickupAddress('Localização indisponível — ative a localização para pedir uma cotação.'); },
+                { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
             );
         }
 
@@ -218,7 +223,10 @@ export default function DeliveryFlowScreen({ navigation, route }) {
             // Backend sends coords as { lat, lng } object inside data.coords
             const lat = data.coords?.lat ?? data.driverLat;
             const lng = data.coords?.lng ?? data.driverLng;
-            if (lat) mapRef.current?.setDriverPosition({ lat, lng });
+            if (lat != null && lng != null && Number.isFinite(Number(lat)) && Number.isFinite(Number(lng))) {
+                setDriverLocationUpdatedAt(Number.isFinite(Number(data.timestamp)) ? Number(data.timestamp) : Date.now());
+                mapRef.current?.setDriverPosition({ lat, lng });
+            }
         };
         const onRideFinished = (data) => { setStep('waiting_payment'); setCurrentFare(data.finalFare); };
         const onPaymentConfirmed = () => setStep('finished');
@@ -258,12 +266,13 @@ export default function DeliveryFlowScreen({ navigation, route }) {
         setStep('home');
         setTripId(null);
         setAcceptedDriver(null);
+        setDriverLocationUpdatedAt(null);
         setDestination(null);
         setCurrentFare(0);
         setSearchQuery('');
         if (mapRef.current) {
             mapRef.current.clearMap();
-            mapRef.current.setUserLocation(pickupCoordsRef.current);
+            if (pickupCoordsRef.current) mapRef.current.setUserLocation(pickupCoordsRef.current);
         }
     };
 
@@ -273,7 +282,10 @@ export default function DeliveryFlowScreen({ navigation, route }) {
     };
 
     const calculateFares = async (destLat, destLng) => {
-        if (!pickupCoords) return;
+        if (!pickupCoords) {
+            Toast.show({ type: 'error', text1: 'Ponto de recolha necessário', text2: 'Ative a localização ou escolha o ponto de recolha no mapa.' });
+            return;
+        }
         try {
         const services = availableServices.filter(s => s.category === 'delivery');
         const response = await api.post('/quotes', {
@@ -289,7 +301,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
         const quoteByService = new Map(response.data.map(quote => [Number(quote.serviceConfigId), quote]));
         const quotes = services.flatMap(service => {
             const quote = quoteByService.get(Number(service.id));
-            return quote ? [{ ...service, quoteId: quote.id, estimatedPrice: Number(quote.estimatedFare), estimatedTime: Math.ceil(quote.durationSeconds / 60), routePolyline: quote.routePolyline }] : [];
+            return quote ? [{ ...service, quoteId: quote.id, expiresAt: quote.expiresAt, estimatedPrice: Number(quote.estimatedFare), estimatedTime: Math.ceil(quote.durationSeconds / 60), distanceMeters: quote.distanceMeters, routePolyline: quote.routePolyline }] : [];
         });
         const firstRoute = quotes.find(service => service.routePolyline)?.routePolyline;
         if (firstRoute) mapRef.current?.drawRoute(firstRoute);
@@ -298,6 +310,11 @@ export default function DeliveryFlowScreen({ navigation, route }) {
             setCalculatedServices([]);
             Toast.show({ type: 'error', text1: 'Cotação indisponível', text2: 'Não foi possível calcular o preço agora.' });
         }
+    };
+
+    const handleSelectService = (service) => {
+        setSelectedService(service);
+        drawSelectedQuoteRoute(service, mapRef.current);
     };
 
     const handleSelectDestination = (item) => {
@@ -321,21 +338,58 @@ export default function DeliveryFlowScreen({ navigation, route }) {
         setStep('service_selection');
     };
 
-    const handleRequestDelivery = () => {
+    const handleRequestDelivery = async () => {
         if (!selectedService || !destination) return;
+
+        if (isQuoteExpired(selectedService)) {
+            await calculateFares(destination.lat, destination.lng);
+            setSelectedService(null);
+            setStep('service_selection');
+            Toast.show({ type: 'info', text1: 'Cotação atualizada', text2: 'Confira novamente o preço e selecione o serviço para confirmar.' });
+            return;
+        }
 
         if (!selectedService.quoteId) {
             Toast.show({ type: 'error', text1: 'Cotação indisponível', text2: 'Calcule novamente a rota antes de solicitar.' });
             return;
         }
         const payload = { quoteId: selectedService.quoteId };
-
-        socket.emit('request_trip', payload);
+        setLoading(true);
+        socket.timeout(10000).emit('request_trip', payload, async (timeoutError, response) => {
+            if (!timeoutError && response?.success && response.tripId) {
+                setTripId(response.tripId);
+                setStep('requesting');
+                setLoading(false);
+                return;
+            }
+            try {
+                const active = await api.get(`/trips/active/${user.id}`);
+                const committed = (Array.isArray(active.data) ? active.data : [active.data]).find((trip) => trip?.quote_id === payload.quoteId || trip?.id === response?.tripId);
+                if (committed) {
+                    setTripId(committed.id);
+                    setStep('requesting');
+                } else {
+                    Toast.show({ type: 'error', text1: 'Pedido não confirmado', text2: response?.error || 'Verifique a ligação e tente novamente.' });
+                }
+            } catch {
+                Toast.show({ type: 'error', text1: 'Sem confirmação do servidor', text2: 'Verifique as suas entregas antes de tentar novamente.' });
+            } finally {
+                setLoading(false);
+            }
+        });
     };
 
     const onMapTap = async (coords) => {
         if (step !== 'home' && step !== 'searching_address') return;
         const address = await hereService.reverseGeocode(coords.lat, coords.lng);
+        if (selectingPickup) {
+            setPickupCoords(coords);
+            pickupCoordsRef.current = coords;
+            setPickupAddress(address || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`);
+            setSelectingPickup(false);
+            if (mapRef.current) mapRef.current.setUserLocation(coords);
+            return;
+        }
         handleSelectDestination({
             name: address ? address.split(',')[0] : 'Local',
             address: address,
@@ -409,13 +463,13 @@ export default function DeliveryFlowScreen({ navigation, route }) {
                     <View style={styles.bottomSheet}>
                         <Text style={styles.sheetTitleCallback}>VEÍCULO</Text>
                         {calculatedServices.map(service => (
-                            <TouchableOpacity key={service.id} style={[styles.serviceItem, selectedService?.id === service.id && styles.serviceItemActive]} onPress={() => setSelectedService(service)}>
-                                <Text style={styles.serviceName}>{service.name}</Text>
+                            <TouchableOpacity key={service.id} style={[styles.serviceItem, selectedService?.id === service.id && styles.serviceItemActive]} onPress={() => handleSelectService(service)}>
+                                <View><Text style={styles.serviceName}>{service.name}</Text><Text style={styles.detailSubValue}>{(service.distanceMeters / 1000).toFixed(1)} km · {service.estimatedTime} min</Text></View>
                                 <Text style={styles.servicePrice}>{service.estimatedPrice.toLocaleString()} Kz</Text>
                             </TouchableOpacity>
                         ))}
-                        <TouchableOpacity style={styles.primaryBtn} onPress={handleRequestDelivery} disabled={!selectedService}>
-                            <Text style={styles.primaryBtnText}>Chamar Entregador</Text>
+                        <TouchableOpacity style={styles.primaryBtn} onPress={handleRequestDelivery} disabled={!selectedService || loading}>
+                            <Text style={styles.primaryBtnText}>{loading ? 'A confirmar pedido...' : 'Chamar Entregador'}</Text>
                         </TouchableOpacity>
                     </View>
                 );
@@ -602,6 +656,12 @@ export default function DeliveryFlowScreen({ navigation, route }) {
                         mapReadyRef.current = true;
                     }}
                 />
+                {(step === 'accepted' || step === 'ongoing') && <DriverLocationStatus updatedAt={driverLocationUpdatedAt} mapRef={mapRef} />}
+                {!pickupCoords && (step === 'home' || step === 'searching_address') && (
+                    <TouchableOpacity style={styles.pickupMapButton} onPress={() => setSelectingPickup(true)}>
+                        <Text style={styles.primaryBtnText}>{selectingPickup ? 'Toque no mapa para definir recolha' : 'Definir recolha no mapa'}</Text>
+                    </TouchableOpacity>
+                )}
 
                 {/* Sidebar Menu Icon - ONLY in tracking states, hide in Overlays */}
                 {isTracking && !isOverlay && (
@@ -656,6 +716,7 @@ const styles = StyleSheet.create({
     deliveryInput: { backgroundColor: '#F8FAFC', borderRadius: 12, padding: 15, fontSize: 15, color: colors.text, borderWidth: 1, borderColor: '#E2E8F0' },
     primaryBtn: { backgroundColor: colors.primary, height: 50, borderRadius: 14, justifyContent: 'center', alignItems: 'center', marginTop: 20 },
     primaryBtnText: { color: '#FFF', fontSize: 16, fontWeight: '900' },
+    pickupMapButton: { position: 'absolute', top: 112, alignSelf: 'center', zIndex: 1002, backgroundColor: colors.primary, paddingHorizontal: 18, paddingVertical: 12, borderRadius: 18 },
     // Search
     searchContainer: { ...StyleSheet.absoluteFillObject, backgroundColor: '#FFF' },
     searchHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: 20 },

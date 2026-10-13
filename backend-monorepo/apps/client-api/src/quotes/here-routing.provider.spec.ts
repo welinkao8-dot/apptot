@@ -34,6 +34,17 @@ describe('HereRoutingProvider', () => {
       .rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
+  it('uses the transport mode configured for the service', async () => {
+    process.env.HERE_ROUTING_API_KEY = 'test-routing-key';
+    jest.mocked(axios.get).mockResolvedValue({ data: { routes: [{ sections: [{ summary: { length: 5400, duration: 720 }, polyline: 'encoded-route' }] }] } } as never);
+
+    await provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }, 'scooter');
+
+    expect(axios.get).toHaveBeenCalledWith('https://router.hereapi.com/v8/routes', expect.objectContaining({
+      params: expect.objectContaining({ transportMode: 'scooter' }),
+    }));
+  });
+
   it('fails closed when the server routing key is missing', async () => {
     delete process.env.HERE_ROUTING_API_KEY;
     await expect(provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }))

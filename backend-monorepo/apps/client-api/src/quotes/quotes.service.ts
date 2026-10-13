@@ -2,7 +2,7 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { consumeTripQuote, PrismaService } from '@app/database';
 import { Prisma } from '@prisma/client';
 import { CreateQuoteDto } from './quote.dto';
-import { HereRoutingProvider } from './here-routing.provider';
+import { HereRoutingProvider, HereTransportMode } from './here-routing.provider';
 
 @Injectable()
 export class QuotesService {
@@ -11,6 +11,12 @@ export class QuotesService {
   async create(clientId: string, dto: CreateQuoteDto) {
     if (!dto.originAddress?.trim() || !dto.destAddress?.trim()) {
       throw new BadRequestException('A origem e o destino são obrigatórios.');
+    }
+    const validAngolaPoint = (lat: number, lng: number) =>
+      Number.isFinite(lat) && Number.isFinite(lng) && lat >= -18.1 && lat <= -4.3 && lng >= 11.6 && lng <= 24.1;
+    if (!validAngolaPoint(dto.originLat, dto.originLng) || !validAngolaPoint(dto.destLat, dto.destLng)
+      || (dto.originLat === -8.839 && dto.originLng === 13.289)) {
+      throw new BadRequestException('Confirme um ponto de origem e destino válido em Angola antes de pedir a cotação.');
     }
     if (dto.category === 'delivery') {
       const info = dto.deliveryInfo;
@@ -24,11 +30,17 @@ export class QuotesService {
     });
     if (services.length === 0) throw new NotFoundException('Nenhum serviço disponível para esta categoria.');
 
-    const route = await this.router.getRoute(dto);
-    const distanceKm = route.distanceMeters / 1000;
-    const durationMinutes = route.durationSeconds / 60;
+    const routingModes = services.map((service) => this.routingModeFor(service.routing_mode, service.vehicle_category));
+    const uniqueModes = [...new Set(routingModes)];
+    const routes = await Promise.all(uniqueModes.map(async (mode) => [mode, await this.router.getRoute(dto, mode)] as const));
+    const routeByMode = new Map<HereTransportMode, Awaited<ReturnType<HereRoutingProvider['getRoute']>>>(routes);
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-    const quoteDrafts = services.map((service) => {
+    const quoteDrafts = services.map((service, index) => {
+      const routingMode = routingModes[index];
+      const route = routeByMode.get(routingMode);
+      if (!route) throw new BadRequestException('Não foi possível calcular a rota para este serviço.');
+      const distanceKm = route.distanceMeters / 1000;
+      const durationMinutes = route.durationSeconds / 60;
       const rawFare = Number(service.base_fare)
         + Number(service.price_per_km) * distanceKm
         + Number(service.price_per_min) * durationMinutes;
@@ -58,6 +70,7 @@ export class QuotesService {
             minFare: Number(service.min_fare),
             serviceConfigId: service.id,
             serviceName: service.name,
+            routingMode,
           },
           expires_at: expiresAt,
         },
@@ -78,12 +91,26 @@ export class QuotesService {
         durationSeconds: quote.duration_seconds,
         estimatedFare: quote.estimated_fare.toString(),
         expiresAt: quote.expires_at,
-        routePolyline: route.polyline,
+        routePolyline: routeByMode.get(routingModes[index])?.polyline,
       };
     });
   }
 
   async consume(quoteId: string, clientId: string, tx: any) {
     return consumeTripQuote(tx, quoteId, clientId);
+  }
+
+  private routingModeFor(value: unknown, vehicleCategory?: unknown): HereTransportMode {
+    const mode = value === 'car' || value === 'scooter' || value === 'truck' ? value : null;
+    const category = String(vehicleCategory ?? '').toLowerCase();
+    const expected: HereTransportMode | null = /moto|motorcycle|scooter|bike/.test(category)
+      ? 'scooter'
+      : /truck|caminh|van/.test(category)
+        ? 'truck'
+        : /car|automovel|automóvel/.test(category)
+          ? 'car'
+          : null;
+    if (mode && (!expected || expected === mode)) return mode;
+    throw new BadRequestException('O serviço possui um modo de roteamento inválido. Configure car, scooter ou truck.');
   }
 }

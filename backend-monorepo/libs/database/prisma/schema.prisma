@@ -36,6 +36,7 @@ model drivers {
   rating             Decimal?  @default(5.00) @db.Decimal(3, 2)
   created_at         DateTime? @default(now()) @db.Timestamp(6)
   updated_at         DateTime? @default(now()) @db.Timestamp(6)
+  trip_offers        trip_driver_offers[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -89,6 +90,7 @@ model service_configs {
   category           String?   @default("ride") @db.VarChar(50)
   service_type       String?   @db.VarChar(100)
   vehicle_category   String?   @db.VarChar(100)
+  routing_mode       String    @default("car") @db.VarChar(20)
   image_url          String?
   description        String?
   base_fare          Decimal   @db.Decimal(10, 2)
@@ -131,6 +133,7 @@ model trips {
   service_configs                    service_configs? @relation(fields: [service_config_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   trip_quotes                        trip_quotes?     @relation(fields: [quote_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   trip_payment                       trip_payments?
+  driver_offers                      trip_driver_offers[]
 }
 
 model trip_payments {
@@ -170,4 +173,20 @@ model trip_quotes {
   trip               trips?
 
   @@index([client_id, expires_at])
+}
+
+model trip_driver_offers {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  trip_id      String   @db.Uuid
+  driver_id    String   @db.Uuid
+  status       String   @default("offered") @db.VarChar(20)
+  offered_at   DateTime @default(now()) @db.Timestamptz(6)
+  expires_at   DateTime @db.Timestamptz(6)
+  responded_at DateTime? @db.Timestamptz(6)
+  trips        trips    @relation(fields: [trip_id], references: [id], onDelete: Cascade)
+  drivers      drivers  @relation(fields: [driver_id], references: [id], onDelete: Cascade)
+
+  @@unique([trip_id, driver_id])
+  @@index([driver_id, status, expires_at])
+  @@index([trip_id, status, expires_at])
 }

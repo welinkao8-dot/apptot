@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useContext, useRef } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
-    ActivityIndicator, Platform, DeviceEventEmitter,
+    ActivityIndicator, Platform, DeviceEventEmitter, AppState,
     PermissionsAndroid, StatusBar, Dimensions, Image
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -38,6 +38,7 @@ export default function DashboardScreen({ navigation }) {
     const [isOnlineUpdating, setIsOnlineUpdating] = useState(false);
     const [isPaymentUpdating, setIsPaymentUpdating] = useState(false);
     const socket = useRef(null);
+    const notifiedOfferIds = useRef(new Set());
 
     // Carousel states
     const [currentSlide, setCurrentSlide] = useState(0);
@@ -93,14 +94,15 @@ export default function DashboardScreen({ navigation }) {
             else { if (LocationModule) LocationModule.stopLocationUpdates(); }
         });
         socket.current.on('new_trip_available', (trip) => {
-            setRequests(prev => prev.find(r => r.id === trip.id) ? prev : [trip, ...prev]);
-            ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-            navigation.navigate('RequestDetails', { 
-                trip: trip, 
-                onAccept: (t) => handleAcceptRide(t)
-            });
+            if (!notifiedOfferIds.current.has(trip.id)) {
+                notifiedOfferIds.current.add(trip.id);
+                ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
+                Toast.show({ type: 'info', text1: 'Nova solicitação', text2: 'Uma oferta foi adicionada à lista.' });
+            }
+            setRequests(prev => prev.some(r => r.id === trip.id) ? prev : [trip, ...prev]);
         });
         socket.current.on('trip_taken', (data) => {
+            notifiedOfferIds.current.delete(data.tripId);
             setRequests(prev => prev.filter(r => r.id !== data.tripId));
         });
         socket.current.on('restore_ride', (trip) => {
@@ -129,9 +131,23 @@ export default function DashboardScreen({ navigation }) {
     const fetchPendingTrips = async () => { try { const r = await api.get('/trips/pending'); if (r.data) setRequests(r.data); } catch (e) {} };
 
     useEffect(() => {
+        const refresh = () => { if (isOnline) fetchPendingTrips(); };
+        const focus = navigation.addListener('focus', refresh);
+        const appState = AppState.addEventListener('change', (state) => { if (state === 'active') refresh(); });
+        const expiry = setInterval(() => setRequests((current) => current.filter((offer) => !offer.offerExpiresAt || Date.parse(offer.offerExpiresAt) > Date.now())), 3000);
+        return () => { focus(); appState.remove(); clearInterval(expiry); };
+    }, [isOnline, navigation]);
+
+    useEffect(() => {
         const sub = DeviceEventEmitter.addListener('onLocationUpdate', (loc) => {
             if (!loc?.coords || !socket.current || !user) return;
-            socket.current.emit('update_location', { lat: loc.coords.latitude, lng: loc.coords.longitude });
+            socket.current.emit('update_location', {
+                lat: loc.coords.latitude,
+                lng: loc.coords.longitude,
+                accuracy: loc.coords.accuracy,
+                heading: loc.coords.heading,
+                timestamp: loc.coords.timestamp,
+            });
         });
         return () => sub.remove();
     }, [activeTrip]);
@@ -175,6 +191,17 @@ export default function DashboardScreen({ navigation }) {
         } catch { Toast.show({ type: 'error', text1: 'Corrida já não disponível', text2: 'Atualize a lista e tente outra solicitação.' }); }
     };
 
+    const handleDeclineRide = async (trip) => {
+        try {
+            await emitSocketCommand(socket.current, 'decline_trip', { tripId: trip.id });
+            notifiedOfferIds.current.delete(trip.id);
+            setRequests((current) => current.filter((offer) => offer.id !== trip.id));
+            Toast.show({ type: 'info', text1: 'Oferta recusada', text2: 'A solicitação foi retirada da sua lista.' });
+        } catch {
+            Toast.show({ type: 'error', text1: 'Não foi possível recusar', text2: 'Atualize a lista e tente novamente.' });
+        }
+    };
+
     const handleStartRide = async () => {
         if (!activeTrip) return;
         try { await emitSocketCommand(socket.current, 'start_ride', { tripId: activeTrip.id }); setRideStatus('ongoing'); await AsyncStorage.setItem('@tot_ride_status', 'ongoing'); }
@@ -213,8 +240,13 @@ export default function DashboardScreen({ navigation }) {
 
     if (isLoading) return <View style={{ flex: 1, backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }}><ActivityIndicator size="large" color={colors.primary} /></View>;
 
-    if (rideStatus === 'accepted') return <GoingToClientView user={user} activeTrip={activeTrip} onStartRide={handleStartRide} onOpenMap={() => openNavigationApp(activeTrip?.coords?.lat, activeTrip?.coords?.lng, 'Local de Recolha')} />;
-    if (rideStatus === 'ongoing') return <OngoingRideView user={user} activeTrip={activeTrip} onFinishRide={handleFinishRide} onOpenMap={() => openNavigationApp(activeTrip?.destPos?.lat, activeTrip?.destPos?.lng, 'Destino')} />;
+    const openTripMap = async (point, label) => {
+        const result = await openNavigationApp(point?.lat, point?.lng, label);
+        if (!result.ok) Toast.show({ type: 'error', text1: result.reason === 'invalid_coordinates' ? 'Endereço sem coordenadas válidas' : 'Não foi possível abrir um mapa', text2: 'Verifique a ligação e as aplicações de mapas instaladas.' });
+    };
+
+    if (rideStatus === 'accepted') return <GoingToClientView user={user} activeTrip={activeTrip} onStartRide={handleStartRide} onOpenMap={() => openTripMap(activeTrip?.coords, 'Local de Recolha')} />;
+    if (rideStatus === 'ongoing') return <OngoingRideView user={user} activeTrip={activeTrip} onFinishRide={handleFinishRide} onOpenMap={() => openTripMap(activeTrip?.destPos, 'Destino')} />;
     if (rideStatus === 'finished') return <AwaitingPaymentView user={user} activeTrip={activeTrip} onConfirmPayment={handleConfirmPayment} loading={isPaymentUpdating} />;
 
     return (
@@ -303,7 +335,8 @@ export default function DashboardScreen({ navigation }) {
                                     onPress={() => {
                                         navigation.navigate('RequestDetails', { 
                                             trip: req, 
-                                            onAccept: (t) => handleAcceptRide(t)
+                                            onAccept: (t) => handleAcceptRide(t),
+                                            onReject: (t) => handleDeclineRide(t)
                                         });
                                     }}
                                     activeOpacity={0.9}
@@ -314,8 +347,7 @@ export default function DashboardScreen({ navigation }) {
                                                 <User size={20} color={colors.primary} />
                                             </View>
                                             <View>
-                                                <Text style={styles.passengerName}>{req.userName || 'Passageiro'}</Text>
-                                                <Text style={styles.ratingText}>⭐ 4.9</Text>
+                                                <Text style={styles.passengerName}>{req.userName || 'Cliente'}</Text>
                                             </View>
                                         </View>
                                         <View style={styles.earningsMeta}>

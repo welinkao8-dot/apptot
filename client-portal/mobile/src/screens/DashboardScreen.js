@@ -43,8 +43,8 @@ export default function DashboardScreen({ navigation }) {
     const { user } = useAuth();
     const flatListRef = useRef(null);
     const [currentIndex, setCurrentIndex] = useState(0);
-    const [pickupCoords, setPickupCoords] = useState({ lat: -8.839, lng: 13.289 });
-    const [pickupAddress, setPickupAddress] = useState('Obtendo localização...');
+    const [pickupCoords, setPickupCoords] = useState(null);
+    const [pickupAddress, setPickupAddress] = useState('A obter localização...');
     const [activeRide, setActiveRide] = useState(null);
     const [activeDeliveries, setActiveDeliveries] = useState([]);
 
@@ -59,8 +59,8 @@ export default function DashboardScreen({ navigation }) {
                 const addr = await hereService.reverseGeocode(coords.lat, coords.lng);
                 if (addr) setPickupAddress(addr);
             },
-            (err) => console.log('Location Error:', err),
-            { enableHighAccuracy: true }
+            (err) => { console.log('Location Error:', err); setPickupAddress('Localização indisponível'); },
+            { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
         );
     }, []);
 
@@ -133,7 +133,7 @@ export default function DashboardScreen({ navigation }) {
     const handleSearchPress = () => {
         navigation.navigate('RideFlow', {
             step: 'searching_address',
-            pickupCoords: pickupCoords,
+            pickupCoords: pickupCoords || undefined,
             pickupAddress: pickupAddress
         });
     };
@@ -142,13 +142,13 @@ export default function DashboardScreen({ navigation }) {
         if (category === 'ride') {
             navigation.navigate('RideFlow', {
                 step: 'searching_address', // User prefers search first
-                pickupCoords,
+                pickupCoords: pickupCoords || undefined,
                 pickupAddress
             });
         } else {
             navigation.navigate('DeliveryFlow', {
                 step: 'home',
-                pickupCoords,
+                pickupCoords: pickupCoords || undefined,
                 pickupAddress
             });
         }

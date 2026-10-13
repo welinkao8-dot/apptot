@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@app/database';
 import { AdminGateway } from './admin-api.gateway';
 import { ConfigService } from '@nestjs/config';
@@ -14,6 +14,14 @@ function publicProfile(profile: any) {
   if (!profile) return profile;
   const { password, password_hash, doc_bi_frente, doc_bi_verso, doc_carta_conducao, ...safeProfile } = profile;
   return safeProfile;
+}
+
+const SERVICE_ROUTING_MODES = new Set(['car', 'scooter', 'truck']);
+
+function assertServiceRoutingMode(value: unknown): asserts value is string {
+  if (typeof value !== 'string' || !SERVICE_ROUTING_MODES.has(value)) {
+    throw new BadRequestException('routing_mode deve ser car, scooter ou truck.');
+  }
 }
 
 @Injectable()
@@ -254,12 +262,14 @@ export class AdminApiService {
   }
 
   async createServiceConfig(data: any) {
+    const createData = { ...data, routing_mode: data.routing_mode ?? 'car' };
+    assertServiceRoutingMode(createData.routing_mode);
     const created = await this.prisma.service_configs.create({
-      data,
+      data: createData,
     });
 
     // LOG
-    await this.createAuditLog(null, 'CREATE_SERVICE', 'service_config', created.id.toString(), data);
+    await this.createAuditLog(null, 'CREATE_SERVICE', 'service_config', created.id.toString(), createData);
 
     // REAL-TIME BROADCAST
     this.adminGateway.sendToAdmins('pricing_updated', created);
@@ -270,6 +280,7 @@ export class AdminApiService {
   async updateServiceConfig(id: number, data: any) {
     // Basic validation / cleaning of data if needed
     const { id: _, trips, updated_at, ...cleanData } = data;
+    if (cleanData.routing_mode !== undefined) assertServiceRoutingMode(cleanData.routing_mode);
 
     const updated = await this.prisma.service_configs.update({
       where: { id: Number(id) },

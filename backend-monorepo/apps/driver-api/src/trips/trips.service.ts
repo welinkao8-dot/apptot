@@ -3,6 +3,7 @@ import { consumeTripQuote, PrismaService } from '@app/database';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { Prisma } from '@prisma/client';
 import { tripTransitionSources } from './trip-state';
+import { rankDriversByDistance } from './dispatch';
 
 function sanitizeTrip(trip: any) {
     if (!trip) return trip;
@@ -58,7 +59,8 @@ export class TripsService {
             include: {
                 profiles_trips_client_idToprofiles: true,
                 profiles_trips_driver_idToprofiles: true,
-                service_configs: true
+                service_configs: true,
+                trip_quotes: true,
             }
         }));
     }
@@ -74,16 +76,71 @@ export class TripsService {
         return trip;
     }
 
-    async findAllPending() {
+    async findAllPending(driverId: string) {
         const pending = await this.prisma.trips.findMany({
-            where: { status: 'requested' },
+            where: { status: 'requested', driver_offers: { some: { driver_id: driverId, status: 'offered', expires_at: { gt: new Date() } } } },
             include: {
                 profiles_trips_client_idToprofiles: true,
-                service_configs: true
+                service_configs: true,
+                trip_quotes: true,
+                driver_offers: { where: { driver_id: driverId, status: 'offered', expires_at: { gt: new Date() } }, select: { expires_at: true } },
             },
             orderBy: { created_at: 'desc' }
         });
-        return pending.map(trip => this.formatTrip(trip));
+        return pending.map(trip => this.formatTrip({ ...trip, offerExpiresAt: trip.driver_offers?.[0]?.expires_at ?? null }));
+    }
+
+    async findRequestedTripIds() {
+        return this.prisma.trips.findMany({ where: { status: 'requested', driver_id: null }, select: { id: true } });
+    }
+
+    async dispatchNextBatch(tripId: string, connectedDriverIds: string[], batchSize = 5) {
+        return this.prisma.$transaction(async (tx) => {
+        await tx.$queryRawUnsafe('SELECT pg_advisory_xact_lock(hashtext($1))', tripId);
+        const trip = await tx.trips.findFirst({
+            where: { id: tripId, status: 'requested', driver_id: null },
+            include: { profiles_trips_client_idToprofiles: true, service_configs: true, trip_quotes: true },
+        });
+        if (!trip || !Number.isFinite(trip.origin_lat) || !Number.isFinite(trip.origin_lng) || connectedDriverIds.length === 0) return [];
+        const now = new Date();
+        await tx.trip_driver_offers.updateMany({
+            where: { trip_id: tripId, status: 'offered', expires_at: { lte: now } },
+            data: { status: 'expired', responded_at: now },
+        });
+        const activeOffer = await tx.trip_driver_offers.findFirst({ where: { trip_id: tripId, status: 'offered', expires_at: { gt: now } } });
+        if (activeOffer) return [];
+        const [drivers, priorOffers, busyTrips] = await Promise.all([
+            tx.drivers.findMany({
+                where: { id: { in: connectedDriverIds }, status: 'active', is_online: true, current_lat: { not: null }, current_lng: { not: null }, last_location_update: { gte: new Date(now.getTime() - 120_000) } },
+                select: { id: true, current_lat: true, current_lng: true },
+            }),
+            tx.trip_driver_offers.findMany({ where: { trip_id: tripId }, select: { driver_id: true } }),
+            tx.trips.findMany({ where: { driver_id: { in: connectedDriverIds }, status: { in: ['accepted', 'ongoing'] } }, select: { driver_id: true } }),
+        ]);
+        const alreadyOffered = new Set(priorOffers.map((offer) => offer.driver_id));
+        const busy = new Set(busyTrips.map((active) => active.driver_id));
+        const eligible = rankDriversByDistance(
+            { lat: trip.origin_lat!, lng: trip.origin_lng! },
+            drivers.filter((driver) => !alreadyOffered.has(driver.id) && !busy.has(driver.id)).map((driver) => ({ id: driver.id, lat: driver.current_lat, lng: driver.current_lng })),
+        ).slice(0, batchSize);
+        if (!eligible.length) return [];
+        const expiresAt = new Date(now.getTime() + 15_000);
+        await tx.trip_driver_offers.createMany({
+            data: eligible.map(({ id }) => ({ trip_id: tripId, driver_id: id, status: 'offered', offered_at: now, expires_at: expiresAt })),
+            skipDuplicates: true,
+        });
+        return eligible.map(({ id, distanceKm }) => ({ driverId: id, distanceKm, expiresAt, trip: this.formatTrip(trip) }));
+        });
+    }
+
+    async declineOffer(tripId: string, driverId: string) {
+        const now = new Date();
+        const result = await this.prisma.trip_driver_offers.updateMany({
+            where: { trip_id: tripId, driver_id: driverId, status: 'offered', expires_at: { gt: now } },
+            data: { status: 'rejected', responded_at: now },
+        });
+        if (result.count !== 1) throw new BadRequestException('Esta oferta já expirou ou não pertence a este motorista.');
+        return { success: true };
     }
 
     public formatTrip(trip: any) {
@@ -99,13 +156,16 @@ export class TripsService {
                 price: trip.estimated_fare || '0',
                 status: trip.status || 'requested',
                 coords: {
-                    lat: trip.origin_lat || -8.839,
-                    lng: trip.origin_lng || 13.289
+                    lat: trip.origin_lat ?? null,
+                    lng: trip.origin_lng ?? null
                 },
                 destPos: {
-                    lat: trip.dest_lat || -8.839,
-                    lng: trip.dest_lng || 13.289
+                    lat: trip.dest_lat ?? null,
+                    lng: trip.dest_lng ?? null
                 },
+                routeDistanceKm: trip.trip_quotes?.distance_meters != null ? trip.trip_quotes.distance_meters / 1000 : null,
+                routeDurationMinutes: trip.trip_quotes?.duration_seconds != null ? Math.ceil(trip.trip_quotes.duration_seconds / 60) : null,
+                offerExpiresAt: trip.offerExpiresAt || null,
                 current_fare: trip.final_fare || trip.estimated_fare || '0',
                 driver_id: trip.driver_id || null,
                 driver_name: trip.profiles_trips_driver_idToprofiles?.full_name || 'Motorista',
@@ -143,7 +203,8 @@ export class TripsService {
             include: {
                 profiles_trips_client_idToprofiles: true,
                 profiles_trips_driver_idToprofiles: true,
-                service_configs: true
+                service_configs: true,
+                trip_quotes: true,
             }
         }));
     }
@@ -157,7 +218,7 @@ export class TripsService {
                     { status: 'completed', trip_payment: { is: { status: 'pending' } } },
                 ],
             },
-            include: { profiles_trips_driver_idToprofiles: true },
+            include: { profiles_trips_driver_idToprofiles: true, trip_quotes: true },
             orderBy: { created_at: 'desc' }
         }));
     }
@@ -168,6 +229,7 @@ export class TripsService {
                 profiles_trips_client_idToprofiles: true,
                 profiles_trips_driver_idToprofiles: true,
                 service_configs: true
+                ,trip_quotes: true
             },
             orderBy: { created_at: 'desc' }
         });
@@ -257,35 +319,48 @@ export class TripsService {
     }
 
     async accept(tripId: string, driverId: string) {
-        const result = await this.prisma.trips.updateMany({
-            where: { id: tripId, driver_id: null, status: { in: tripTransitionSources('accepted') } },
-            data: { driver_id: driverId, status: 'accepted', accepted_at: new Date() }
-        });
-
-        if (result.count === 0) {
-            throw new BadRequestException('Trip already accepted by another driver');
+        try {
+            return await this.prisma.$transaction(async (tx) => {
+                const now = new Date();
+                const offer = await tx.trip_driver_offers.updateMany({
+                    where: { trip_id: tripId, driver_id: driverId, status: 'offered', expires_at: { gt: now } },
+                    data: { status: 'accepted', responded_at: now },
+                });
+                if (offer.count !== 1) throw new BadRequestException('Esta oferta expirou ou não pertence a este motorista.');
+                const result = await tx.trips.updateMany({
+                    where: { id: tripId, driver_id: null, status: { in: tripTransitionSources('accepted') } },
+                    data: { driver_id: driverId, status: 'accepted', accepted_at: now }
+                });
+                if (result.count !== 1) throw new BadRequestException('Trip already accepted by another driver');
+                await tx.trip_driver_offers.updateMany({ where: { trip_id: tripId, status: 'offered' }, data: { status: 'cancelled', responded_at: now } });
+                return sanitizeTrip(await tx.trips.findUnique({
+                    where: { id: tripId },
+                    include: { profiles_trips_client_idToprofiles: true, profiles_trips_driver_idToprofiles: true },
+                }));
+            });
+        } catch (error) {
+            await this.prisma.trip_driver_offers.updateMany({
+                where: { trip_id: tripId, driver_id: driverId, status: 'offered', expires_at: { gt: new Date() } },
+                data: { status: 'rejected', responded_at: new Date() },
+            });
+            throw error;
         }
-
-        return sanitizeTrip(await this.prisma.trips.findUnique({
-            where: { id: tripId },
-            include: {
-                profiles_trips_client_idToprofiles: true,
-                profiles_trips_driver_idToprofiles: true
-            }
-        }));
     }
 
     async cancel(tripId: string, actor: { role: 'client' | 'driver'; id: string }) {
         const ownership = actor.role === 'client' ? { client_id: actor.id } : { driver_id: actor.id };
-        const result = await this.prisma.trips.updateMany({
-            where: { id: tripId, ...ownership, status: { in: tripTransitionSources('cancelled') } },
-            data: { status: 'cancelled' },
+        return this.prisma.$transaction(async (tx) => {
+            const result = await tx.trips.updateMany({
+                where: { id: tripId, ...ownership, status: { in: tripTransitionSources('cancelled') } },
+                data: { status: 'cancelled' },
+            });
+            if (result.count !== 1) throw new BadRequestException('A viagem não pode ser cancelada neste estado.');
+            await tx.trip_driver_offers.updateMany({ where: { trip_id: tripId, status: { in: ['offered', 'accepted'] } }, data: { status: 'cancelled', responded_at: new Date() } });
+            return sanitizeTrip(await tx.trips.findUnique({
+                where: { id: tripId },
+                include: { profiles_trips_driver_idToprofiles: true },
+            }));
         });
-        if (result.count !== 1) throw new BadRequestException('A viagem não pode ser cancelada neste estado.');
-        return sanitizeTrip(await this.prisma.trips.findUnique({
-            where: { id: tripId },
-            include: { profiles_trips_driver_idToprofiles: true },
-        }));
     }
 
     async start(tripId: string, driverId: string) {
@@ -350,6 +425,9 @@ export class TripsService {
                 data: { status: 'cancelled' },
             });
             if (result.count === 1) cancelledIds.push({ tripId: trip.id, clientId: trip.client_id });
+            if (result.count === 1) {
+                await this.prisma.trip_driver_offers.updateMany({ where: { trip_id: trip.id, status: { in: ['offered', 'accepted'] } }, data: { status: 'cancelled', responded_at: new Date() } });
+            }
         }
         return cancelledIds;
     }

@@ -1,0 +1,84 @@
+name: Mobile Test APKs
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-client-apk:
+    name: Build customer test APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: client-portal/mobile/package-lock.json
+
+      - name: Install customer app dependencies
+        working-directory: client-portal/mobile
+        run: npm ci --legacy-peer-deps
+
+      - name: Build customer debug APK
+        working-directory: client-portal/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload customer test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tot-customer-test-apk
+          path: client-portal/mobile/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7
+
+  build-driver-apk:
+    name: Build driver test APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: '17'
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: driver-portal/mobile/package-lock.json
+
+      - name: Install driver app dependencies
+        working-directory: driver-portal/mobile
+        run: npm ci --legacy-peer-deps
+
+      - name: Build driver debug APK
+        working-directory: driver-portal/mobile/android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload driver test APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: tot-driver-test-apk
+          path: driver-portal/mobile/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 7

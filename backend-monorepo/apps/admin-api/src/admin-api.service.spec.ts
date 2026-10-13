@@ -4,6 +4,33 @@ import { AdminApiService } from './admin-api.service';
 jest.mock('axios', () => ({ post: jest.fn() }));
 
 describe('AdminApiService', () => {
+  it('persists the explicit route mode for a newly configured service', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 7, name: 'Moto', routing_mode: 'scooter' });
+    const service = new AdminApiService(
+      { service_configs: { create }, audit_logs: { create: jest.fn() } } as never,
+      { sendToAdmins: jest.fn() } as never,
+      {} as never,
+    );
+
+    await service.createServiceConfig({ name: 'Moto', routing_mode: 'scooter' });
+
+    expect(create).toHaveBeenCalledWith({ data: { name: 'Moto', routing_mode: 'scooter' } });
+  });
+
+  it('rejects an unsupported route mode before changing a service', async () => {
+    const create = jest.fn().mockResolvedValue({ id: 7 });
+    const service = new AdminApiService(
+      { service_configs: { create }, audit_logs: { create: jest.fn() } } as never,
+      { sendToAdmins: jest.fn() } as never,
+      {} as never,
+    );
+
+    await expect(service.createServiceConfig({ name: 'Unknown', routing_mode: 'spaceship' }))
+      .rejects.toThrow('routing_mode');
+
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it('reports only persisted confirmed cash payments as realized revenue', async () => {
     const aggregate = jest.fn()
       .mockResolvedValueOnce({ _sum: { amount: '100' } })

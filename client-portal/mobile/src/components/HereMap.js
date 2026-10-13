@@ -24,6 +24,9 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
         setDriverPosition: (position, isArriving = false) => {
             injectJS(`window.updateDriverMarker(${JSON.stringify(position)}, ${isArriving});`);
         },
+        clearDriverPosition: () => {
+            injectJS('window.clearDriverMarker();');
+        },
         clearMap: () => {
             injectJS(`window.clearMap();`);
         },
@@ -216,6 +219,11 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                 map.addObject(activeMarkers.driver);
             };
 
+            window.clearDriverMarker = () => {
+                if (activeMarkers.driver) map.removeObject(activeMarkers.driver);
+                activeMarkers.driver = null;
+            };
+
             window.clearMap = () => {
                 if (markersGroup) {
                     map.removeObject(markersGroup);
@@ -226,6 +234,7 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                     routeGroup = null;
                 }
                 if (activeMarkers.user) map.removeObject(activeMarkers.user);
+                if (activeMarkers.driver) map.removeObject(activeMarkers.driver);
                 activeMarkers = { user: null, origin: null, dest: null, driver: null };
             };
 
