@@ -83,15 +83,14 @@ export default function Dashboard() {
     useEffect(() => {
         fetchDashboardData()
 
-        const socket = io(SOCKET_URL)
+        const socket = io(`${SOCKET_URL}/admin`, { auth: { token: localStorage.getItem('tot_token') } })
 
         socket.on('connect', () => console.log('Connected to Admin Real-time'))
 
-        socket.on('dashboard_update', () => fetchDashboardData())
+        socket.on('driver_status_updated', () => fetchDashboardData())
 
 
 
-        // Polling de fallback para garantir consistência
         const interval = setInterval(() => {
             fetchDashboardData()
         }, 30000)

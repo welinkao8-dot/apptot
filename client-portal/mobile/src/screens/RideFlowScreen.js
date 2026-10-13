@@ -38,7 +38,7 @@ import {
     Map
 } from 'lucide-react-native';
 import colors from '../theme/colors';
-import socket from '../services/socket';
+import socket, { setSocketToken } from '../services/socket';
 import api from '../services/api';
 import hereService from '../services/hereService';
 import hereRoutingService from '../services/hereRoutingService';
@@ -49,7 +49,7 @@ import Toast from 'react-native-toast-message';
 const { width, height } = Dimensions.get('window');
 
 export default function RideFlowScreen({ navigation, route }) {
-    const { user } = useAuth();
+    const { user, token } = useAuth();
     // Default to 'searching_address' if opened from Search Input, or 'home' otherwise
     const [step, setStep] = useState(route.params?.initialStep || 'home');
     const [loading, setLoading] = useState(false);
@@ -110,11 +110,12 @@ export default function RideFlowScreen({ navigation, route }) {
         checkActiveRide();
 
         // Ensure socket is alive
+        setSocketToken(token);
         if (!socket.connected) {
             console.log('📡 [RideFlow] Estabelecendo conexão inicial do socket...');
             socket.connect();
         }
-    }, []);
+    }, [token]);
 
     const checkActiveRide = async () => {
         try {
@@ -272,7 +273,7 @@ export default function RideFlowScreen({ navigation, route }) {
         const onConnect = () => {
             console.log('📡 [RideFlow] Socket Conectado - Emitindo join');
             if (!user) return; // Guard against null user after logout
-            socket.emit('join', { userId: user.id, role: 'client' });
+            socket.emit('join');
         };
 
         // If socket is already connected when component mounts or restores, join immediately
@@ -453,7 +454,6 @@ export default function RideFlowScreen({ navigation, route }) {
             }
 
             const payload = {
-                clientId: user.id,
                 userName: user.full_name,
                 originAddress: pickupAddress,
                 destAddress: destination.name,
@@ -511,7 +511,7 @@ export default function RideFlowScreen({ navigation, route }) {
             return;
         }
         console.log('🚫 [RideFlow] Cancelando viagem:', tripId);
-        socket.emit('cancel_trip', { tripId, clientId: user.id });
+        socket.emit('cancel_trip', { tripId });
         resetFlow();
         Toast.show({ type: 'info', text1: 'Cancelado', text2: 'Sua solicitação foi cancelada.' });
     };

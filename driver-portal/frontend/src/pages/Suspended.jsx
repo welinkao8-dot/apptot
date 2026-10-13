@@ -16,11 +16,11 @@ export default function Suspended() {
     useEffect(() => {
         if (user) {
             // Connect to WebSocket to listen for account reactivation
-            socketRef.current = io(SOCKET_URL)
+            socketRef.current = io(SOCKET_URL, { auth: { token: localStorage.getItem('tot_driver_token') } })
 
             socketRef.current.on('connect', () => {
                 console.log('Suspended screen: Socket connected')
-                socketRef.current.emit('join', { userId: user.id, role: 'driver' })
+                socketRef.current.emit('join')
             })
 
             // Listen for account activation

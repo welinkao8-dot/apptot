@@ -7,4 +7,8 @@ const socket = io(SOCKET_URL, {
     autoConnect: false,
 });
 
+export const setSocketToken = (token) => {
+    socket.auth = { token };
+};
+
 export default socket;

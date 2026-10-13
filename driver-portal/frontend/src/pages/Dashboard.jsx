@@ -173,10 +173,8 @@ export default function Dashboard() {
                         }
 
                         socketRef.current.emit('update_location', {
-                            driverId: user?.id || user?.driver_id,
                             lat: latitude,
-                            lng: longitude,
-                            activeClientId: activeRide?.clientId || null
+                            lng: longitude
                         })
                     },
                     (err) => console.error('GPS error:', err),
@@ -596,8 +594,8 @@ export default function Dashboard() {
     useEffect(() => {
         if (!user) return
         fetchStats()
-        socketRef.current = io(SOCKET_URL)
-        socketRef.current.on('connect', () => socketRef.current.emit('join', { userId: user.id, role: 'driver' }))
+        socketRef.current = io(SOCKET_URL, { auth: { token: localStorage.getItem('tot_driver_token') } })
+        socketRef.current.on('connect', () => socketRef.current.emit('join'))
         socketRef.current.on('login_status', (s) => { setIsOnline(s.isOnline); if (s.isOnline) fetchPendingTrips(true) })
         socketRef.current.on('new_trip_available', (t) => {
             setRequests(prev => prev.find(r => r.id === t.id) ? prev : [t, ...prev])
@@ -612,11 +610,11 @@ export default function Dashboard() {
         if (activeRide) { toast.error('Finalize a corrida primeiro!'); return }
         const next = !isOnline; setIsOnline(next)
         if (!next) setRequests([])
-        socketRef.current?.emit('toggle_online', { userId: user?.id, isOnline: next })
+        socketRef.current?.emit('toggle_online', { isOnline: next })
     }
 
     const handleAcceptRide = (req) => {
-        socketRef.current?.emit('accept_trip', { tripId: req.id, driverId: user?.id, clientId: req.clientId, driverName: user?.full_name }, (res) => {
+        socketRef.current?.emit('accept_trip', { tripId: req.id }, (res) => {
             if (res?.success) {
                 localStorage.removeItem('tot_route_cache') // Clear old cache
                 setActiveRide(req)
@@ -630,7 +628,7 @@ export default function Dashboard() {
 
     const handleStartRide = () => {
         if (!activeRide) return
-        socketRef.current?.emit('start_ride', { tripId: activeRide.id, clientId: activeRide.clientId })
+        socketRef.current?.emit('start_ride', { tripId: activeRide.id })
         localStorage.removeItem('tot_route_cache') // Force new route (to destination)
         setRideStatus('ongoing')
         setForceRouteUpdate(p => p + 1) // Force immediate routing
@@ -644,7 +642,7 @@ export default function Dashboard() {
                 const elapsed = (new Date() - new Date(activeRide.started_at)) / 60000
                 const currentFare = Math.ceil((Number(activeRide.base_fare || 500) + (elapsed * Number(activeRide.price_per_min || 50))) / 10) * 10
                 setFare(currentFare)
-                if (new Date().getSeconds() % 10 === 0) socketRef.current?.emit('trip_progress', { tripId: activeRide.id, clientId: activeRide.clientId, currentFare, coords: latestCoords.current })
+                if (new Date().getSeconds() % 10 === 0) socketRef.current?.emit('trip_progress', { tripId: activeRide.id, currentFare, coords: latestCoords.current })
             } catch (e) { console.error('Taximeter error:', e) }
         }, 1000)
     }
@@ -652,19 +650,19 @@ export default function Dashboard() {
     useEffect(() => { if (rideStatus === 'ongoing' && activeRide?.started_at) startTaximeter(); return () => clearInterval(fareInterval.current) }, [rideStatus, activeRide?.started_at])
 
     const handleCancelRide = () => {
-        if (activeRide) socketRef.current?.emit('cancel_trip', { tripId: activeRide.id, userId: user?.id, role: 'driver' })
+        if (activeRide) socketRef.current?.emit('cancel_trip', { tripId: activeRide.id })
         resetToIdle()
     }
     const handleFinishRide = () => {
         if (!activeRide) return
-        socketRef.current?.emit('finish_ride', { tripId: activeRide.id, clientId: activeRide.clientId, finalFare: fare.toString() })
+        socketRef.current?.emit('finish_ride', { tripId: activeRide.id, finalFare: fare.toString() })
         setRideStatus('finished')
         clearMapObjects()
         localStorage.removeItem('tot_route_cache')
     }
     const handleConfirmPayment = () => {
         if (!activeRide) return
-        socketRef.current?.emit('confirm_payment', { tripId: activeRide.id, clientId: activeRide.clientId, receiptData: { id: activeRide.id, driver: user?.full_name, total: fare, date: new Date().toLocaleString() } })
+        socketRef.current?.emit('confirm_payment', { tripId: activeRide.id, receiptData: { id: activeRide.id, driver: user?.full_name, total: fare, date: new Date().toLocaleString() } })
         setRideStatus('paid')
     }
 

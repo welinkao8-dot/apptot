@@ -1,39 +1,59 @@
 import {
-    WebSocketGateway,
-    WebSocketServer,
-    SubscribeMessage,
-    OnGatewayConnection,
-    OnGatewayDisconnect,
+  Injectable,
+} from '@nestjs/common';
+import {
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
 } from '@nestjs/websockets';
+import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
-import { Injectable } from '@nestjs/common';
+
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
 @Injectable()
 @WebSocketGateway({
-    cors: {
-        origin: '*',
-    },
-    namespace: 'admin',
+  cors: {
+    origin: process.env.NODE_ENV === 'production'
+      ? allowedOrigins
+      : (allowedOrigins.length ? allowedOrigins : true),
+  },
+  namespace: 'admin',
 })
 export class AdminGateway implements OnGatewayConnection, OnGatewayDisconnect {
-    @WebSocketServer()
-    server: Server;
+  @WebSocketServer()
+  server: Server;
 
-    handleConnection(client: Socket) {
-        console.log(`Admin client connected: ${client.id}`);
-    }
+  constructor(private readonly jwtService: JwtService) {}
 
-    handleDisconnect(client: Socket) {
-        console.log(`Admin client disconnected: ${client.id}`);
+  async handleConnection(client: Socket) {
+    try {
+      const token = client.handshake.auth?.token;
+      if (typeof token !== 'string' || !token) throw new Error('Missing token');
+      const claims = await this.jwtService.verifyAsync<{ sub?: unknown; role?: unknown }>(token);
+      if (typeof claims.sub !== 'string' || claims.role !== 'admin') throw new Error('Invalid actor');
+      client.data.actor = { id: claims.sub, role: 'admin' };
+      await client.join('admins');
+    } catch {
+      client.disconnect(true);
     }
+  }
 
-    // Method to push updates to all connected admins
-    sendToAdmins(event: string, data: any) {
-        this.server.emit(event, data);
-    }
+  handleDisconnect(_client: Socket) {}
 
-    @SubscribeMessage('ping')
-    handlePing(client: Socket) {
-        return { event: 'pong', data: new Date().toISOString() };
+  sendToAdmins(event: string, data: unknown) {
+    this.server.to('admins').emit(event, data);
+  }
+
+  @SubscribeMessage('ping')
+  handlePing(client: Socket) {
+    if (client.data.actor?.role === 'admin') {
+      return { event: 'pong', data: new Date().toISOString() };
     }
+  }
 }

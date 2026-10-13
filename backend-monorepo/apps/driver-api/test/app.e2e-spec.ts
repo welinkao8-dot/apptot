@@ -23,6 +23,7 @@ describe('DriverApiController (e2e)', () => {
 
   beforeAll(() => {
     process.env.JWT_SECRET = 'task-3-e2e-secret';
+    process.env.INTERNAL_SERVICE_TOKEN = 'task-4-internal-service-token';
     jest.useFakeTimers();
   });
 
@@ -105,11 +106,25 @@ describe('DriverApiController (e2e)', () => {
       });
   });
 
-  it('accepts an authenticated admin notification', () => {
-    const token = jwt.sign({ sub: 'admin-a', role: 'admin' });
+  it('rejects a driver status notification without the internal service token', () => {
     return request(app.getHttpServer())
       .post('/notify-driver-status')
-      .set('Authorization', `Bearer ${token}`)
+      .send({ driverId: 'driver-a', status: 'active' })
+      .expect(403);
+  });
+
+  it('rejects a driver status notification with the wrong internal service token', () => {
+    return request(app.getHttpServer())
+      .post('/notify-driver-status')
+      .set('x-internal-service-token', 'wrong-service-token')
+      .send({ driverId: 'driver-a', status: 'active' })
+      .expect(403);
+  });
+
+  it('accepts a driver status notification with the internal service token', () => {
+    return request(app.getHttpServer())
+      .post('/notify-driver-status')
+      .set('x-internal-service-token', 'task-4-internal-service-token')
       .send({ driverId: 'driver-a', status: 'active' })
       .expect(201)
       .expect({ success: true });

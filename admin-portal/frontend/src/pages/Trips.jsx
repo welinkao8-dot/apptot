@@ -60,11 +60,14 @@ export default function Trips({ onBack }) {
     useEffect(() => {
         fetchTrips()
 
-        // WebSocket for real-time updates
-        const socket = io(SOCKET_URL)
-        socket.on('trip_update', () => fetchTrips())
-        socket.on('dashboard_update', () => fetchTrips())
-        return () => socket.disconnect()
+        const socket = io(`${SOCKET_URL}/admin`, { auth: { token: localStorage.getItem('tot_token') } })
+        const recovery = setInterval(() => {
+            fetchTrips()
+        }, 30000)
+        return () => {
+            socket.disconnect()
+            clearInterval(recovery)
+        }
     }, [])
 
     const fetchTrips = async () => {

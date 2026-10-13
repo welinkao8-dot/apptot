@@ -99,7 +99,7 @@ export default function DashboardScreen({ navigation }) {
 
     const setupSocketListeners = () => {
         if (!socket.current || !user) return;
-        socket.current.on('connect', () => { if (user?.id) socket.current.emit('join', { userId: user.id, role: 'driver' }); });
+        socket.current.on('connect', () => { if (user?.id) socket.current.emit('join'); });
         socket.current.on('login_status', (data) => {
             setIsOnline(data.isOnline);
             AsyncStorage.setItem('@tot_is_online', data.isOnline.toString());
@@ -144,7 +144,7 @@ export default function DashboardScreen({ navigation }) {
     useEffect(() => {
         const sub = DeviceEventEmitter.addListener('onLocationUpdate', (loc) => {
             if (!loc?.coords || !socket.current || !user) return;
-            socket.current.emit('update_location', { driverId: user.id, lat: loc.coords.latitude, lng: loc.coords.longitude, activeClientId: activeTrip?.clientId || null });
+            socket.current.emit('update_location', { lat: loc.coords.latitude, lng: loc.coords.longitude });
         });
         return () => sub.remove();
     }, [activeTrip]);
@@ -168,14 +168,14 @@ export default function DashboardScreen({ navigation }) {
         setIsOnline(next);
         AsyncStorage.setItem('@tot_is_online', next.toString());
         ReactNativeHapticFeedback.trigger('impactHeavy', hapticOptions);
-        socket.current?.emit('toggle_online', { userId: user.id, isOnline: next });
+        socket.current?.emit('toggle_online', { isOnline: next });
         if (!next) setRequests([]); else fetchPendingTrips();
     };
 
     const handleAcceptRide = (trip) => {
         if (!user) return;
         ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-        socket.current?.emit('accept_trip', { tripId: trip.id, driverId: user.id, clientId: trip.clientId, driverName: user.full_name });
+        socket.current?.emit('accept_trip', { tripId: trip.id });
         setActiveTrip(trip); setRideStatus('accepted'); setRequests([]);
         AsyncStorage.setItem('@tot_active_trip', JSON.stringify(trip));
         AsyncStorage.setItem('@tot_ride_status', 'accepted');
@@ -184,14 +184,14 @@ export default function DashboardScreen({ navigation }) {
     const handleStartRide = () => {
         if (!activeTrip) return;
         ReactNativeHapticFeedback.trigger('impactHeavy', hapticOptions);
-        socket.current?.emit('start_ride', { tripId: activeTrip.id, clientId: activeTrip.clientId });
+        socket.current?.emit('start_ride', { tripId: activeTrip.id });
         setRideStatus('ongoing'); AsyncStorage.setItem('@tot_ride_status', 'ongoing');
     };
 
     const handleFinishRide = () => {
         if (!activeTrip) return;
         ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-        socket.current?.emit('finish_ride', { tripId: activeTrip.id, clientId: activeTrip.clientId, finalFare: (activeTrip.price || '0').toString() });
+        socket.current?.emit('finish_ride', { tripId: activeTrip.id, finalFare: (activeTrip.price || '0').toString() });
         setRideStatus('finished'); AsyncStorage.setItem('@tot_ride_status', 'finished');
     };
 

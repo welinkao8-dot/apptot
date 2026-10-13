@@ -337,10 +337,14 @@ export class TripsService {
     }
 
     async updateDriverStatus(driverId: string, isOnline: boolean) {
-        return this.prisma.drivers.update({
-            where: { id: driverId },
+        const result = await this.prisma.drivers.updateMany({
+            where: { id: driverId, status: 'active' },
             data: { is_online: isOnline }
         });
+        if (result.count === 0) {
+            throw new ForbiddenException('Apenas motoristas ativos podem alterar a disponibilidade.');
+        }
+        return result;
     }
 
     async getDriverStatus(driverId: string) {

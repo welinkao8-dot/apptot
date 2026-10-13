@@ -38,7 +38,7 @@ import {
     CreditCard
 } from 'lucide-react-native';
 import colors from '../theme/colors';
-import socket from '../services/socket';
+import socket, { setSocketToken } from '../services/socket';
 import api from '../services/api';
 import hereService from '../services/hereService';
 import hereRoutingService from '../services/hereRoutingService';
@@ -49,7 +49,7 @@ import Toast from 'react-native-toast-message';
 const { width, height } = Dimensions.get('window');
 
 export default function DeliveryFlowScreen({ navigation, route }) {
-    const { user } = useAuth();
+    const { user, token } = useAuth();
     const [step, setStep] = useState('home'); // home -> searching_address -> delivery_details -> service_selection ...
     const [loading, setLoading] = useState(false);
     const [destination, setDestination] = useState(null);
@@ -110,12 +110,13 @@ export default function DeliveryFlowScreen({ navigation, route }) {
         }
 
         // Ensure socket is alive and joined
+        setSocketToken(token);
         if (!socket.connected) {
             socket.connect();
         } else if (user) {
-            socket.emit('join', { userId: user.id, role: 'client' });
+            socket.emit('join');
         }
-    }, [route.params?.tripId, route.params?.step]);
+    }, [route.params?.tripId, route.params?.step, token]);
 
     const hydrateFromTrip = async (id) => {
         try {
@@ -147,7 +148,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
                 }
                 // JOIN ROOM correctly with payload expected by server
                 console.log(`📡 [DeliveryFlow] Entrando na sala do cliente: client_${user.id}`);
-                socket.emit('join', { userId: user.id, role: 'client' });
+                socket.emit('join');
             }
         } catch (e) {
             console.error('Error hydrating trip:', e);
@@ -209,7 +210,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
             setTripId(data.tripId);
             setStep('requesting');
             // Room join is usually handled in useEffect or upon login, but ensuring here
-            socket.emit('join', { userId: user.id, role: 'client' });
+            socket.emit('join');
         };
         const onTripAccepted = (data) => { setAcceptedDriver(data.driver); setStep('accepted'); };
         const onRideStarted = () => setStep('ongoing');
@@ -320,7 +321,6 @@ export default function DeliveryFlowScreen({ navigation, route }) {
         if (!selectedService || !destination) return;
 
         const payload = {
-            clientId: user.id,
             userName: user.full_name,
             originAddress: pickupAddress,
             destAddress: destination.name,
@@ -440,7 +440,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
 
                         <View style={styles.waitingActions}>
                             <TouchableOpacity style={styles.cancelBtn} onPress={() => {
-                                socket.emit('cancel_trip', { tripId, userId: user.id });
+                                socket.emit('cancel_trip', { tripId });
                                 resetFlow();
                             }}>
                                 <Text style={styles.cancelText}>Cancelar Pedido</Text>

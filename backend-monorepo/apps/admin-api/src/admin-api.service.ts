@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '@app/database';
 import { AdminGateway } from './admin-api.gateway';
+import { ConfigService } from '@nestjs/config';
+import { requireInternalServiceToken } from '@app/auth';
 
 function publicDriver(driver: any) {
   if (!driver) return driver;
@@ -18,7 +20,8 @@ function publicProfile(profile: any) {
 export class AdminApiService {
   constructor(
     private prisma: PrismaService,
-    private adminGateway: AdminGateway
+    private adminGateway: AdminGateway,
+    private readonly config: ConfigService,
   ) { }
 
   getHello(): string {
@@ -159,7 +162,11 @@ export class AdminApiService {
     }));
   }
 
-  async updateDriverStatus(id: string, status: string, authorization?: string) {
+  async updateDriverStatus(id: string, status: string) {
+    const internalServiceToken = (status === 'suspended' || status === 'active')
+      ? requireInternalServiceToken(this.config)
+      : undefined;
+
     // Update both drivers and profiles tables to keep them in sync
     await this.prisma.drivers.update({
       where: { id: id as any },
@@ -189,16 +196,14 @@ export class AdminApiService {
     // Make HTTP call to Driver API endpoint that triggers WebSocket emission
     if (status === 'suspended' || status === 'active') {
       try {
-        console.log(`🔔 Attempting to notify driver ${id} of status: ${status}`);
         const axios = require('axios');
-        const response = await axios.post(
+        await axios.post(
           'http://localhost:3004/notify-driver-status',
           { driverId: id, status },
-          { headers: { Authorization: authorization } },
+          { headers: { 'x-internal-service-token': internalServiceToken } },
         );
-        console.log(`✅ Successfully notified driver ${id}:`, response.data);
       } catch (error) {
-        console.error(`❌ Failed to notify driver ${id}:`, error.message);
+        console.error('Failed to notify driver status');
       }
     }
 

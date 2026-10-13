@@ -85,9 +85,9 @@ export default function Dashboard({ onNavigate }) {
         fetchServices()
 
         if (user) {
-            socketRef.current = io(SOCKET_URL)
+            socketRef.current = io(SOCKET_URL, { auth: { token: localStorage.getItem('tot_token') } })
             socketRef.current.on('connect', () => {
-                socketRef.current.emit('join', { userId: user.id, role: 'client' })
+                socketRef.current.emit('join')
             })
 
             socketRef.current.on('trip_accepted', (data) => {
@@ -457,7 +457,6 @@ export default function Dashboard({ onNavigate }) {
         setIsRequestingTrip(true)
 
         const tripPayload = {
-            clientId: user.id,
             userName: user.full_name,
             originAddress,
             destAddress,
@@ -483,8 +482,11 @@ export default function Dashboard({ onNavigate }) {
             try {
                 const response = await fetch(`${API_URL}/trips`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ ...tripPayload, userId: user.id })
+                    headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${localStorage.getItem('tot_token')}`,
+                    },
+                    body: JSON.stringify(tripPayload)
                 })
 
                 if (response.ok) {
