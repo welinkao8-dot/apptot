@@ -27,4 +27,16 @@ describe('TripsService', () => {
       data: expect.objectContaining({ quote_id: 'quote-a', estimated_fare: '950.00', client_id: 'client-a' }),
     }));
   });
+
+  it('restores completed trips with a pending payment instead of relying on invoice absence', async () => {
+    const prisma = { trips: { findMany: jest.fn().mockResolvedValue([]) } };
+    const service = new TripsService(prisma as never, {} as never);
+    await service.findActive('client-a');
+    expect(prisma.trips.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        client_id: 'client-a',
+        OR: expect.arrayContaining([{ status: 'completed', trip_payment: { is: { status: 'pending' } } }]),
+      }),
+    }));
+  });
 });

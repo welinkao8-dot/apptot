@@ -4,13 +4,15 @@ import { CreateTripDto } from './dto/create-trip.dto';
 import { RidesGateway } from '../rides/rides.gateway';
 import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
 import type { AuthUser } from '@app/auth';
+import { PaymentsService } from '../payments/payments.service';
 
 @Controller('trips')
 @UseGuards(JwtAuthGuard, RolesGuard)
 export class TripsController {
     constructor(
         private readonly tripsService: TripsService,
-        private readonly ridesGateway: RidesGateway
+        private readonly ridesGateway: RidesGateway,
+        private readonly paymentsService: PaymentsService,
     ) { }
 
     @Post()
@@ -66,5 +68,11 @@ export class TripsController {
     @Roles('driver')
     findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
         return this.tripsService.findOneForDriver(id, user.sub);
+    }
+
+    @Get(':id/payment')
+    @Roles('driver')
+    getPayment(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+        return this.paymentsService.getPaymentForDriver(id, user.sub);
     }
 }

@@ -80,4 +80,14 @@ describe('PaymentsService cash settlement', () => {
     await expect(service.confirmCashPayment('trip-a', 'driver-a', '950.00')).resolves.toEqual(confirmed);
     expect(tx.audit_logs.create).not.toHaveBeenCalled();
   });
+
+  it('lets only the assigned driver read the payment record for timeout recovery', async () => {
+    const prisma = {
+      trips: { findUnique: jest.fn().mockResolvedValue(trip) },
+      trip_payments: { findUnique: jest.fn().mockResolvedValue(pending) },
+    };
+    const service = new PaymentsService(prisma as never);
+    await expect(service.getPaymentForDriver('trip-a', 'driver-a')).resolves.toEqual(pending);
+    await expect(service.getPaymentForDriver('trip-a', 'driver-b')).rejects.toBeInstanceOf(ForbiddenException);
+  });
 });

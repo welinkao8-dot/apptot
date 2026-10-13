@@ -19,20 +19,12 @@ import {
     Info
 } from 'lucide-react-native';
 import colors from '../theme/colors';
-import Toast from 'react-native-toast-message';
+import { isPaymentMethodEnabled } from '../services/paymentMethods';
 
 const { width } = Dimensions.get('window');
 
 export default function PaymentsScreen({ navigation }) {
     
-    const handleAddMethod = () => {
-        Toast.show({
-            type: 'info',
-            text1: 'Brevemente',
-            text2: 'Novos métodos de pagamento estarão disponíveis em breve.'
-        });
-    };
-
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="light-content" backgroundColor={colors.primary} />
@@ -55,8 +47,8 @@ export default function PaymentsScreen({ navigation }) {
                     <View style={styles.infoIconBox}>
                         <ShieldCheck size={28} color={colors.primary} />
                     </View>
-                    <Text style={styles.infoTitle}>Pagamentos Seguros</Text>
-                    <Text style={styles.infoSubtitle}>Gerencie seus métodos de pagamento com total segurança e praticidade.</Text>
+                    <Text style={styles.infoTitle}>Pagamento em dinheiro</Text>
+                    <Text style={styles.infoSubtitle}>Neste momento, o pagamento das viagens é feito em numerário ao motorista.</Text>
                 </View>
 
                 {/* Selected Method Section */}
@@ -79,33 +71,33 @@ export default function PaymentsScreen({ navigation }) {
                 <View style={styles.section}>
                     <Text style={styles.sectionLabel}>OUTROS MÉTODOS</Text>
                     
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.addMethodBtn} 
-                        activeOpacity={0.7}
-                        onPress={handleAddMethod}
+                        activeOpacity={1}
+                        disabled={!isPaymentMethodEnabled('card')}
                     >
                         <View style={styles.addIconBox}>
                             <Plus size={20} color={colors.textMuted} />
                         </View>
-                        <Text style={styles.addText}>Adicionar Novo Cartão</Text>
+                        <View style={styles.methodInfo}><Text style={styles.addText}>Cartão bancário</Text><Text style={styles.methodStatus}>Indisponível nesta versão</Text></View>
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.addMethodBtn} 
-                        activeOpacity={0.7}
-                        onPress={handleAddMethod}
+                        activeOpacity={1}
+                        disabled={!isPaymentMethodEnabled('multicaixa')}
                     >
                         <View style={styles.addIconBox}>
                             <CreditCard size={20} color={colors.textMuted} />
                         </View>
-                        <Text style={styles.addText}>Multicaixa Express</Text>
+                        <View style={styles.methodInfo}><Text style={styles.addText}>Multicaixa Express</Text><Text style={styles.methodStatus}>Indisponível nesta versão</Text></View>
                     </TouchableOpacity>
                 </View>
 
                 {/* Security Note */}
                 <View style={styles.securityNote}>
                     <Info size={16} color={colors.textMuted} />
-                    <Text style={styles.securityText}>Seus dados de pagamento são protegidos por criptografia de ponta a ponta.</Text>
+                    <Text style={styles.securityText}>Cartões e Multicaixa ainda não estão configurados. Escolha numerário como método de pagamento.</Text>
                 </View>
 
                 <View style={{ height: 40 }} />

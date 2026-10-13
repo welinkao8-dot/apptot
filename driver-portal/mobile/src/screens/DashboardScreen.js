@@ -21,6 +21,7 @@ import GoingToClientView from '../components/ride/GoingToClientView';
 import OngoingRideView from '../components/ride/OngoingRideView';
 import AwaitingPaymentView from '../components/ride/AwaitingPaymentView';
 import { formatCurrency } from '../utils/formatters';
+import { emitSocketCommand } from '../services/socketCommands';
 
 const { LocationModule } = NativeModules;
 const { width } = Dimensions.get('window');
@@ -34,6 +35,8 @@ export default function DashboardScreen({ navigation }) {
     const [rideStatus, setRideStatus] = useState('idle');
     const [activeTrip, setActiveTrip] = useState(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isOnlineUpdating, setIsOnlineUpdating] = useState(false);
+    const [isPaymentUpdating, setIsPaymentUpdating] = useState(false);
     const socket = useRef(null);
 
     // Carousel states
@@ -71,24 +74,7 @@ export default function DashboardScreen({ navigation }) {
     }, []);
 
     useEffect(() => {
-        const load = async () => {
-            try {
-                const [so, ss, st] = await Promise.all([
-                    AsyncStorage.getItem('@tot_is_online'),
-                    AsyncStorage.getItem('@tot_ride_status'),
-                    AsyncStorage.getItem('@tot_active_trip'),
-                ]);
-                if (so !== null) {
-                    const online = so === 'true';
-                    setIsOnline(online);
-                    if (online && LocationModule) checkPermissions().then(ok => { if (ok) LocationModule.startLocationUpdates(); });
-                }
-                if (ss) setRideStatus(ss);
-                if (st) setActiveTrip(JSON.parse(st));
-            } catch (e) { console.error(e); }
-            finally { setIsLoading(false); }
-        };
-        load();
+        setIsLoading(false);
     }, []);
 
     useEffect(() => {
@@ -118,9 +104,10 @@ export default function DashboardScreen({ navigation }) {
             setRequests(prev => prev.filter(r => r.id !== data.tripId));
         });
         socket.current.on('restore_ride', (trip) => {
-            setActiveTrip(trip); setRideStatus(trip.status || 'ongoing');
+            const restoredStatus = trip.status === 'completed' ? 'finished' : (trip.status || 'ongoing');
+            setActiveTrip(trip); setRideStatus(restoredStatus);
             AsyncStorage.setItem('@tot_active_trip', JSON.stringify(trip));
-            AsyncStorage.setItem('@tot_ride_status', trip.status || 'ongoing');
+            AsyncStorage.setItem('@tot_ride_status', restoredStatus);
         });
         socket.current.on('trip_cancelled', () => { Toast.show({ type: 'error', text1: 'Corrida cancelada.' }); resetRide(); });
     };
@@ -158,46 +145,65 @@ export default function DashboardScreen({ navigation }) {
     };
 
     const toggleOnline = async () => {
-        if (!user) return;
+        if (!user || isOnlineUpdating) return;
         const next = !isOnline;
+        setIsOnlineUpdating(true);
         if (next) {
             const ok = await checkPermissions();
-            if (!ok) { Toast.show({ type: 'error', text1: 'Permissão de localização necessária.' }); return; }
-            if (LocationModule) LocationModule.startLocationUpdates();
-        } else { if (LocationModule) LocationModule.stopLocationUpdates(); }
-        setIsOnline(next);
-        AsyncStorage.setItem('@tot_is_online', next.toString());
-        ReactNativeHapticFeedback.trigger('impactHeavy', hapticOptions);
-        socket.current?.emit('toggle_online', { isOnline: next });
-        if (!next) setRequests([]); else fetchPendingTrips();
+            if (!ok) { setIsOnlineUpdating(false); Toast.show({ type: 'error', text1: 'Permissão de localização necessária.' }); return; }
+        }
+        try {
+            await emitSocketCommand(socket.current, 'toggle_online', { isOnline: next });
+            setIsOnline(next);
+            await AsyncStorage.setItem('@tot_is_online', next.toString());
+            if (next && LocationModule) LocationModule.startLocationUpdates();
+            if (!next && LocationModule) LocationModule.stopLocationUpdates();
+            ReactNativeHapticFeedback.trigger('impactHeavy', hapticOptions);
+            if (!next) setRequests([]); else fetchPendingTrips();
+        } catch (error) {
+            Toast.show({ type: 'error', text1: 'Não foi possível alterar a disponibilidade', text2: 'Verifique a ligação e tente novamente.' });
+        } finally { setIsOnlineUpdating(false); }
     };
 
-    const handleAcceptRide = (trip) => {
+    const handleAcceptRide = async (trip) => {
         if (!user) return;
-        ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-        socket.current?.emit('accept_trip', { tripId: trip.id });
-        setActiveTrip(trip); setRideStatus('accepted'); setRequests([]);
-        AsyncStorage.setItem('@tot_active_trip', JSON.stringify(trip));
-        AsyncStorage.setItem('@tot_ride_status', 'accepted');
+        try {
+            await emitSocketCommand(socket.current, 'accept_trip', { tripId: trip.id });
+            setActiveTrip(trip); setRideStatus('accepted'); setRequests([]);
+            await AsyncStorage.setItem('@tot_active_trip', JSON.stringify(trip));
+            await AsyncStorage.setItem('@tot_ride_status', 'accepted');
+        } catch { Toast.show({ type: 'error', text1: 'Corrida já não disponível', text2: 'Atualize a lista e tente outra solicitação.' }); }
     };
 
-    const handleStartRide = () => {
+    const handleStartRide = async () => {
         if (!activeTrip) return;
-        ReactNativeHapticFeedback.trigger('impactHeavy', hapticOptions);
-        socket.current?.emit('start_ride', { tripId: activeTrip.id });
-        setRideStatus('ongoing'); AsyncStorage.setItem('@tot_ride_status', 'ongoing');
+        try { await emitSocketCommand(socket.current, 'start_ride', { tripId: activeTrip.id }); setRideStatus('ongoing'); await AsyncStorage.setItem('@tot_ride_status', 'ongoing'); }
+        catch { Toast.show({ type: 'error', text1: 'Não foi possível iniciar a corrida', text2: 'Confirme a ligação e tente novamente.' }); }
     };
 
-    const handleFinishRide = () => {
+    const handleFinishRide = async () => {
         if (!activeTrip) return;
-        ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-        socket.current?.emit('finish_ride', { tripId: activeTrip.id, finalFare: (activeTrip.price || '0').toString() });
-        setRideStatus('finished'); AsyncStorage.setItem('@tot_ride_status', 'finished');
+        try {
+            await emitSocketCommand(socket.current, 'finish_ride', { tripId: activeTrip.id });
+            setRideStatus('finished'); await AsyncStorage.setItem('@tot_ride_status', 'finished');
+        } catch { Toast.show({ type: 'error', text1: 'Não foi possível concluir a corrida', text2: 'O estado será mantido até confirmação do servidor.' }); }
     };
 
-    const handleConfirmPayment = () => {
-        ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-        resetRide(); fetchStats();
+    const handleConfirmPayment = async () => {
+        if (!activeTrip || isPaymentUpdating) return;
+        setIsPaymentUpdating(true);
+        try {
+            await emitSocketCommand(socket.current, 'confirm_cash_payment', { tripId: activeTrip.id, amount: String(activeTrip.final_fare || activeTrip.current_fare || activeTrip.price || '0') });
+            resetRide(); fetchStats();
+        } catch (error) {
+            if (error.code === 'ACK_TIMEOUT' || error.code === 'SOCKET_DISCONNECTED') {
+                try {
+                    const result = await api.get(`/trips/${activeTrip.id}/payment`);
+                    if (result.data?.status === 'confirmed') { resetRide(); fetchStats(); return; }
+                } catch { /* Keep the trip visible until server status can be checked. */ }
+            }
+            Toast.show({ type: 'error', text1: 'Pagamento ainda não confirmado', text2: 'Consulte novamente quando a ligação estiver disponível.' });
+        } finally { setIsPaymentUpdating(false); }
     };
 
     const resetRide = () => {
@@ -209,7 +215,7 @@ export default function DashboardScreen({ navigation }) {
 
     if (rideStatus === 'accepted') return <GoingToClientView user={user} activeTrip={activeTrip} onStartRide={handleStartRide} onOpenMap={() => openNavigationApp(activeTrip?.coords?.lat, activeTrip?.coords?.lng, 'Local de Recolha')} />;
     if (rideStatus === 'ongoing') return <OngoingRideView user={user} activeTrip={activeTrip} onFinishRide={handleFinishRide} onOpenMap={() => openNavigationApp(activeTrip?.destPos?.lat, activeTrip?.destPos?.lng, 'Destino')} />;
-    if (rideStatus === 'finished') return <AwaitingPaymentView user={user} activeTrip={activeTrip} onConfirmPayment={handleConfirmPayment} />;
+    if (rideStatus === 'finished') return <AwaitingPaymentView user={user} activeTrip={activeTrip} onConfirmPayment={handleConfirmPayment} loading={isPaymentUpdating} />;
 
     return (
         <View style={styles.root}>
@@ -363,7 +369,8 @@ export default function DashboardScreen({ navigation }) {
                 
                 <TouchableOpacity 
                     style={[styles.mainToggleBtn, isOnline ? styles.toggleBtnOnline : styles.toggleBtnOffline]} 
-                    onPress={toggleOnline} 
+                    onPress={toggleOnline}
+                    disabled={isOnlineUpdating}
                     activeOpacity={0.9}
                 >
                     <Power size={24} color={isOnline ? '#fff' : colors.text} style={{ marginRight: 8 }} />

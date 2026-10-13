@@ -134,7 +134,10 @@ export class TripsService {
         return sanitizeTrip(await this.prisma.trips.findFirst({
             where: {
                 driver_id: driverId,
-                status: { in: ['accepted', 'ongoing'] }
+                OR: [
+                    { status: { in: ['accepted', 'ongoing'] } },
+                    { status: 'completed', trip_payment: { is: { status: 'pending' } } },
+                ],
             },
             orderBy: { created_at: 'desc' },
             include: {
@@ -149,7 +152,10 @@ export class TripsService {
         return sanitizeTrip(await this.prisma.trips.findFirst({
             where: {
                 client_id: clientId,
-                status: { in: ['requested', 'accepted', 'ongoing'] }
+                OR: [
+                    { status: { in: ['requested', 'accepted', 'ongoing'] } },
+                    { status: 'completed', trip_payment: { is: { status: 'pending' } } },
+                ],
             },
             include: { profiles_trips_driver_idToprofiles: true },
             orderBy: { created_at: 'desc' }
@@ -186,7 +192,7 @@ export class TripsService {
         if (role === 'client') where.client_id = userId;
         else where.driver_id = userId;
 
-        if (status) where.status = status;
+        if (status && status !== 'all') where.status = status;
 
         if (month !== undefined || year !== undefined) {
             const now = new Date();

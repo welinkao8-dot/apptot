@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Post, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, UseGuards, UnauthorizedException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '@app/database';
 import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
@@ -65,6 +65,25 @@ export class AuthController {
         } catch {
             throw new BadRequestException('Não foi possível atualizar os documentos.');
         }
+    }
+
+    @Get('me')
+    @UseGuards(JwtAuthGuard, RolesGuard)
+    @Roles('driver')
+    async me(@CurrentUser() user: AuthUser) {
+        const [profile, driver] = await Promise.all([
+            this.prisma.profiles.findUnique({ where: { id: user.sub }, select: { id: true, status: true } }),
+            this.prisma.drivers.findUnique({ where: { id: user.sub }, select: { status: true, doc_bi_frente: true, doc_bi_verso: true, doc_carta_conducao: true } }),
+        ]);
+        if (!profile || !driver) throw new UnauthorizedException('Perfil de motorista não encontrado.');
+        return {
+            status: driver.status || profile.status,
+            documents: {
+                bi_frente: Boolean(driver.doc_bi_frente),
+                bi_verso: Boolean(driver.doc_bi_verso),
+                carta: Boolean(driver.doc_carta_conducao),
+            },
+        };
     }
 
     @Post('update-profile')

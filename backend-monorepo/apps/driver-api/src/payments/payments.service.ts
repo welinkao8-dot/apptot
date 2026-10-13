@@ -6,6 +6,18 @@ import { PrismaService } from '@app/database';
 export class PaymentsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async getPaymentForDriver(tripId: string, driverId: string) {
+    const trip = await this.prisma.trips.findUnique({
+      where: { id: tripId },
+      select: { id: true, driver_id: true },
+    });
+    if (!trip) throw new NotFoundException('Viagem não encontrada.');
+    if (trip.driver_id !== driverId) throw new ForbiddenException('Apenas o motorista atribuído pode consultar este pagamento.');
+    const payment = await this.prisma.trip_payments.findUnique({ where: { trip_id: tripId } });
+    if (!payment) throw new NotFoundException('Pagamento não encontrado.');
+    return payment;
+  }
+
   async confirmCashPayment(tripId: string, driverId: string, amount: string | number) {
     return this.prisma.$transaction(async (tx) => {
       const trip = await tx.trips.findUnique({

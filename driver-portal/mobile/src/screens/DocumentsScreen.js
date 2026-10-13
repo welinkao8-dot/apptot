@@ -1,4 +1,4 @@
-import React, { useState, useContext } from 'react';
+import React, { useState, useContext, useEffect } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
     ActivityIndicator, Alert, StatusBar, Platform, Image
@@ -8,6 +8,8 @@ import { FileText, Camera, Bell, CheckCircle, AlertCircle, RefreshCw, Eye, Arrow
 import Toast from 'react-native-toast-message';
 import colors from '../theme/colors';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
+import api from '../services/api';
+import { getDocumentReviewStatus } from '../utils/documentReview';
 
 const hapticOptions = {
     enableVibrateFallback: true,
@@ -19,31 +21,29 @@ export default function DocumentsScreen({ navigation }) {
     const [loading, setLoading] = useState(false);
 
     // Document status matching
-    const [docStatus, setDocStatus] = useState({
-        bi_frente: user?.doc_bi_frente ? 'approved' : 'missing',
-        bi_verso: user?.doc_bi_verso ? 'approved' : 'missing',
-        carta: user?.doc_carta_conducao ? 'approved' : 'missing'
-    });
+    const [review, setReview] = useState(null);
+    const [docStatus, setDocStatus] = useState({ bi_frente: 'missing', bi_verso: 'missing', carta: 'missing' });
+
+    const loadReview = async () => {
+        setLoading(true);
+        try {
+            const response = await api.get('/auth/me');
+            const data = response.data;
+            setReview(data);
+            setDocStatus({
+                bi_frente: getDocumentReviewStatus(data.status, data.documents?.bi_frente),
+                bi_verso: getDocumentReviewStatus(data.status, data.documents?.bi_verso),
+                carta: getDocumentReviewStatus(data.status, data.documents?.carta),
+            });
+        } catch {
+            Toast.show({ type: 'error', text1: 'Não foi possível carregar a revisão documental', text2: 'Puxe para atualizar ou tente novamente.' });
+        } finally { setLoading(false); }
+    };
+
+    useEffect(() => { loadReview(); }, []);
 
     const handleUpdateDocs = () => {
-        Alert.alert(
-            "Atualizar Documentos",
-            "Deseja iniciar o processo de re-envio de documentos? Os documentos atuais serão substituídos após a aprovação.",
-            [
-                { text: "Cancelar", style: "cancel" },
-                {
-                    text: "Continuar",
-                    onPress: () => {
-                        ReactNativeHapticFeedback.trigger('impactLight', hapticOptions);
-                        Toast.show({
-                            type: 'info',
-                            text1: 'Módulo de Câmera',
-                            text2: 'O seletor de imagens será aberto na próxima versão.'
-                        });
-                    }
-                }
-            ]
-        );
+        Toast.show({ type: 'info', text1: 'Envio indisponível', text2: 'O envio de documentos ainda não está disponível nesta versão.' });
     };
 
     const getStatusIcon = (status) => {
@@ -82,11 +82,6 @@ export default function DocumentsScreen({ navigation }) {
             </View>
 
             <View style={styles.docActions}>
-                {status === 'approved' && (
-                    <TouchableOpacity style={styles.actionBtn} activeOpacity={0.7}>
-                        <Eye size={18} color={colors.text} />
-                    </TouchableOpacity>
-                )}
                 <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary]} onPress={handleUpdateDocs} activeOpacity={0.8}>
                     <Camera size={18} color="#fff" />
                 </TouchableOpacity>
@@ -121,9 +116,9 @@ export default function DocumentsScreen({ navigation }) {
                     <View style={{ flex: 1 }}>
                         <Text style={styles.infoTitle}>Status da Conta</Text>
                         <Text style={styles.infoDescription}>
-                            {user?.status === 'active'
+                            {review?.status === 'active'
                                 ? 'Seus documentos estão em conformidade. Você está habilitado para receber corridas.'
-                                : 'A sua conta aguarda a validação final da documentação pela nossa equipa administrativa.'}
+                                : loading ? 'A carregar o estado persistido...' : review ? 'A sua conta aguarda a validação da documentação pela equipa administrativa.' : 'Estado documental indisponível. Atualize para consultar novamente.'}
                         </Text>
                     </View>
                 </View>
@@ -145,7 +140,7 @@ export default function DocumentsScreen({ navigation }) {
                 </TouchableOpacity>
 
                 <Text style={styles.footerNote}>
-                    * Certifique-se de que as imagens tiradas estão nítidas e todos os campos visíveis para agilizar a validação.
+                    * O envio e a consulta de imagens ainda não estão disponíveis na aplicação.
                 </Text>
             </ScrollView>
         </View>

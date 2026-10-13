@@ -121,14 +121,15 @@ export class TripsService {
                     { status: { in: ['requested', 'accepted', 'ongoing'] } },
                     {
                         status: 'completed',
-                        invoices: { none: {} }
+                        trip_payment: { is: { status: 'pending' } }
                     }
                 ]
             },
             orderBy: { created_at: 'desc' },
             include: {
                 profiles_trips_driver_idToprofiles: true,
-                invoices: true
+                invoices: true,
+                trip_payment: true,
             }
         });
         return trips.map(sanitizeTrip);

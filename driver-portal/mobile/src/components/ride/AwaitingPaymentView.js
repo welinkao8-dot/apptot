@@ -1,21 +1,12 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Image, ActivityIndicator, Platform } from 'react-native';
 import colors from '../../theme/colors';
 import { User, Bell, CheckCircle, Hourglass, Coins } from 'lucide-react-native';
 import { formatCurrency } from '../../utils/formatters';
 
-export default function AwaitingPaymentView({ user, activeTrip, onConfirmPayment }) {
-    const [loading, setLoading] = useState(false);
+export default function AwaitingPaymentView({ user, activeTrip, onConfirmPayment, loading = false }) {
 
     if (!activeTrip) return null;
-
-    const handleConfirm = () => {
-        setLoading(true);
-        setTimeout(() => {
-            setLoading(false);
-            onConfirmPayment();
-        }, 1200);
-    };
 
     return (
         <View style={styles.root}>
@@ -104,7 +95,7 @@ export default function AwaitingPaymentView({ user, activeTrip, onConfirmPayment
                 <View style={styles.actionContainer}>
                     <TouchableOpacity 
                         style={styles.confirmBtn} 
-                        onPress={handleConfirm} 
+                        onPress={onConfirmPayment}
                         disabled={loading}
                         activeOpacity={0.9}
                     >

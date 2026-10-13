@@ -43,7 +43,7 @@ export default function HistoryScreen() {
     const fetchHistory = async () => {
         if (!user) return;
         try {
-            const res = await api.get(`/trips/history/${user.id}?role=driver&status=all`);
+            const res = await api.get(`/trips/history/${user.id}`);
             setTrips(res.data || []);
         } catch (error) {
             console.error('Error fetching history:', error);
@@ -79,8 +79,8 @@ export default function HistoryScreen() {
                     </View>
                 </View>
                 <View style={styles.cardRight}>
-                    <Text style={styles.tripEarnings}>+ {formatCurrency(item.price || 0)}</Text>
-                    <Text style={styles.tripStatusText}>Concluída</Text>
+                    <Text style={styles.tripEarnings}>+ {formatCurrency(item.final_fare || item.estimated_fare || 0)}</Text>
+                    <Text style={styles.tripStatusText}>{item.status === 'completed' ? 'Concluída' : item.status === 'cancelled' ? 'Cancelada' : item.status}</Text>
                 </View>
             </View>
         );

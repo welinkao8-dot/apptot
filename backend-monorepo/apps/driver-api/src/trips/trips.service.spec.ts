@@ -132,4 +132,41 @@ describe('TripsService trip lifecycle', () => {
       data: { trip_id: 'trip-a', method: 'cash', amount: '1250.00', status: 'pending' },
     });
   });
+
+  it('restores a completed trip that still has an unpaid cash payment for the driver', async () => {
+    const prisma = { trips: { findFirst: jest.fn().mockResolvedValue({ id: 'trip-a' }) } };
+    const service = new TripsService(prisma as never);
+    await service.findActiveByDriver('driver-a');
+    expect(prisma.trips.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        driver_id: 'driver-a',
+        OR: [
+          { status: { in: ['accepted', 'ongoing'] } },
+          { status: 'completed', trip_payment: { is: { status: 'pending' } } },
+        ],
+      },
+    }));
+  });
+
+  it('restores a completed trip that still has an unpaid cash payment for the client socket', async () => {
+    const prisma = { trips: { findFirst: jest.fn().mockResolvedValue({ id: 'trip-a' }) } };
+    const service = new TripsService(prisma as never);
+    await service.findActiveByClient('client-a');
+    expect(prisma.trips.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: {
+        client_id: 'client-a',
+        OR: [
+          { status: { in: ['requested', 'accepted', 'ongoing'] } },
+          { status: 'completed', trip_payment: { is: { status: 'pending' } } },
+        ],
+      },
+    }));
+  });
+
+  it('does not treat the literal all as a persisted trip status filter', async () => {
+    const prisma = { trips: { findMany: jest.fn().mockResolvedValue([]) } };
+    const service = new TripsService(prisma as never);
+    await service.getHistory('driver-a', 'driver', 20, 'all');
+    expect(prisma.trips.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { driver_id: 'driver-a' } }));
+  });
 });
