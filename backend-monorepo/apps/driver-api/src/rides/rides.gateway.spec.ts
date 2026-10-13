@@ -23,6 +23,7 @@ describe('RidesGateway', () => {
     findOneForDriver: jest.fn(),
     cancel: jest.fn(),
     start: jest.fn(),
+    finish: jest.fn().mockResolvedValue({ final_fare: '950.00' }),
     formatTrip: jest.fn((trip) => trip),
   };
   let gateway: RidesGateway;
@@ -74,6 +75,15 @@ describe('RidesGateway', () => {
       .resolves.toEqual({ success: false, error: 'Forbidden' });
 
     expect(trips.start).not.toHaveBeenCalled();
+  });
+
+  it('ignores a driver supplied final fare and uses the persisted trip fare', async () => {
+    const client = socket(jwt.sign({ sub: 'driver-a', role: 'driver' }));
+    client.data.actor = { id: 'driver-a', role: 'driver' };
+    trips.findOneForDriver.mockResolvedValue({ id: 'trip-a', client_id: 'client-a', driver_id: 'driver-a', status: 'ongoing', estimated_fare: '950.00' });
+
+    await expect(gateway.handleFinishRide({ tripId: 'trip-a', finalFare: '1' }, client as never)).resolves.toEqual({ success: true });
+    expect(trips.finish).toHaveBeenCalledWith('trip-a', 'driver-a');
   });
 
   it('keeps client and driver connections separate when their IDs collide', async () => {

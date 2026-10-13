@@ -106,6 +106,7 @@ model trips {
   client_id                          String?          @db.Uuid
   driver_id                          String?          @db.Uuid
   service_config_id                  Int?
+  quote_id                           String?          @unique @db.Uuid
   category                           String?          @default("ride") @db.VarChar(50)
   status                             String?          @default("requested")
   origin_address                     String?
@@ -127,4 +128,29 @@ model trips {
   profiles_trips_client_idToprofiles profiles?        @relation("trips_client_idToprofiles", fields: [client_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   profiles_trips_driver_idToprofiles profiles?        @relation("trips_driver_idToprofiles", fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service_configs                    service_configs? @relation(fields: [service_config_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trip_quotes                        trip_quotes?     @relation(fields: [quote_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+}
+
+model trip_quotes {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  client_id          String    @db.Uuid
+  service_config_id  Int
+  category           String    @db.VarChar(50)
+  origin_address     String
+  origin_lat         Float
+  origin_lng         Float
+  dest_address       String
+  dest_lat           Float
+  dest_lng           Float
+  delivery_info      Json?
+  distance_meters    Int
+  duration_seconds   Int
+  estimated_fare     Decimal   @db.Decimal(10, 2)
+  pricing_snapshot   Json
+  expires_at         DateTime  @db.Timestamptz(6)
+  consumed_at        DateTime? @db.Timestamptz(6)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  trip               trips?
+
+  @@index([client_id, expires_at])
 }

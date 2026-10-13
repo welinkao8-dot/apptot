@@ -1,7 +1,8 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@app/database';
+import { Prisma } from '@prisma/client';
 import { CreateTripDto } from './dto/create-trip.dto';
-import axios from 'axios';
+import { QuotesService } from '../quotes/quotes.service';
 
 function sanitizeTrip(trip: any) {
     if (!trip) return trip;
@@ -24,30 +25,29 @@ function sanitizeTrip(trip: any) {
 
 @Injectable()
 export class TripsService {
-    constructor(private prisma: PrismaService) { }
+    constructor(private prisma: PrismaService, private readonly quotesService: QuotesService) { }
 
     async create(createTripDto: CreateTripDto, userId: string) {
-        // Validation COMPLETELY REMOVED as per user order.
-
-        // 2. Create new
-        const trip = await this.prisma.trips.create({
-            data: {
-                client_id: userId,
-                origin_address: createTripDto.originAddress,
-                dest_address: createTripDto.destAddress,
-                estimated_fare: createTripDto.price,
-                status: 'requested',
-                origin_lat: createTripDto.originLat,
-                origin_lng: createTripDto.originLng,
-                dest_lat: createTripDto.destLat,
-                dest_lng: createTripDto.destLng,
-                service_config_id: createTripDto.serviceConfigId,
-                category: createTripDto.category || 'ride',
-                delivery_info: createTripDto.deliveryInfo || null
-            },
+        return this.prisma.$transaction(async (tx) => {
+            const quote = await this.quotesService.consume(createTripDto.quoteId, userId, tx);
+            return tx.trips.create({
+                data: {
+                    client_id: userId,
+                    origin_address: quote.origin_address,
+                    origin_lat: quote.origin_lat,
+                    origin_lng: quote.origin_lng,
+                    dest_address: quote.dest_address,
+                    dest_lat: quote.dest_lat,
+                    dest_lng: quote.dest_lng,
+                    estimated_fare: quote.estimated_fare,
+                    status: 'requested',
+                    service_config_id: quote.service_config_id,
+                    quote_id: quote.id,
+                    category: quote.category,
+                    delivery_info: (quote.delivery_info ?? undefined) as Prisma.InputJsonValue | undefined,
+                },
+            });
         });
-
-        return trip;
     }
 
     async getHistory(userId: string, limit: number = 20, status?: string, month?: number, year?: number, category?: string) {
@@ -157,11 +157,15 @@ export class TripsService {
 
     async cancel(tripId: string, userId: string) {
         const result = await this.prisma.trips.updateMany({
-            where: { id: tripId, client_id: userId },
+            where: { id: tripId, client_id: userId, status: { in: ['requested', 'accepted'] } },
             data: { status: 'cancelled' }
         });
         if (result.count === 0) {
-            throw new ForbiddenException('Sem permissão para cancelar esta viagem.');
+            const trip = await this.prisma.trips.findUnique({ where: { id: tripId }, select: { id: true, client_id: true } });
+            if (!trip || trip.client_id !== userId) {
+                throw new ForbiddenException('Sem permissão para cancelar esta viagem.');
+            }
+            throw new NotFoundException('Esta viagem já começou ou não pode ser cancelada.');
         }
         return result;
     }

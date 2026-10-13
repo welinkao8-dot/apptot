@@ -218,7 +218,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       if (actor.role === 'client' && trip.client_id !== actor.id) throw new Error('Forbidden');
       if (actor.role === 'driver' && trip.driver_id !== actor.id) throw new Error('Forbidden');
 
-      const cancelledTrip = await this.tripsService.cancel(data.tripId);
+      const cancelledTrip = await this.tripsService.cancel(data.tripId, actor);
       if (cancelledTrip.driver_id) {
         this.server.to(this.room('driver', cancelledTrip.driver_id)).emit(
           actor.role === 'driver' ? 'trip_cancelled_confirmed' : 'trip_cancelled',
@@ -242,7 +242,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   async handleStartRide(@MessageBody() data: { tripId: string }, @ConnectedSocket() client: Socket) {
     try {
       const trip = await this.driverTrip(client, data.tripId, 'accepted');
-      await this.tripsService.start(data.tripId);
+      await this.tripsService.start(data.tripId, trip.driver_id);
       this.server.to(this.room('client', trip.client_id)).emit('ride_started', { tripId: data.tripId });
       return { success: true };
     } catch (error) {
@@ -252,15 +252,15 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('finish_ride')
   async handleFinishRide(
-    @MessageBody() data: { tripId: string; finalFare: string },
+      @MessageBody() data: { tripId: string; finalFare?: string },
     @ConnectedSocket() client: Socket,
   ) {
     try {
       const trip = await this.driverTrip(client, data.tripId, 'ongoing');
-      await this.tripsService.finish(data.tripId, data.finalFare);
+      const completedTrip = await this.tripsService.finish(data.tripId, trip.driver_id);
       this.server.to(this.room('client', trip.client_id)).emit('ride_finished', {
         tripId: data.tripId,
-        finalFare: data.finalFare,
+        finalFare: completedTrip.final_fare,
       });
       return { success: true };
     } catch (error) {
@@ -270,14 +270,13 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('trip_progress')
   async handleTripProgress(
-    @MessageBody() data: { tripId: string; currentFare: number; coords: { lat: number; lng: number } },
+      @MessageBody() data: { tripId: string; coords: { lat: number; lng: number } },
     @ConnectedSocket() client: Socket,
   ) {
     try {
       const trip = await this.driverTrip(client, data.tripId, 'ongoing');
-      await this.tripsService.updateFare(data.tripId, data.currentFare);
       this.server.to(this.room('client', trip.client_id)).emit('trip_update', {
-        currentFare: data.currentFare,
+        currentFare: trip.estimated_fare,
         coords: data.coords,
       });
       return { success: true };

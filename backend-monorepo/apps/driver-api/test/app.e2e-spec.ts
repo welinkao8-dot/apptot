@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import request from 'supertest';
@@ -20,6 +20,11 @@ describe('DriverApiController (e2e)', () => {
       password: 'driver-password', doc_bi_frente: 'front-document',
     },
   };
+  const quote = {
+    id: '3f4b7b62-1d57-4fa8-b6df-8c48e4c9d33a', client_id: 'client-a', consumed_at: null,
+    origin_address: 'Origin', origin_lat: 1, origin_lng: 2, dest_address: 'Destination', dest_lat: 3, dest_lng: 4,
+    estimated_fare: '950.00', service_config_id: 3, category: 'ride', delivery_info: null,
+  };
 
   beforeAll(() => {
     process.env.JWT_SECRET = 'task-3-e2e-secret';
@@ -33,6 +38,13 @@ describe('DriverApiController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue({
+        $transaction: jest.fn((callback) => callback({
+          trip_quotes: {
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+            findUnique: jest.fn().mockResolvedValue(quote),
+          },
+          trips: { create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)) },
+        })),
         trips: {
           findMany: jest.fn().mockResolvedValue([]),
           findUnique: jest.fn().mockImplementation(({ where }) => Promise.resolve(where.id === 'trip-a' ? assignedTrip : trip)),
@@ -44,6 +56,7 @@ describe('DriverApiController (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
     await app.init();
     jwt = app.get(JwtService);
   });
@@ -130,18 +143,25 @@ describe('DriverApiController (e2e)', () => {
       .expect({ success: true });
   });
 
-  it('creates a trip for the authenticated client instead of body clientId', () => {
+  it('creates a trip from a quote for the authenticated client', () => {
     const token = jwt.sign({ sub: 'client-a', role: 'client' });
     return request(app.getHttpServer())
       .post('/trips')
       .set('Authorization', `Bearer ${token}`)
       .send({
-        clientId: 'client-b',
-        originAddress: 'Origin',
-        destAddress: 'Destination',
-        price: '100',
+        quoteId: quote.id,
+        price: '1',
       })
       .expect(201)
-      .expect((response) => expect(response.body).toMatchObject({ client_id: 'client-a' }));
+      .expect((response) => expect(response.body).toMatchObject({ client_id: 'client-a', estimated_fare: '950.00', quote_id: quote.id }));
+  });
+
+  it('rejects a trip request without a valid quote', () => {
+    const token = jwt.sign({ sub: 'client-a', role: 'client' });
+    return request(app.getHttpServer())
+      .post('/trips')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ clientId: 'client-b', originAddress: 'Origin', price: 1 })
+      .expect(400);
   });
 });

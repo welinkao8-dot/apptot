@@ -41,7 +41,6 @@ import colors from '../theme/colors';
 import socket, { setSocketToken } from '../services/socket';
 import api from '../services/api';
 import hereService from '../services/hereService';
-import hereRoutingService from '../services/hereRoutingService';
 import HereMap from '../components/HereMap';
 import { useAuth } from '../context/AuthContext';
 import Toast from 'react-native-toast-message';
@@ -168,7 +167,6 @@ export default function RideFlowScreen({ navigation, route }) {
                     // IF we have map ready, draw it now
                     if (mapReady && mapRef.current) {
                         mapRef.current.setMarkers(origin, { lat: dest.lat, lng: dest.lng });
-                        calculateFares(dest.lat, dest.lng, origin);
                     }
                 }
             } else {
@@ -369,29 +367,32 @@ export default function RideFlowScreen({ navigation, route }) {
         }
     };
 
-    const calculateFares = async (destLat, destLng, customOrigin = null) => {
+    const calculateFares = async (destLat, destLng, customOrigin = null, customDestination = destination, customOriginAddress = pickupAddress) => {
         const origin = customOrigin || pickupCoords;
         if (!origin) return;
 
-        const route = await hereRoutingService.getRoute(origin, { lat: destLat, lng: destLng });
-
-        if (route) {
-            mapRef.current?.drawRoute(route.rawPolyline || route.geometry);
-            const distKm = parseFloat(route.distanceKm);
-            const durMin = route.durationMin;
-
-            const calculated = availableServices
-                .filter(s => s.category === 'ride')
-                .map(service => {
-                    const base = parseFloat(service.base_fare || 0);
-                    const pKm = parseFloat(service.price_per_km || 0);
-                    const pMin = parseFloat(service.price_per_min || 0);
-                    const minFare = parseFloat(service.min_fare || 0);
-                    let total = base + (distKm * pKm) + (durMin * pMin);
-                    total = Math.max(total, minFare);
-                    return { ...service, estimatedPrice: Math.round(total), estimatedTime: Math.ceil(durMin) };
-                });
-            setCalculatedServices(calculated);
+        try {
+        const services = availableServices.filter(s => s.category === 'ride');
+        const response = await api.post('/quotes', {
+                category: 'ride',
+                originAddress: customOriginAddress || 'Localização atual',
+                destAddress: customDestination?.address || customDestination?.name || `${destLat}, ${destLng}`,
+                originLat: origin.lat,
+                originLng: origin.lng,
+                destLat,
+                destLng,
+        });
+        const quoteByService = new Map(response.data.map(quote => [Number(quote.serviceConfigId), quote]));
+        const quotes = services.flatMap(service => {
+            const quote = quoteByService.get(Number(service.id));
+            return quote ? [{ ...service, quoteId: quote.id, estimatedPrice: Number(quote.estimatedFare), estimatedTime: Math.ceil(quote.durationSeconds / 60), routePolyline: quote.routePolyline }] : [];
+        });
+        const firstRoute = quotes.find(service => service.routePolyline)?.routePolyline;
+        if (firstRoute) mapRef.current?.drawRoute(firstRoute);
+        setCalculatedServices(quotes);
+        } catch {
+            setCalculatedServices([]);
+            Toast.show({ type: 'error', text1: 'Cotação indisponível', text2: 'Não foi possível calcular o preço agora.' });
         }
     };
 
@@ -404,7 +405,7 @@ export default function RideFlowScreen({ navigation, route }) {
         if (mapRef.current && pickupCoords) {
             const dest = { lat: item.lat, lng: item.lng };
             mapRef.current.setMarkers(pickupCoords, dest);
-            calculateFares(item.lat, item.lng);
+            calculateFares(item.lat, item.lng, pickupCoords, item, pickupAddress);
         }
     };
 
@@ -453,20 +454,8 @@ export default function RideFlowScreen({ navigation, route }) {
                 socket.connect();
             }
 
-            const payload = {
-                userName: user.full_name,
-                originAddress: pickupAddress,
-                destAddress: destination.name,
-                originLat: pickupCoords.lat,
-                originLng: pickupCoords.lng,
-                destLat: destination.lat,
-                destLng: destination.lng,
-                category: 'ride',
-                price: Number(selectedService.estimatedPrice),
-                estimatedFare: Number(selectedService.estimatedPrice),
-                serviceConfigId: Number(selectedService.id), // Added from backup
-                serviceId: Number(selectedService.id)
-            };
+            if (!selectedService.quoteId) throw new Error('A cotação do serviço não está disponível. Calcule novamente a rota.');
+            const payload = { quoteId: selectedService.quoteId };
 
             console.log('🔵 [RideFlow] Payload:', JSON.stringify(payload, null, 2));
 

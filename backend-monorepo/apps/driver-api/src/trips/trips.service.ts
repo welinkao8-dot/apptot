@@ -1,7 +1,8 @@
 import { Injectable, BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@app/database';
+import { consumeTripQuote, PrismaService } from '@app/database';
 import { CreateTripDto } from './dto/create-trip.dto';
-import { UpdateTripDto } from './dto/update-trip.dto';
+import { Prisma } from '@prisma/client';
+import { tripTransitionSources } from './trip-state';
 
 function sanitizeTrip(trip: any) {
     if (!trip) return trip;
@@ -26,35 +27,29 @@ function sanitizeTrip(trip: any) {
 export class TripsService {
     constructor(private prisma: PrismaService) { }
 
-    async create(createTripDto: CreateTripDto, clientId = createTripDto.clientId) {
-        // Validation COMPLETELY REMOVED as per user order. All requests allowed.
-        const category = createTripDto.category || 'ride';
-        const configId = createTripDto.serviceConfigId || (createTripDto as any).serviceId;
-
-        try {
-            const result = await this.prisma.trips.create({
+    async create(createTripDto: CreateTripDto, clientId: string) {
+        return this.prisma.$transaction(async (tx) => {
+            const quote = await consumeTripQuote(tx, createTripDto.quoteId, clientId);
+            const result = await tx.trips.create({
                 data: {
                     client_id: clientId,
-                    origin_address: createTripDto.originAddress,
-                    origin_lat: createTripDto.originLat,
-                    origin_lng: createTripDto.originLng,
-                    dest_address: createTripDto.destAddress,
-                    dest_lat: createTripDto.destLat,
-                    dest_lng: createTripDto.destLng,
-                    estimated_fare: createTripDto.price?.toString() || (createTripDto as any).estimatedFare?.toString(),
+                    origin_address: quote.origin_address,
+                    origin_lat: quote.origin_lat,
+                    origin_lng: quote.origin_lng,
+                    dest_address: quote.dest_address,
+                    dest_lat: quote.dest_lat,
+                    dest_lng: quote.dest_lng,
+                    estimated_fare: quote.estimated_fare,
                     status: 'requested',
-                    service_config_id: configId,
-                    category: category,
-                    delivery_info: createTripDto.deliveryInfo || null
+                    service_config_id: quote.service_config_id,
+                    quote_id: quote.id,
+                    category: quote.category,
+                    delivery_info: (quote.delivery_info ?? undefined) as Prisma.InputJsonValue | undefined,
                 },
-                include: {
-                    profiles_trips_client_idToprofiles: true
-                }
+                include: { profiles_trips_client_idToprofiles: true },
             });
             return sanitizeTrip(result);
-        } catch {
-            throw new BadRequestException('Não foi possível criar a viagem.');
-        }
+        });
     }
 
     async findOne(id: string) {
@@ -257,7 +252,7 @@ export class TripsService {
 
     async accept(tripId: string, driverId: string) {
         const result = await this.prisma.trips.updateMany({
-            where: { id: tripId, driver_id: null, status: 'requested' },
+            where: { id: tripId, driver_id: null, status: { in: tripTransitionSources('accepted') } },
             data: { driver_id: driverId, status: 'accepted', accepted_at: new Date() }
         });
 
@@ -274,31 +269,41 @@ export class TripsService {
         }));
     }
 
-    async cancel(tripId: string) {
-        return sanitizeTrip(await this.prisma.trips.update({
-            where: { id: tripId },
+    async cancel(tripId: string, actor: { role: 'client' | 'driver'; id: string }) {
+        const ownership = actor.role === 'client' ? { client_id: actor.id } : { driver_id: actor.id };
+        const result = await this.prisma.trips.updateMany({
+            where: { id: tripId, ...ownership, status: { in: tripTransitionSources('cancelled') } },
             data: { status: 'cancelled' },
-            include: { profiles_trips_driver_idToprofiles: true }
+        });
+        if (result.count !== 1) throw new BadRequestException('A viagem não pode ser cancelada neste estado.');
+        return sanitizeTrip(await this.prisma.trips.findUnique({
+            where: { id: tripId },
+            include: { profiles_trips_driver_idToprofiles: true },
         }));
     }
 
-    async start(tripId: string) {
-        return this.prisma.trips.update({
-            where: { id: tripId },
-            data: { status: 'ongoing', started_at: new Date() }
+    async start(tripId: string, driverId: string) {
+        const result = await this.prisma.trips.updateMany({
+            where: { id: tripId, driver_id: driverId, status: { in: tripTransitionSources('ongoing') } },
+            data: { status: 'ongoing', started_at: new Date() },
         });
+        if (result.count !== 1) throw new BadRequestException('A viagem não pode ser iniciada neste estado.');
+        return this.prisma.trips.findUnique({ where: { id: tripId } });
     }
 
-    async finish(tripId: string, finalFare: string) {
-        // Transação atómica: só marca como 'completed' se a fatura for criada com sucesso.
-        // Isso garante que o cliente nunca fica preso em "pagamento pendente" por falta de fatura.
+    async finish(tripId: string, driverId: string) {
         return this.prisma.$transaction(async (tx) => {
-            const trip = await tx.trips.update({
-                where: { id: tripId },
-                data: { status: 'completed', final_fare: finalFare, completed_at: new Date() }
+            const result = await tx.trips.updateMany({
+                where: { id: tripId, driver_id: driverId, status: { in: tripTransitionSources('completed') } },
+                data: { status: 'completed', completed_at: new Date() },
             });
+            if (result.count !== 1) throw new BadRequestException('A viagem não pode ser concluída neste estado.');
+            const trip = await tx.trips.findUnique({ where: { id: tripId } });
+            if (!trip) throw new NotFoundException('Viagem não encontrada.');
+            // The final amount is the persisted server quote; a driver payload cannot change it.
+            await tx.trips.update({ where: { id: tripId }, data: { final_fare: trip.estimated_fare } });
+            trip.final_fare = trip.estimated_fare;
 
-            // Garante que a fatura é criada (idempotente: não duplica se já existir)
             const existingInvoice = await tx.invoices.findFirst({ where: { trip_id: tripId } });
             if (!existingInvoice) {
                 await tx.invoices.create({
@@ -315,13 +320,6 @@ export class TripsService {
         });
     }
 
-    async updateFare(tripId: string, currentFare: number) {
-        return this.prisma.trips.update({
-            where: { id: tripId },
-            data: { final_fare: currentFare.toString() }
-        });
-    }
-
     async cancelOrphanTrips(): Promise<Array<{ tripId: string, clientId: string | null }>> {
         const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
         const orphanTrips = await this.prisma.trips.findMany({
@@ -330,8 +328,11 @@ export class TripsService {
 
         const cancelledIds: Array<{ tripId: string, clientId: string | null }> = [];
         for (const trip of orphanTrips) {
-            await this.cancel(trip.id);
-            cancelledIds.push({ tripId: trip.id, clientId: trip.client_id });
+            const result = await this.prisma.trips.updateMany({
+                where: { id: trip.id, status: 'requested', created_at: { lt: fiveMinutesAgo } },
+                data: { status: 'cancelled' },
+            });
+            if (result.count === 1) cancelledIds.push({ tripId: trip.id, clientId: trip.client_id });
         }
         return cancelledIds;
     }
