@@ -55,8 +55,22 @@ jobs:
         working-directory: client-portal/mobile
         run: npm install --legacy-peer-deps
 
+      - name: Validate release signing secrets
+        env:
+          ANDROID_KEYSTORE_BASE64_CLIENT: ${{ secrets.ANDROID_KEYSTORE_BASE64_CLIENT }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS_CLIENT: ${{ secrets.ANDROID_KEY_ALIAS_CLIENT }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64_CLIENT" || { echo "Missing ANDROID_KEYSTORE_BASE64_CLIENT" >&2; exit 1; }
+          test -n "$ANDROID_KEYSTORE_PASSWORD" || { echo "Missing ANDROID_KEYSTORE_PASSWORD" >&2; exit 1; }
+          test -n "$ANDROID_KEY_ALIAS_CLIENT" || { echo "Missing ANDROID_KEY_ALIAS_CLIENT" >&2; exit 1; }
+          test -n "$ANDROID_KEY_PASSWORD" || { echo "Missing ANDROID_KEY_PASSWORD" >&2; exit 1; }
+
       - name: Decode Keystore
-        run: echo "${{ secrets.ANDROID_KEYSTORE_BASE64_CLIENT }}" | base64 --decode > client-portal/mobile/android/app/release.keystore
+        env:
+          ANDROID_KEYSTORE_BASE64_CLIENT: ${{ secrets.ANDROID_KEYSTORE_BASE64_CLIENT }}
+        run: printf '%s' "$ANDROID_KEYSTORE_BASE64_CLIENT" | base64 --decode > client-portal/mobile/android/app/release.keystore
 
       - name: Build Production AAB (Release)
         working-directory: client-portal/mobile/android

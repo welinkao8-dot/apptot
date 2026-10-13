@@ -1,22 +1,22 @@
-# Guia de Configuração de Segredos (TOTAL)
+# Android release signing
 
-Já gerei as tuas chaves de assinatura binárias (.keystore) e os respetivos códigos Base64 no teu terminal local. Agora só precisas de criar estes 6 segredos no teu GitHub para o build de produção funcionar.
+Release builds must use CI-provided signing material. Never commit keystores, Base64 exports, passwords, aliases, or other signing credentials.
 
-## Valores Prontos para Copiar
+## GitHub Actions secrets
 
-Vai ao teu repositório no GitHub -> **Settings** -> **Secrets and variables** -> **Actions** -> **New repository secret**.
+Configure these repository secrets without placing their values in source files:
 
-| Nome do Segredo | Valor |
-| :--- | :--- |
-| `ANDROID_KEYSTORE_BASE64_CLIENT` | *Copia o conteúdo do ficheiro `client_base64.txt`* |
-| `ANDROID_KEYSTORE_BASE64_DRIVER` | *Copia o conteúdo do ficheiro `driver_base64.txt`* |
-| `ANDROID_KEYSTORE_PASSWORD` | `tot_password_2026` |
-| `ANDROID_KEY_ALIAS_CLIENT` | `client-key-alias` |
-| `ANDROID_KEY_ALIAS_DRIVER` | `driver-key-alias` |
-| `ANDROID_KEY_PASSWORD` | `tot_password_2026` |
+- `ANDROID_KEYSTORE_BASE64_CLIENT`
+- `ANDROID_KEYSTORE_BASE64_DRIVER`
+- `ANDROID_KEYSTORE_PASSWORD`
+- `ANDROID_KEY_ALIAS_CLIENT`
+- `ANDROID_KEY_ALIAS_DRIVER`
+- `ANDROID_KEY_PASSWORD`
 
-> [!NOTE]
-> Os ficheiros `client-release.keystore` e `driver-release.keystore` foram criados na pasta raiz do teu projeto. **Guarda-os bem!** Se os perderes, não conseguirás atualizar o app na Play Store no futuro.
+The client mobile workflow decodes the client keystore and builds an Android App Bundle (`.aab`). Both Android projects require the four `ANDROID_KEYSTORE_*` / `ANDROID_KEY_*` environment variables consumed by Gradle; a release build stops if a required value is blank or the keystore file is missing. Debug builds continue to use the Android debug signing config.
 
----
-**Depois de adicionares estes segredos, podes fazer o `git push` e o Google Play aceitará o teu App Bundle assinado!**
+Run the release configuration checks with `node --test scripts/release-signing.test.cjs`.
+
+Local copies of release keystores and Base64 exports are ignored by Git and remain on disk when removed from the index. Keep them in a secure password manager or approved secret store.
+
+Removing these files from the current Git index does not erase earlier Git history and does not rotate a signing key. Verify the relevant history and Play Store signing state separately before deciding whether a controlled history cleanup or key operation is needed.

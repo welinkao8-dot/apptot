@@ -26,6 +26,9 @@ out/
 .env.*.local
 *.secret
 *.pem
+*-release.keystore
+**/release.keystore
+*_base64.txt
 
 # IDEs
 .idea/
