@@ -4,6 +4,50 @@ import { AdminApiService } from './admin-api.service';
 jest.mock('axios', () => ({ post: jest.fn() }));
 
 describe('AdminApiService', () => {
+  it('reports only persisted confirmed cash payments as realized revenue', async () => {
+    const aggregate = jest.fn()
+      .mockResolvedValueOnce({ _sum: { amount: '100' } })
+      .mockResolvedValueOnce({ _sum: { amount: '20' } })
+      .mockResolvedValueOnce({ _sum: { amount: '45' } });
+    const prisma = {
+      trips: { count: jest.fn().mockResolvedValue(0), aggregate: jest.fn() },
+      drivers: { count: jest.fn().mockResolvedValue(0) },
+      profiles: { count: jest.fn().mockResolvedValue(0) },
+      trip_payments: { aggregate },
+    };
+    const service = new AdminApiService(prisma as never, {} as never, {} as never);
+
+    const result = await service.getDashboardStats();
+    expect(result.totalRevenue).toBe(100);
+    expect(result.todayRevenue).toBe(20);
+    expect(result.monthlyRevenue).toBe(45);
+    expect(prisma.trips.aggregate).not.toHaveBeenCalled();
+    expect(aggregate.mock.calls.every(([query]) => query.where.status === 'confirmed')).toBe(true);
+    expect(aggregate).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ confirmed_at: { gte: expect.any(Date) } }) }));
+  });
+
+  it('loads payment settlement state for admin trip history', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new AdminApiService({ trips: { findMany } } as never, {} as never, {} as never);
+    await service.getAllTrips();
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ include: expect.objectContaining({ trip_payment: true, invoices: true }) }));
+  });
+
+  it('counts only confirmed payments in the admin client paid-trip metric', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = new AdminApiService({ profiles: { findMany } } as never, {} as never, {} as never);
+    await service.getAllClients();
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({
+        _count: expect.objectContaining({
+          select: expect.objectContaining({
+            trips_trips_client_idToprofiles: { where: { trip_payment: { is: { status: 'confirmed' } } } },
+          }),
+        }),
+      }),
+    }));
+  });
+
   it('uses the configured internal service token when notifying the driver API', async () => {
     const log = jest.spyOn(console, 'log').mockImplementation();
     const prisma = {

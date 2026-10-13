@@ -43,6 +43,8 @@ import AuditLogs from './AuditLogs'
 import Invoices from './Invoices'
 import Configs from './Configs'
 import LiveOps from './LiveOps'
+import Payments from './Payments'
+import { bindAdminDashboardEvents, getAdminSocketOptions } from '../services/adminPortalContracts'
 
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
@@ -83,13 +85,13 @@ export default function Dashboard() {
     useEffect(() => {
         fetchDashboardData()
 
-        const socket = io(`${SOCKET_URL}/admin`, { auth: { token: localStorage.getItem('tot_token') } })
+        const socket = io(`${SOCKET_URL}/admin`, getAdminSocketOptions(localStorage.getItem('tot_token')))
 
         socket.on('connect', () => console.log('Connected to Admin Real-time'))
-
-        socket.on('driver_status_updated', () => fetchDashboardData())
-
-
+        const unbindAdminEvents = bindAdminDashboardEvents(socket, {
+            onDriverStatusUpdated: fetchDashboardData,
+            onPricingUpdated: fetchDashboardData,
+        })
 
         const interval = setInterval(() => {
             fetchDashboardData()
@@ -97,6 +99,7 @@ export default function Dashboard() {
 
         return () => {
             socket.disconnect()
+            unbindAdminEvents()
             clearInterval(interval)
         }
     }, [])
@@ -170,6 +173,9 @@ export default function Dashboard() {
                     <button className={`nav-link ${view === 'invoices' ? 'active' : ''}`} onClick={() => { setView('invoices'); setIsMobileMenuOpen(false); }}>
                         <FileText size={20} /> <span className="ml-4">Faturas</span>
                     </button>
+                    <button className={`nav-link ${view === 'payments' ? 'active' : ''}`} onClick={() => { setView('payments'); setIsMobileMenuOpen(false); }}>
+                        <Wallet size={20} /> <span className="ml-4">Pagamentos</span>
+                    </button>
                     <button className={`nav-link ${view === 'auditlogs' ? 'active' : ''}`} onClick={() => { setView('auditlogs'); setIsMobileMenuOpen(false); }}>
                         <ShieldCheck size={20} /> <span className="ml-4">Audit Logs</span>
                     </button>
@@ -215,7 +221,7 @@ export default function Dashboard() {
                                 <div className="admin-stat-card">
                                     <div className="stat-icon pink"><DollarSign size={24} /></div>
                                     <div className="stat-info">
-                                        <span className="label">Receita Acumulada</span>
+                                        <span className="label">Receita recebida este mês</span>
                                         <span className="value truncate">Kz {(stats?.monthlyRevenue || 0).toLocaleString()}</span>
                                     </div>
                                 </div>
@@ -324,10 +330,11 @@ export default function Dashboard() {
                 {view === 'trips' && <Trips onBack={() => setView('overview')} />}
                 {view === 'liveops' && <LiveOps onBack={() => setView('overview')} />}
                 {view === 'invoices' && <Invoices onBack={() => setView('overview')} />}
+                {view === 'payments' && <Payments onBack={() => setView('overview')} />}
                 {view === 'auditlogs' && <AuditLogs onBack={() => setView('overview')} />}
                 {view === 'configs' && <Configs onBack={() => setView('overview')} />}
 
-                {view !== 'overview' && !['drivers', 'clients', 'pricing', 'trips', 'liveops', 'invoices', 'auditlogs', 'configs'].includes(view) && (
+                {view !== 'overview' && !['drivers', 'clients', 'pricing', 'trips', 'liveops', 'invoices', 'payments', 'auditlogs', 'configs'].includes(view) && (
                     <div className="under-construction py-20 text-center text-slate-400">
                         <Settings size={48} className="mx-auto mb-4 animate-spin-slow" />
                         <h2>Módulo {view} em desenvolvimento...</h2>

@@ -13,9 +13,7 @@ import {
     Users,
     Bike,
     Car,
-    RefreshCw,
-    Save,
-    ChevronRight
+    RefreshCw
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
@@ -66,8 +64,6 @@ export default function Configs({ onBack }) {
     const [settings, setSettings] = useState(null)
     const [serviceConfigs, setServiceConfigs] = useState([])
     const [loading, setLoading] = useState(true)
-    const [editedValues, setEditedValues] = useState({})
-    const [savingKey, setSavingKey] = useState(null)
 
     useEffect(() => {
         fetchAll()
@@ -82,7 +78,6 @@ export default function Configs({ onBack }) {
             ])
             if (settingsRes.status === 'fulfilled') {
                 setSettings(settingsRes.value.data)
-                setEditedValues({})
             }
             if (servicesRes.status === 'fulfilled') {
                 setServiceConfigs(Array.isArray(servicesRes.value.data) ? servicesRes.value.data : [])
@@ -94,22 +89,7 @@ export default function Configs({ onBack }) {
         }
     }
 
-    const handleSave = async (key) => {
-        setSavingKey(key)
-        try {
-            // Settings are read-only on backend (derived), just show success feedback
-            await new Promise(r => setTimeout(r, 600)) // simulate save
-            setSettings(prev => ({ ...prev, [key]: editedValues[key] }))
-            setEditedValues(prev => { const n = { ...prev }; delete n[key]; return n })
-            toast.success(`"${SETTING_META[key]?.label}" atualizado!`)
-        } catch {
-            toast.error('Erro ao guardar')
-        } finally {
-            setSavingKey(null)
-        }
-    }
-
-    const getValue = (key) => editedValues[key] !== undefined ? editedValues[key] : (settings?.[key] ?? '')
+    const getValue = (key) => settings?.[key] ?? ''
 
     if (loading) {
         return (
@@ -141,7 +121,7 @@ export default function Configs({ onBack }) {
                         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Settings size={22} style={{ color: '#e91e63' }} /> Configurações da Plataforma
                         </h2>
-                        <p>Parâmetros globais do TOT Angola</p>
+                        <p>Valores informativos fornecidos pela API</p>
                     </div>
                 </div>
                 <button onClick={fetchAll} style={{
@@ -153,6 +133,10 @@ export default function Configs({ onBack }) {
                 </button>
             </div>
 
+
+            <div role="status" style={{ marginTop: 20, padding: 14, borderRadius: 12, background: '#fff7ed', color: '#9a3412' }}>
+                Estes parâmetros ainda não têm persistência configurada. A edição está desativada para evitar alterações que desaparecem ao atualizar.
+            </div>
 
             {/* Settings Groups */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 24 }}>
@@ -177,9 +161,6 @@ export default function Configs({ onBack }) {
                                 const meta = SETTING_META[key]
                                 if (!meta) return null
                                 const currentVal = getValue(key)
-                                const isDirty = editedValues[key] !== undefined
-                                const isSaving = savingKey === key
-
                                 return (
                                     <div key={key}>
                                         <label style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
@@ -190,14 +171,13 @@ export default function Configs({ onBack }) {
                                                 <input
                                                     type={meta.type || 'text'}
                                                     value={currentVal}
-                                                    readOnly={meta.readOnly}
-                                                    onChange={e => !meta.readOnly && setEditedValues(prev => ({ ...prev, [key]: e.target.value }))}
+                                                    readOnly
                                                     style={{
                                                         width: '100%', padding: meta.suffix ? '10px 40px 10px 14px' : '10px 14px',
-                                                        borderRadius: 10, border: isDirty ? '2px solid #e91e63' : '1.5px solid #e2e8f0',
-                                                        fontSize: 14, color: meta.readOnly ? '#94a3b8' : '#0f172a',
-                                                        background: meta.readOnly ? '#f8fafc' : '#fff',
-                                                        cursor: meta.readOnly ? 'not-allowed' : 'text',
+                                                        borderRadius: 10, border: '1.5px solid #e2e8f0',
+                                                        fontSize: 14, color: '#64748b',
+                                                        background: '#f8fafc',
+                                                        cursor: 'not-allowed',
                                                         outline: 'none', boxSizing: 'border-box',
                                                         transition: 'border 0.2s'
                                                     }}
@@ -209,22 +189,6 @@ export default function Configs({ onBack }) {
                                                     }}>{meta.suffix}</span>
                                                 )}
                                             </div>
-                                            {isDirty && !meta.readOnly && (
-                                                <button
-                                                    onClick={() => handleSave(key)}
-                                                    disabled={isSaving}
-                                                    style={{
-                                                        padding: '10px 14px', borderRadius: 10, border: 'none',
-                                                        background: 'linear-gradient(135deg, #e91e63, #c2185b)',
-                                                        color: '#fff', cursor: 'pointer', display: 'flex',
-                                                        alignItems: 'center', gap: 4, fontSize: 12, fontWeight: 700,
-                                                        flexShrink: 0
-                                                    }}
-                                                >
-                                                    {isSaving ? <RefreshCw size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Save size={14} />}
-                                                    Guardar
-                                                </button>
-                                            )}
                                         </div>
                                     </div>
                                 )

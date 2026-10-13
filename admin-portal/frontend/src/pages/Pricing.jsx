@@ -295,7 +295,7 @@ export default function Pricing({ onBack }) {
                                             </label>
                                         </div>
                                         <p className="text-[10px] text-slate-400 mt-2 font-semibold">
-                                            * A imagem será salva automaticamente após o carregamento.
+                                            * A imagem só fica associada ao serviço depois de guardar as alterações.
                                         </p>
                                     </div>
                                 </section>

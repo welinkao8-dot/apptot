@@ -22,10 +22,9 @@ import {
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
-import { io } from 'socket.io-client'
+import { hasReceiptFile } from '../services/adminPortalContracts'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const STATUS_META = {
     requested:  { label: 'Aguardando',  color: '#f59e0b', bg: '#fef3c7', icon: <AlertCircle size={13} />, live: true },
@@ -60,12 +59,10 @@ export default function Trips({ onBack }) {
     useEffect(() => {
         fetchTrips()
 
-        const socket = io(`${SOCKET_URL}/admin`, { auth: { token: localStorage.getItem('tot_token') } })
         const recovery = setInterval(() => {
             fetchTrips()
         }, 30000)
         return () => {
-            socket.disconnect()
             clearInterval(recovery)
         }
     }, [])
@@ -119,7 +116,7 @@ export default function Trips({ onBack }) {
                                 </span>
                             )}
                         </h2>
-                        <p>{filteredTrips.length} corridas · {liveCount} ativas agora</p>
+                        <p>{filteredTrips.length} corridas · {liveCount} ativas · atualização automática a cada 30 segundos</p>
                     </div>
                 </div>
                 <div className="header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -363,9 +360,15 @@ export default function Trips({ onBack }) {
                             </div>
                         </div>
                         <div className="receipt-actions">
-                            <button className="btn-download-receipt" onClick={() => toast.success('Recibo exportado!')}>
-                                <Download size={18} /> Exportar PDF
-                            </button>
+                            {hasReceiptFile(selectedTrip.invoices?.find(invoice => invoice.pdf_url)?.pdf_url) ? (
+                                <a className="btn-download-receipt" href={selectedTrip.invoices.find(invoice => invoice.pdf_url).pdf_url} target="_blank" rel="noopener noreferrer" download>
+                                    <Download size={18} /> Baixar PDF
+                                </a>
+                            ) : (
+                                <button className="btn-download-receipt" disabled title="O backend ainda não gera ficheiros PDF">
+                                    <Download size={18} /> PDF indisponível
+                                </button>
+                            )}
                             <button className="btn-close-receipt" onClick={() => setSelectedTrip(null)}>Fechar</button>
                         </div>
                     </div>

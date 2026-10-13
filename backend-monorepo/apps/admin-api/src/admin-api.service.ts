@@ -155,7 +155,7 @@ export class AdminApiService {
         _count: {
           select: {
             trips_trips_client_idToprofiles: {
-              where: { status: 'completed' }
+              where: { trip_payment: { is: { status: 'confirmed' } } }
             }
           }
         }
@@ -319,42 +319,17 @@ export class AdminApiService {
       where: { role: 'client' }
     });
 
-    // Calculate Total Revenue (completed only, all-time)
-    const revenueData = await this.prisma.trips.aggregate({
-      where: { status: 'completed' },
-      _sum: {
-        final_fare: true,
-      },
-    });
-
-    // Calculate Today's Revenue
+    // Revenue means cash persisted as collected, not merely a completed trip or issued invoice.
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-
-    const todayRevenueData = await this.prisma.trips.aggregate({
-      where: {
-        status: 'completed',
-        created_at: { gte: today },
-      },
-      _sum: {
-        final_fare: true,
-      },
-    });
-
-    // Calculate Monthly Revenue (completed only, current month)
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
-
-    const monthlyRevenueData = await this.prisma.trips.aggregate({
-      where: {
-        status: 'completed',
-        created_at: { gte: startOfMonth },
-      },
-      _sum: {
-        final_fare: true,
-      },
-    });
+    const [revenueData, todayRevenueData, monthlyRevenueData] = await Promise.all([
+      this.prisma.trip_payments.aggregate({ where: { status: 'confirmed' }, _sum: { amount: true } }),
+      this.prisma.trip_payments.aggregate({ where: { status: 'confirmed', confirmed_at: { gte: today } }, _sum: { amount: true } }),
+      this.prisma.trip_payments.aggregate({ where: { status: 'confirmed', confirmed_at: { gte: startOfMonth } }, _sum: { amount: true } }),
+    ]);
 
     // Count Today's Trips (all created today)
     const todayTrips = await this.prisma.trips.count({
@@ -377,23 +352,12 @@ export class AdminApiService {
       totalDrivers,
       onlineDrivers,
       totalClients,
-      totalRevenue: Number(revenueData._sum.final_fare || 0),
-      todayRevenue: Number(todayRevenueData._sum.final_fare || 0),
-      monthlyRevenue: Number(monthlyRevenueData._sum.final_fare || 0),
+      totalRevenue: Number(revenueData._sum.amount || 0),
+      todayRevenue: Number(todayRevenueData._sum.amount || 0),
+      monthlyRevenue: Number(monthlyRevenueData._sum.amount || 0),
       todayTrips,
       totalDeliveries,
     };
-
-    console.log('--- DASHBOARD STATS DEBUG ---');
-    console.log('Total Trips:', totalTrips);
-    console.log('Completed Trips (status="completed"):', completedTrips);
-    console.log('Active Trips:', activeTrips);
-    console.log('Revenue Raw:', revenueData);
-    console.log('Today Revenue Raw:', todayRevenueData);
-    console.log('Monthly Revenue Raw:', monthlyRevenueData);
-    console.log('Today Trips:', todayTrips);
-    console.log('Total Deliveries:', totalDeliveries);
-    console.log('Final Result:', result);
 
     return result;
   }
@@ -406,7 +370,9 @@ export class AdminApiService {
         },
         profiles_trips_driver_idToprofiles: {
           select: { full_name: true, phone: true }
-        }
+        },
+        trip_payment: true,
+        invoices: true,
       },
       orderBy: { created_at: 'desc' }
     });
@@ -465,35 +431,32 @@ export class AdminApiService {
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(today.getDate() - 7);
 
-    // Fetch completed trips from last 7 days
-    const trips = await this.prisma.trips.findMany({
+    // Daily revenue and categories count only persisted, confirmed payment records.
+    const payments = await this.prisma.trip_payments.findMany({
       where: {
-        status: 'completed',
-        created_at: { gte: sevenDaysAgo }
+        status: 'confirmed',
+        confirmed_at: { gte: sevenDaysAgo }
       },
       select: {
-        created_at: true,
-        final_fare: true,
-        category: true, // IMPORTANT: Added to allow grouping
-        service_configs: {
-          select: { vehicle_category: true, service_type: true }
-        }
+        amount: true,
+        confirmed_at: true,
+        trips: { select: { category: true } },
       }
     });
 
     // Process daily revenue
     const dailyRevenue = last7Days.map(date => {
-      const dayTotal = trips
-        .filter(t => t.created_at && t.created_at.toISOString().split('T')[0] === date)
-        .reduce((sum, t) => sum + Number(t.final_fare || 0), 0);
+      const dayTotal = payments
+        .filter(payment => payment.confirmed_at && payment.confirmed_at.toISOString().split('T')[0] === date)
+        .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
       return { date, revenue: dayTotal };
     });
 
     // Category distribution - Corrected to use 'category' field and PT labels
     const categories: { [key: string]: number } = {};
-    trips.forEach(t => {
-      const catVal = (t as any).category || 'ride'; // Map to category field
+    payments.forEach(payment => {
+      const catVal = payment.trips?.category || 'ride';
       const label = catVal === 'delivery' ? 'Entregas' : 'Corridas';
       categories[label] = (categories[label] || 0) + 1;
     });

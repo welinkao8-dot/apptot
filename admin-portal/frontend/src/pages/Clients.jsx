@@ -23,6 +23,7 @@ import {
 } from 'lucide-react'
 import axios from 'axios'
 import toast from 'react-hot-toast'
+import { hasReceiptFile } from '../services/adminPortalContracts'
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
@@ -406,7 +407,7 @@ export default function Clients({ onBack }) {
                         <div className="receipt-modal shadow-2xl" onClick={e => e.stopPropagation()}>
                             <div className="receipt-header">
                                 <FileText size={40} className="mx-auto mb-2 opacity-50" />
-                                <h3>Recibo de Viagem</h3>
+                                <h3>Resumo da viagem</h3>
                                 <p className="text-xs opacity-70">TOT PREMIUM ANGOLA</p>
                             </div>
                             <div className="receipt-body">
@@ -437,14 +438,20 @@ export default function Clients({ onBack }) {
                                 </div>
                                 <div className="receipt-divider"></div>
                                 <div className="receipt-total">
-                                    <span className="total-label">Total Pago</span>
-                                    <span className="total-value">Kz {Number(selectedTrip.final_fare || selectedTrip.estimated_fare || 0).toLocaleString()}</span>
+                                    <span className="total-label">Valor da viagem · {selectedTrip.trip_payment?.status === 'confirmed' ? 'Pagamento confirmado' : 'Pagamento pendente'}</span>
+                                    <span className="total-value">Kz {Number(selectedTrip.trip_payment?.amount || selectedTrip.final_fare || selectedTrip.estimated_fare || 0).toLocaleString()}</span>
                                 </div>
                             </div>
                             <div className="receipt-actions">
-                                <button className="btn-download-receipt" onClick={() => toast.success('Recibo baixado com sucesso!')}>
-                                    <Download size={18} /> Baixar PDF
-                                </button>
+                                {hasReceiptFile(selectedTrip.invoices?.find(invoice => invoice.pdf_url)?.pdf_url) ? (
+                                    <a className="btn-download-receipt" href={selectedTrip.invoices.find(invoice => invoice.pdf_url).pdf_url} target="_blank" rel="noopener noreferrer" download>
+                                        <Download size={18} /> Baixar PDF
+                                    </a>
+                                ) : (
+                                    <button className="btn-download-receipt" disabled title="Não existe ficheiro PDF para esta viagem">
+                                        <Download size={18} /> PDF indisponível
+                                    </button>
+                                )}
                                 <button className="btn-close-receipt" onClick={() => setSelectedTrip(null)}>Fechar</button>
                             </div>
                         </div>
@@ -457,8 +464,8 @@ export default function Clients({ onBack }) {
     // Render profile view
     if (view === 'profile') {
         const totalSpent = clientTrips
-            .filter(t => t.status === 'completed')
-            .reduce((sum, t) => sum + Number(t.final_fare || 0), 0)
+            .filter(t => t.trip_payment?.status === 'confirmed')
+            .reduce((sum, t) => sum + Number(t.trip_payment.amount || 0), 0)
 
         const recentTrips = clientTrips.slice(0, 5)
 

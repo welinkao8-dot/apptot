@@ -383,7 +383,11 @@ export default function Invoices({ onBack }) {
                                 >
                                     <Download size={16} /> Baixar PDF
                                 </a>
-                            ) : null}
+                            ) : (
+                                <span role="status" style={{ flex: 1, padding: 12, color: '#64748b', fontSize: 12, textAlign: 'center' }}>
+                                    Ficheiro PDF indisponível
+                                </span>
+                            )}
                             <button
                                 onClick={() => setSelectedInvoice(null)}
                                 style={{
