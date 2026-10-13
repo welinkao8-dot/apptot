@@ -1,8 +1,10 @@
 import { Module, Global } from '@nestjs/common';
 import { PrismaService } from './prisma.service';
+import { DatabaseHealthController } from './database-health.controller';
 
 @Global()
 @Module({
+  controllers: [DatabaseHealthController],
   providers: [PrismaService],
   exports: [PrismaService],
 })

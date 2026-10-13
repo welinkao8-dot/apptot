@@ -19,6 +19,7 @@ describe('AdminApiController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue({
+        $queryRawUnsafe: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
         drivers: {
           findMany: jest.fn().mockResolvedValue([
             {
@@ -54,6 +55,10 @@ describe('AdminApiController (e2e)', () => {
 
   afterEach(async () => {
     await app.close();
+  });
+
+  it('reports database readiness on the unauthenticated health route', () => {
+    return request(app.getHttpServer()).get('/health').expect(200).expect({ status: 'ok' });
   });
 
   it('rejects an unauthenticated management-list request', () => {

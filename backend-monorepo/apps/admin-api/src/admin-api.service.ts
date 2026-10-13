@@ -186,6 +186,11 @@ export class AdminApiService {
     const internalServiceToken = (status === 'suspended' || status === 'active')
       ? requireInternalServiceToken(this.config)
       : undefined;
+    const driverApiUrl = this.config.get<string>('DRIVER_API_URL')
+      || (process.env.NODE_ENV === 'production' ? undefined : 'http://localhost:3004');
+    if ((status === 'suspended' || status === 'active') && !driverApiUrl) {
+      throw new Error('DRIVER_API_URL must be configured in production.');
+    }
 
     // Update both drivers and profiles tables to keep them in sync
     await this.prisma.drivers.update({
@@ -218,7 +223,7 @@ export class AdminApiService {
       try {
         const axios = require('axios');
         await axios.post(
-          'http://localhost:3004/notify-driver-status',
+          `${driverApiUrl}/notify-driver-status`,
           { driverId: id, status },
           { headers: { 'x-internal-service-token': internalServiceToken } },
         );

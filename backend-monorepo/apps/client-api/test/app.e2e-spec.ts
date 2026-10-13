@@ -31,6 +31,7 @@ describe('ClientApiController (e2e)', () => {
     })
       .overrideProvider(PrismaService)
       .useValue({
+        $queryRawUnsafe: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
         $transaction: jest.fn((callback) => callback({
           trip_quotes: {
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -53,6 +54,10 @@ describe('ClientApiController (e2e)', () => {
 
   afterEach(async () => {
     await app.close();
+  });
+
+  it('reports database readiness on the unauthenticated health route', () => {
+    return request(app.getHttpServer()).get('/health').expect(200).expect({ status: 'ok' });
   });
 
   it('rejects an unauthenticated client trip read', () => {

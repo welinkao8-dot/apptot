@@ -1,48 +1,113 @@
 services:
-  # --- DATABASE ---
   db:
     image: postgres:15-alpine
-    restart: always
+    restart: unless-stopped
     environment:
-      - POSTGRES_USER=${DATABASE_USER:-tot_user}
-      - POSTGRES_PASSWORD=${DATABASE_PASSWORD:-tot_password}
-      - POSTGRES_DB=${DATABASE_NAME:-tot_database}
+      POSTGRES_USER: ${DATABASE_USER:?DATABASE_USER is required}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?DATABASE_PASSWORD is required}
+      POSTGRES_DB: ${DATABASE_NAME:?DATABASE_NAME is required}
     volumes:
       - tot_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
-  # --- BACKEND APIS ---
+  # Run explicitly before deploying a release: docker compose -f docker-compose.prod.yml run --rm migrate
+  migrate:
+    profiles: ["migrations"]
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    command: ["npm", "run", "db:migrate:deploy"]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required and must use host db}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
   admin-api:
     build:
       context: .
       dockerfile: backend.Dockerfile
-    command: [ "npx", "nest", "start", "admin-api", "--prod" ]
+    command: ["node", "dist/apps/admin-api/main.js"]
     environment:
-      - DATABASE_URL=postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}?schema=public
-      - JWT_SECRET=${JWT_SECRET}
+      NODE_ENV: production
+      PORT: "3000"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required and must use host db}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      DRIVER_API_URL: http://driver-api:3004
+      ADMIN_API_URL: ${ADMIN_API_URL:?ADMIN_API_URL is required for public uploads}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
+    ports:
+      - "${ADMIN_API_HOST_PORT:-3000}:3000"
+    volumes:
+      - admin_uploads:/app/backend-monorepo/uploads
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3000/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   client-api:
     build:
       context: .
       dockerfile: backend.Dockerfile
-    command: [ "npx", "nest", "start", "client-api", "--prod" ]
+    command: ["node", "dist/apps/client-api/main.js"]
     environment:
-      - DATABASE_URL=postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}?schema=public
-      - JWT_SECRET=${JWT_SECRET}
+      NODE_ENV: production
+      PORT: "3001"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required and must use host db}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      HERE_ROUTING_API_KEY: ${HERE_ROUTING_API_KEY:?HERE_ROUTING_API_KEY is required for quotes}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
+    ports:
+      - "${CLIENT_API_HOST_PORT:-3001}:3001"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3001/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   driver-api:
     build:
       context: .
       dockerfile: backend.Dockerfile
-    command: [ "npx", "nest", "start", "driver-api", "--prod" ]
+    command: ["node", "dist/apps/driver-api/main.js"]
     environment:
-      - DATABASE_URL=postgresql://${DATABASE_USER}:${DATABASE_PASSWORD}@db:5432/${DATABASE_NAME}?schema=public
-      - JWT_SECRET=${JWT_SECRET}
+      NODE_ENV: production
+      PORT: "3004"
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required and must use host db}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
+    ports:
+      - "${DRIVER_API_HOST_PORT:-3004}:3004"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:3004/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   # --- FRONTEND PORTALS ---
   admin-portal:
@@ -50,28 +115,28 @@ services:
       context: .
       dockerfile: frontend.Dockerfile
       args:
-        - PORTAL_PATH=admin-portal/frontend
-        - VITE_API_URL=${ADMIN_API_URL}
+        PORTAL_PATH: admin-portal/frontend
+        VITE_API_URL: ${ADMIN_API_URL}
 
   client-portal:
     build:
       context: .
       dockerfile: frontend.Dockerfile
       args:
-        - PORTAL_PATH=client-portal/frontend
-        - VITE_API_URL=${CLIENT_API_URL}
-        - VITE_SOCKET_URL=${DRIVER_API_SOCKET_URL}
-        - VITE_HERE_API_KEY=${HERE_API_KEY}
+        PORTAL_PATH: client-portal/frontend
+        VITE_API_URL: ${CLIENT_API_URL}
+        VITE_SOCKET_URL: ${DRIVER_API_SOCKET_URL}
+        VITE_HERE_API_KEY: ${HERE_API_KEY}
 
   driver-portal:
     build:
       context: .
       dockerfile: frontend.Dockerfile
       args:
-        - PORTAL_PATH=driver-portal/frontend
-        - VITE_API_URL=${DRIVER_API_URL}
-        - VITE_SOCKET_URL=${DRIVER_API_SOCKET_URL}
-        - VITE_HERE_API_KEY=${HERE_API_KEY}
+        PORTAL_PATH: driver-portal/frontend
+        VITE_API_URL: ${DRIVER_API_URL}
+        VITE_SOCKET_URL: ${DRIVER_API_SOCKET_URL}
+        VITE_HERE_API_KEY: ${HERE_API_KEY}
 
   # --- INSTITUTIONAL ---
   landing-page:
@@ -80,7 +145,7 @@ services:
       dockerfile: Dockerfile
     ports:
       - "80:80"
-    restart: always
+    restart: unless-stopped
 
   landing-frota:
     build:
@@ -88,7 +153,8 @@ services:
       dockerfile: Dockerfile
     ports:
       - "81:80"
-    restart: always
+    restart: unless-stopped
 
 volumes:
   tot_data:
+  admin_uploads:

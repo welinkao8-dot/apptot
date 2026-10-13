@@ -57,13 +57,13 @@ describe('AdminApiService', () => {
     };
     const adminGateway = { sendToAdmins: jest.fn() };
     jest.mocked(axios.post).mockResolvedValue({ data: { success: true } });
-    const config = { get: jest.fn().mockReturnValue('service-token') };
+    const config = { get: jest.fn((key: string) => key === 'DRIVER_API_URL' ? 'http://driver-api:3004' : 'service-token') };
     const service = new AdminApiService(prisma as never, adminGateway as never, config as never);
 
     await service.updateDriverStatus('driver-a', 'active');
 
     expect(axios.post).toHaveBeenCalledWith(
-      'http://localhost:3004/notify-driver-status',
+      'http://driver-api:3004/notify-driver-status',
       { driverId: 'driver-a', status: 'active' },
       { headers: { 'x-internal-service-token': 'service-token' } },
     );
@@ -86,5 +86,25 @@ describe('AdminApiService', () => {
       .rejects.toThrow('INTERNAL_SERVICE_TOKEN');
 
     expect(prisma.drivers.update).not.toHaveBeenCalled();
+  });
+
+  it('fails before mutation when the production driver service URL is missing', async () => {
+    const previousNodeEnv = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    const prisma = {
+      drivers: { update: jest.fn() },
+      profiles: { update: jest.fn() },
+      audit_logs: { create: jest.fn() },
+    };
+    const service = new AdminApiService(prisma as never, { sendToAdmins: jest.fn() } as never, {
+      get: jest.fn(key => key === 'INTERNAL_SERVICE_TOKEN' ? 'service-token' : undefined),
+    } as never);
+    try {
+      await expect(service.updateDriverStatus('driver-a', 'active')).rejects.toThrow('DRIVER_API_URL');
+      expect(prisma.drivers.update).not.toHaveBeenCalled();
+    } finally {
+      if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previousNodeEnv;
+    }
   });
 });

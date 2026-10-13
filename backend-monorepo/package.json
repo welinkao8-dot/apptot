@@ -14,11 +14,13 @@
     "start:prod": "node dist/apps/backend-monorepo/main",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\" --fix",
     "test": "jest",
+    "test:deployment-config": "node --test scripts/deployment-config.test.cjs",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./apps/backend-monorepo/test/jest-e2e.json",
-    "seed:admin": "node scripts/seed-admin.js"
+    "seed:admin": "node scripts/seed-admin.js",
+    "db:migrate:deploy": "prisma migrate deploy --schema libs/database/prisma/schema.prisma"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
