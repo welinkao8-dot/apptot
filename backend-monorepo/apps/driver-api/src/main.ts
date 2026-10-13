@@ -16,11 +16,8 @@ async function bootstrap() {
 
   // Enable CORS for Frontend Access
   const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
-  if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
-    throw new Error('ALLOWED_ORIGINS must be configured in production.');
-  }
   app.enableCors({
-    origin: allowedOrigins.length ? allowedOrigins : process.env.NODE_ENV !== 'production',
+    origin: allowedOrigins.length ? allowedOrigins : true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
