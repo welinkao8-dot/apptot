@@ -295,14 +295,16 @@ export class TripsService {
         return this.prisma.$transaction(async (tx) => {
             const result = await tx.trips.updateMany({
                 where: { id: tripId, driver_id: driverId, status: { in: tripTransitionSources('completed') } },
-                data: { status: 'completed', completed_at: new Date() },
+                data: { status: 'completed', payment_method: 'cash', completed_at: new Date() },
             });
             if (result.count !== 1) throw new BadRequestException('A viagem não pode ser concluída neste estado.');
             const trip = await tx.trips.findUnique({ where: { id: tripId } });
             if (!trip) throw new NotFoundException('Viagem não encontrada.');
+            const finalFare = trip.estimated_fare;
+            if (!finalFare || new Prisma.Decimal(finalFare).lte(0)) throw new BadRequestException('A viagem não possui uma tarifa confirmada.');
             // The final amount is the persisted server quote; a driver payload cannot change it.
-            await tx.trips.update({ where: { id: tripId }, data: { final_fare: trip.estimated_fare } });
-            trip.final_fare = trip.estimated_fare;
+            await tx.trips.update({ where: { id: tripId }, data: { final_fare: finalFare } });
+            trip.final_fare = finalFare;
 
             const existingInvoice = await tx.invoices.findFirst({ where: { trip_id: tripId } });
             if (!existingInvoice) {
@@ -315,6 +317,15 @@ export class TripsService {
                     }
                 });
             }
+
+            await tx.trip_payments.create({
+                data: {
+                    trip_id: tripId,
+                    method: 'cash',
+                    amount: finalFare,
+                    status: 'pending',
+                },
+            });
 
             return trip;
         });

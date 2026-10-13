@@ -26,11 +26,14 @@ describe('RidesGateway', () => {
     finish: jest.fn().mockResolvedValue({ final_fare: '950.00' }),
     formatTrip: jest.fn((trip) => trip),
   };
+  const payments = {
+    confirmCashPayment: jest.fn().mockResolvedValue({ id: 'payment-a', amount: '950.00' }),
+  };
   let gateway: RidesGateway;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    gateway = new RidesGateway(trips as never, jwt);
+    gateway = new RidesGateway(trips as never, jwt, payments as never);
     gateway.server = { to: jest.fn().mockReturnValue({ emit: jest.fn() }) } as never;
   });
 
@@ -84,6 +87,28 @@ describe('RidesGateway', () => {
 
     await expect(gateway.handleFinishRide({ tripId: 'trip-a', finalFare: '1' }, client as never)).resolves.toEqual({ success: true });
     expect(trips.finish).toHaveBeenCalledWith('trip-a', 'driver-a');
+  });
+
+  it('confirms cash through the payment service before notifying the owning client', async () => {
+    const client = socket(jwt.sign({ sub: 'driver-a', role: 'driver' }));
+    client.data.actor = { id: 'driver-a', role: 'driver' };
+    trips.findOneForDriver.mockResolvedValue({ id: 'trip-a', client_id: 'client-a', driver_id: 'driver-a', status: 'completed' });
+    const emit = jest.fn();
+    gateway.server = { to: jest.fn().mockReturnValue({ emit }) } as never;
+
+    await expect(gateway.handleConfirmCashPayment({ tripId: 'trip-a', amount: '950.00' }, client as never))
+      .resolves.toEqual({ success: true, paymentId: 'payment-a' });
+    expect(payments.confirmCashPayment).toHaveBeenCalledWith('trip-a', 'driver-a', '950.00');
+    expect(gateway.server.to).toHaveBeenCalledWith('client_client-a');
+    expect(emit).toHaveBeenCalledWith('payment_confirmed', { tripId: 'trip-a', amount: '950.00', method: 'cash' });
+  });
+
+  it('rejects a client attempting to confirm a cash payment', async () => {
+    const client = socket(jwt.sign({ sub: 'client-a', role: 'client' }));
+    client.data.actor = { id: 'client-a', role: 'client' };
+    await expect(gateway.handleConfirmCashPayment({ tripId: 'trip-a', amount: '950.00' }, client as never))
+      .resolves.toEqual({ success: false, error: 'Forbidden' });
+    expect(payments.confirmCashPayment).not.toHaveBeenCalled();
   });
 
   it('keeps client and driver connections separate when their IDs collide', async () => {

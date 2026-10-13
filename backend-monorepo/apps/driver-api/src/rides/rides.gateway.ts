@@ -12,6 +12,7 @@ import { OnModuleInit } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { TripsService } from '../trips/trips.service';
 import { CreateTripDto } from '../trips/dto/create-trip.dto';
+import { PaymentsService } from '../payments/payments.service';
 
 type ActorRole = 'client' | 'driver';
 type SocketActor = { id: string; role: ActorRole };
@@ -39,6 +40,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   constructor(
     private readonly tripsService: TripsService,
     private readonly jwtService: JwtService,
+    private readonly paymentsService: PaymentsService,
   ) {}
 
   onModuleInit() {
@@ -263,6 +265,26 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
         finalFare: completedTrip.final_fare,
       });
       return { success: true };
+    } catch (error) {
+      return this.failure(error);
+    }
+  }
+
+  @SubscribeMessage('confirm_cash_payment')
+  async handleConfirmCashPayment(
+    @MessageBody() data: { tripId: string; amount: string | number },
+    @ConnectedSocket() client: Socket,
+  ) {
+    try {
+      const actor = this.requireRole(client, 'driver');
+      const trip = await this.tripsService.findOneForDriver(data.tripId, actor.id);
+      const payment = await this.paymentsService.confirmCashPayment(data.tripId, actor.id, data.amount);
+      this.server.to(this.room('client', trip.client_id)).emit('payment_confirmed', {
+        tripId: trip.id,
+        amount: payment.amount.toString(),
+        method: 'cash',
+      });
+      return { success: true, paymentId: payment.id };
     } catch (error) {
       return this.failure(error);
     }

@@ -68,6 +68,7 @@ model profiles {
   trips_trips_client_idToprofiles trips[]         @relation("trips_client_idToprofiles")
   trips_trips_driver_idToprofiles trips[]         @relation("trips_driver_idToprofiles")
   audit_logs                      audit_logs[]
+  trip_payments_confirmed         trip_payments[] @relation("payment_confirmed_by")
 }
 
 model audit_logs {
@@ -129,6 +130,22 @@ model trips {
   profiles_trips_driver_idToprofiles profiles?        @relation("trips_driver_idToprofiles", fields: [driver_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   service_configs                    service_configs? @relation(fields: [service_config_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
   trip_quotes                        trip_quotes?     @relation(fields: [quote_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  trip_payment                       trip_payments?
+}
+
+model trip_payments {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  trip_id      String    @unique @db.Uuid
+  method       String    @default("cash") @db.VarChar(30)
+  amount       Decimal   @db.Decimal(10, 2)
+  status       String    @default("pending") @db.VarChar(30)
+  confirmed_by String?   @db.Uuid
+  created_at   DateTime  @default(now()) @db.Timestamptz(6)
+  confirmed_at DateTime? @db.Timestamptz(6)
+  trips        trips     @relation(fields: [trip_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  profiles     profiles? @relation("payment_confirmed_by", fields: [confirmed_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([status, created_at])
 }
 
 model trip_quotes {

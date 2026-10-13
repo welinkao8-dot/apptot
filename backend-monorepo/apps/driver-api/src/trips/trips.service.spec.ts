@@ -101,6 +101,7 @@ describe('TripsService trip lifecycle', () => {
         update: jest.fn(),
       },
       invoices: { findFirst: jest.fn().mockResolvedValue({ id: 'invoice-a' }), create: jest.fn() },
+      trip_payments: { create: jest.fn() },
     };
     const prisma = { $transaction: jest.fn((callback) => callback(tx)) };
     const service = new TripsService(prisma as never);
@@ -108,8 +109,27 @@ describe('TripsService trip lifecycle', () => {
     await service.finish('trip-a', 'driver-a', '1');
     expect(tx.trips.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'trip-a', driver_id: 'driver-a', status: { in: ['ongoing'] } },
-      data: expect.objectContaining({ status: 'completed' }),
+      data: expect.objectContaining({ status: 'completed', payment_method: 'cash' }),
     }));
     expect(tx.trips.update).toHaveBeenCalledWith({ where: { id: 'trip-a' }, data: { final_fare: '1250.00' } });
+  });
+
+  it('creates a pending cash payment separately from the invoice when the trip finishes', async () => {
+    const tx = {
+      trips: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUnique: jest.fn().mockResolvedValue({ id: 'trip-a', client_id: 'client-a', estimated_fare: '1250.00', category: 'ride' }),
+        update: jest.fn(),
+      },
+      invoices: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn() },
+      trip_payments: { create: jest.fn() },
+    };
+    const service = new TripsService({ $transaction: jest.fn(callback => callback(tx)) } as never);
+
+    await service.finish('trip-a', 'driver-a');
+    expect(tx.invoices.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: '1250.00' }) }));
+    expect(tx.trip_payments.create).toHaveBeenCalledWith({
+      data: { trip_id: 'trip-a', method: 'cash', amount: '1250.00', status: 'pending' },
+    });
   });
 });

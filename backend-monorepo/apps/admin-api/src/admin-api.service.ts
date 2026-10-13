@@ -87,6 +87,26 @@ export class AdminApiService {
     });
   }
 
+  async getAllPayments() {
+    return this.prisma.trip_payments.findMany({
+      include: {
+        trips: {
+          select: {
+            id: true,
+            category: true,
+            status: true,
+            final_fare: true,
+            created_at: true,
+            profiles_trips_client_idToprofiles: { select: { id: true, full_name: true, phone: true } },
+            profiles_trips_driver_idToprofiles: { select: { id: true, full_name: true, phone: true } },
+          },
+        },
+        profiles: { select: { id: true, full_name: true, role: true } },
+      },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
   async getInvoicesByUser(userId: string) {
     return this.prisma.invoices.findMany({
       where: { user_id: userId },

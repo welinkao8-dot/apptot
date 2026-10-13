@@ -41,6 +41,9 @@ describe('AdminApiController (e2e)', () => {
             },
           ]),
         },
+        trip_payments: {
+          findMany: jest.fn().mockResolvedValue([{ id: 'payment-a', method: 'cash', amount: '950.00', status: 'pending', trips: { id: 'trip-a' }, profiles: null }]),
+        },
       })
       .compile();
 
@@ -55,6 +58,18 @@ describe('AdminApiController (e2e)', () => {
 
   it('rejects an unauthenticated management-list request', () => {
     return request(app.getHttpServer()).get('/admin/drivers').expect(401);
+  });
+
+  it('restricts payment reconciliation to admins and returns settlement status', async () => {
+    await request(app.getHttpServer()).get('/admin/payments').expect(401);
+    const clientToken = jwt.sign({ sub: 'client-a', role: 'client' });
+    await request(app.getHttpServer()).get('/admin/payments').set('Authorization', `Bearer ${clientToken}`).expect(403);
+    const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
+    await request(app.getHttpServer())
+      .get('/admin/payments')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .expect(200)
+      .expect([{ id: 'payment-a', method: 'cash', amount: '950.00', status: 'pending', trips: { id: 'trip-a' }, profiles: null }]);
   });
 
   it('rejects a client token on an admin management route', () => {

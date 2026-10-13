@@ -92,6 +92,11 @@ export class AdminApiController {
     return this.adminApiService.getAllInvoices();
   }
 
+  @Get('payments')
+  getAllPayments() {
+    return this.adminApiService.getAllPayments();
+  }
+
   @Get('invoices/user/:userId')
   getInvoicesByUser(@Param('userId') userId: string) {
     return this.adminApiService.getInvoicesByUser(userId);
