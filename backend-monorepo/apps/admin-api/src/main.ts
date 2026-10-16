@@ -2,14 +2,13 @@ import { NestFactory } from '@nestjs/core';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
 import { AdminApiModule } from './admin-api.module';
+import { ValidationPipe } from '@nestjs/common';
+import { getCorsPolicy } from '@app/auth';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AdminApiModule);
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
-  app.enableCors(allowedOrigins.length ? {
-    origin: allowedOrigins,
-    credentials: true,
-  } : undefined);
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
+  app.enableCors(getCorsPolicy());
 
   // Serve static files from the uploads directory
   app.useStaticAssets(join(__dirname, '..', '..', '..', 'uploads'), {

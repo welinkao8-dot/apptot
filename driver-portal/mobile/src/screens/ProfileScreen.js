@@ -1,18 +1,20 @@
 import React, { useState, useContext } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
-    ActivityIndicator, StatusBar, Image, Switch, Platform
+    StatusBar, Image, Switch, Platform
 } from 'react-native';
 import { AuthContext } from '../context/AuthContext';
 import { 
-    User, Bell, ChevronRight, Settings, Globe, Moon, HelpCircle, 
+    Bell, ChevronRight, Settings, Globe, Moon, HelpCircle,
     ShieldAlert, LogOut, Bike, MapPin, FileText, CheckCircle
 } from 'lucide-react-native';
 import colors from '../theme/colors';
+import { getDriverProfilePresentation } from '../utils/driverProfilePresentation';
 
 export default function ProfileScreen({ navigation }) {
     const { user, logout } = useContext(AuthContext);
     const [darkMode, setDarkMode] = useState(false);
+    const profile = getDriverProfilePresentation(user);
 
     const handleLogout = () => {
         logout();
@@ -61,9 +63,6 @@ export default function ProfileScreen({ navigation }) {
                                 </View>
                             )}
                         </View>
-                        <View style={styles.ratingBadge}>
-                            <Text style={styles.ratingText}>{user?.rating || 4.9} ⭐</Text>
-                        </View>
                     </View>
 
                     <View style={styles.profileInfo}>
@@ -71,12 +70,12 @@ export default function ProfileScreen({ navigation }) {
                         <View style={styles.badgeRow}>
                             <View style={styles.idBadge}>
                                 <Text style={styles.idBadgeText}>
-                                    ID: {user?.id?.substring(0, 5)?.toUpperCase() || '88214'}-AO
+                                    {profile.idLabel}
                                 </Text>
                             </View>
                             <View style={styles.verifiedBadge}>
-                                <CheckCircle size={12} color={colors.primary} style={{ marginRight: 4 }} />
-                                <Text style={styles.verifiedText}>Verificado</Text>
+                                {profile.verified && <CheckCircle size={12} color={colors.primary} style={{ marginRight: 4 }} />}
+                                <Text style={styles.verifiedText}>{profile.verificationLabel}</Text>
                             </View>
                         </View>
                     </View>
@@ -91,7 +90,7 @@ export default function ProfileScreen({ navigation }) {
                         </View>
                         <View>
                             <Text style={styles.vehicleLabel}>Modelo</Text>
-                            <Text style={styles.vehicleValue}>{user?.vehicle_model || 'Honda Winner X'}</Text>
+                            <Text style={styles.vehicleValue}>{profile.vehicleLabel}</Text>
                         </View>
                     </View>
                     
@@ -102,7 +101,7 @@ export default function ProfileScreen({ navigation }) {
                         <View>
                             <Text style={styles.vehicleLabel}>Matrícula</Text>
                             <Text style={styles.vehicleValue}>
-                                LD-{user?.phone?.substring(5, 7) || '92'}-{user?.phone?.substring(7, 9) || '48'}-AO
+                                {profile.plateLabel}
                             </Text>
                         </View>
                     </View>

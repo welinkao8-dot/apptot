@@ -1,0 +1,140 @@
+/* ============================================================================
+   TOT Admin — entrada
+   Uma só coluna. Sai a fotografia de stock do Unsplash a 15% de opacidade,
+   saem as duas colunas e sai o texto de folheto.
+   ========================================================================== */
+
+.login-page {
+    display: flex;
+    min-height: 100dvh;
+    align-items: center;
+    justify-content: center;
+    padding: var(--tot-space-6);
+    background: var(--tot-canvas);
+}
+
+.login-card {
+    display: flex;
+    width: min(100%, 420px);
+    flex-direction: column;
+    gap: var(--tot-space-5);
+    padding: var(--tot-space-8);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-lg);
+    box-shadow: var(--tot-shadow-card);
+}
+
+.login-brand {
+    display: flex;
+    align-items: center;
+    gap: var(--tot-space-3);
+}
+
+.login-brand-mark {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    place-items: center;
+    color: #fff;
+    background: var(--tot-brand-deep);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-xl);
+    font-weight: var(--tot-weight-bold);
+    letter-spacing: -.03em;
+}
+
+.login-brand-copy {
+    display: flex;
+    flex-direction: column;
+}
+
+.login-brand-copy strong {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-xl);
+    font-weight: var(--tot-weight-bold);
+    letter-spacing: -.01em;
+}
+
+.login-brand-copy small {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+}
+
+.login-intro h1 {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-5xl);
+    font-weight: var(--tot-weight-bold);
+    letter-spacing: -.02em;
+}
+
+.login-intro p {
+    margin-top: var(--tot-space-2);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-md);
+    line-height: var(--tot-leading-snug);
+}
+
+.login-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tot-space-4);
+}
+
+.login-error {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tot-space-2);
+    padding: var(--tot-space-3);
+    color: var(--tot-cancelled);
+    background: var(--tot-cancelled-bg);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+}
+
+/* Espaço para o botão de mostrar/ocultar não tapar o texto escrito. */
+.login-form .input-wrapper input {
+    padding-right: var(--tot-space-8);
+}
+
+.login-password-toggle {
+    position: absolute;
+    right: var(--tot-space-2);
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    align-items: center;
+    justify-content: center;
+    color: var(--tot-muted);
+    background: none;
+    border: 0;
+    border-radius: var(--tot-radius-md);
+    cursor: pointer;
+}
+
+.login-password-toggle:hover {
+    color: var(--tot-ink);
+    background: var(--tot-surface-2);
+}
+
+.login-footer {
+    padding-top: var(--tot-space-4);
+    border-top: 1px solid var(--tot-line);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    text-align: center;
+}
+
+@media (max-width: 520px) {
+    .login-card {
+        padding: var(--tot-space-5);
+        border: 0;
+        box-shadow: none;
+    }
+
+    .login-intro h1 {
+        font-size: var(--tot-text-4xl);
+    }
+}

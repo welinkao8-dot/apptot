@@ -29,6 +29,7 @@ import colors from '../theme/colors';
 import hereService from '../services/hereService';
 import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
 
 const { width, height } = Dimensions.get('window');
 
@@ -122,7 +123,7 @@ export default function DashboardScreen({ navigation }) {
                     }
 
                 } catch (error) {
-                    console.error('❌ [Dashboard] Erro ao sincronizar estados:', error);
+                    console.error('❌ [Dashboard] Erro ao sincronizar estados:', toSafeErrorLog(error));
                 }
             };
             checkActiveStates();

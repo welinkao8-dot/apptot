@@ -23,26 +23,41 @@ import {
     ChevronRight,
     MapPin
 } from 'lucide-react'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
 import HereMap from '../components/HereMap'
+import { formatLocationAge, resolveDriverLocation } from '../services/driverLocation'
+import StatusReasonDialog from '../components/StatusReasonDialog'
+import { buildDriversQuery, createRequestSequence, loadDriversPage, normalizeDriverTripsPage } from '../services/adminDriversList'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export default function Drivers({ onBack }) {
     const [drivers, setDrivers] = useState([])
+    const [driversTotal, setDriversTotal] = useState(0)
     const [loading, setLoading] = useState(true)
+    const [driversError, setDriversError] = useState(false)
+    const driversRequest = useRef(createRequestSequence())
     const [filter, setFilter] = useState('all')
     const [searchTerm, setSearchTerm] = useState('')
     const [selectedDriver, setSelectedDriver] = useState(null)
-    const [isVerifying, setIsVerifying] = useState(false)
+    const [statusAction, setStatusAction] = useState(null)
+    const [statusPending, setStatusPending] = useState(false)
     const [showMap, setShowMap] = useState(false)
     const [driverLocation, setDriverLocation] = useState(null)
+    const [isLocationLoading, setIsLocationLoading] = useState(false)
+    const [documentsLoading, setDocumentsLoading] = useState(false)
+    const [documentsError, setDocumentsError] = useState(false)
+    const [vehicleCategoryDraft, setVehicleCategoryDraft] = useState('')
+    const [vehicleCategorySaving, setVehicleCategorySaving] = useState(false)
 
     // Sub-views and stats states
     const [view, setView] = useState('list') // 'list' | 'profile'
     const [allTrips, setAllTrips] = useState([])
     const [tripsLoading, setTripsLoading] = useState(false)
+    const [tripsError, setTripsError] = useState(false)
+    const tripsRequestId = useRef(0)
+    const [driverTripsTotal, setDriverTripsTotal] = useState(0)
+    const [driverTripsEarnings, setDriverTripsEarnings] = useState(0)
     const [currentPage, setCurrentPage] = useState(1)
     const itemsPerPage = 10
 
@@ -52,84 +67,157 @@ export default function Drivers({ onBack }) {
 
     useEffect(() => {
         fetchDrivers()
-    }, [])
+        return () => { driversRequest.current.invalidate() }
+    }, [currentPage, filter, searchTerm])
 
     const fetchDrivers = async () => {
+        const requestId = driversRequest.current.begin()
         try {
             setLoading(true)
-            const res = await axios.get(`${API_URL}/admin/drivers`)
-            console.log('🔍 DRIVERS API RESPONSE:', res.data)
-            console.log('🔍 Is Array?', Array.isArray(res.data))
-            console.log('🔍 Length:', res.data?.length)
-            setDrivers(Array.isArray(res.data) ? res.data : [])
+            setDriversError(false)
+            const query = buildDriversQuery({ page: currentPage, pageSize: itemsPerPage, status: filter, search: searchTerm })
+            const result = await loadDriversPage(adminApi, query)
+            if (!driversRequest.current.isCurrent(requestId)) return
+            setDrivers(result.items)
+            setDriversTotal(result.total)
         } catch (error) {
+            if (!driversRequest.current.isCurrent(requestId)) return
             console.error('❌ Error fetching drivers:', error)
-            toast.error('Erro ao carregar motoristas')
+            setDriversError(true)
             setDrivers([])
+            setDriversTotal(0)
         } finally {
-            setLoading(false)
+            if (driversRequest.current.isCurrent(requestId)) setLoading(false)
         }
     }
 
-    const fetchTrips = async () => {
+    const fetchTrips = async (driverId) => {
+        const requestId = ++tripsRequestId.current
         try {
             setTripsLoading(true)
-            const res = await axios.get(`${API_URL}/admin/trips`)
-            setAllTrips(res.data || [])
+            setTripsError(false)
+            const res = await adminApi.get(`/admin/drivers/${encodeURIComponent(driverId)}/trips`, { params: { page: 1, limit: 20 } })
+            const result = normalizeDriverTripsPage(res.data)
+            if (requestId !== tripsRequestId.current) return
+            setAllTrips(result.items)
+            setDriverTripsTotal(result.total)
+            setDriverTripsEarnings(result.summary.completedEarnings)
         } catch (error) {
+            if (requestId !== tripsRequestId.current) return
             console.error('Error fetching trips:', error)
-            toast.error('Erro ao carregar histórico de corridas')
+            setAllTrips([])
+            setDriverTripsTotal(0)
+            setDriverTripsEarnings(0)
+            setTripsError(true)
         } finally {
-            setTripsLoading(false)
+            if (requestId === tripsRequestId.current) setTripsLoading(false)
         }
     }
 
     const handleViewProfile = async (driver) => {
         setSelectedDriver(driver)
+        setVehicleCategoryDraft(driver.vehicle_category || '')
         setView('profile')
-        await fetchTrips()
+        fetchDriverDocuments(driver.id)
+        await fetchTrips(driver.id)
     }
 
-    const handleUpdateStatus = async (id, status) => {
+    const handleUpdateVehicleCategory = async () => {
+        if (!selectedDriver || !['car', 'moto', 'truck'].includes(vehicleCategoryDraft)) return
+        setVehicleCategorySaving(true)
         try {
-            await axios.post(`${API_URL}/admin/drivers/${id}/status`, { status })
-            fetchDrivers()
+            const response = await adminApi.post(`/admin/drivers/${encodeURIComponent(selectedDriver.id)}/vehicle-category`, { vehicle_category: vehicleCategoryDraft })
+            setSelectedDriver(response.data)
+            setDrivers(current => current.map(driver => driver.id === response.data.id ? { ...driver, ...response.data } : driver))
+            toast.success('Categoria de veículo atualizada. Motorista colocado offline.')
+        } catch (error) {
+            toast.error(error.response?.data?.message || 'Erro ao atualizar categoria do veículo')
+        } finally {
+            setVehicleCategorySaving(false)
+        }
+    }
+
+    const fetchDriverDocuments = async (driverId) => {
+        setDocumentsLoading(true)
+        setDocumentsError(false)
+        try {
+            const response = await adminApi.get(`/admin/drivers/${encodeURIComponent(driverId)}/documents`)
+            setSelectedDriver(current => current?.id === driverId ? { ...current, ...response.data } : current)
+        } catch (error) {
+            console.error('Error fetching driver documents:', error)
+            setDocumentsError(true)
+        } finally {
+            setDocumentsLoading(false)
+        }
+    }
+
+    const handleShowDriverLocation = async (driver) => {
+        setSelectedDriver(driver)
+        setVehicleCategoryDraft(driver.vehicle_category || '')
+        setDriverLocation(null)
+        setIsLocationLoading(true)
+        setView('profile')
+        setShowMap(true)
+        fetchDriverDocuments(driver.id)
+        fetchTrips(driver.id)
+        try {
+            const response = await adminApi.get(`/admin/drivers/${encodeURIComponent(driver.id)}`)
+            const currentDriver = response.data
+            setSelectedDriver(currentDriver)
+            setVehicleCategoryDraft(currentDriver.vehicle_category || '')
+            setDriverLocation(resolveDriverLocation(currentDriver))
+        } catch (error) {
+            console.error('Error fetching driver location:', error)
+            setDriverLocation({ state: 'error', position: null, updatedAt: null, ageMs: null })
+        } finally {
+            setIsLocationLoading(false)
+        }
+    }
+
+    const handleUpdateStatus = async (id, status, reason) => {
+        setStatusPending(true)
+        try {
+            await adminApi.post(`/admin/drivers/${encodeURIComponent(id)}/status`, { status, reason })
+            await fetchDrivers()
             toast.success(`Status atualizado com sucesso`)
-            setIsVerifying(false)
             setSelectedDriver(prev => prev ? { ...prev, status } : null)
+            setStatusAction(null)
         } catch (error) {
             toast.error('Erro ao atualizar status')
+            throw error
+        } finally {
+            setStatusPending(false)
         }
     }
 
-    const handleToggleStatus = async (id, action) => {
+    const handleToggleStatus = async (id, action, reason) => {
+        setStatusPending(true)
         try {
-            await axios.post(`${API_URL}/admin/drivers/${id}/toggle-status`, { action })
-            fetchDrivers()
+            await adminApi.post(`/admin/drivers/${encodeURIComponent(id)}/toggle-status`, { action, reason })
+            await fetchDrivers()
             toast.success('Estado da conta alterado')
-            setIsVerifying(false)
             const newStatus = action === 'activate' ? 'active' : 'suspended';
             setSelectedDriver(prev => prev ? { ...prev, status: newStatus } : null)
+            setStatusAction(null)
         } catch (error) {
             toast.error('Erro ao alterar estado')
+            throw error
+        } finally {
+            setStatusPending(false)
         }
     }
 
-    const filteredDrivers = (Array.isArray(drivers) ? drivers : []).filter(d => {
-        const matchesFilter = filter === 'all' || d.status === filter
-        const nameMatch = d.full_name?.toLowerCase().includes(searchTerm.toLowerCase())
-        const phoneMatch = d.phone?.includes(searchTerm)
-        return matchesFilter && (nameMatch || phoneMatch)
-    })
+    const paginatedDrivers = drivers
+    const filteredDriverCount = driversTotal
+    const totalPages = Math.ceil(driversTotal / itemsPerPage)
 
-    const totalPages = Math.ceil(filteredDrivers.length / itemsPerPage)
-    const paginatedDrivers = filteredDrivers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+    useEffect(() => {
+        if (currentPage > Math.max(totalPages, 1)) setCurrentPage(Math.max(totalPages, 1))
+    }, [currentPage, totalPages])
 
     // Calculate driver stats for profile page
-    const driverTrips = selectedDriver ? allTrips.filter(t => t.driver_id === selectedDriver.id) : []
-    const totalEarnings = driverTrips
-        .filter(t => t.status === 'completed')
-        .reduce((sum, t) => sum + Number(t.final_fare || 0), 0)
+    const driverTrips = selectedDriver ? allTrips : []
+    const totalEarnings = driverTripsEarnings
     const recentTrips = driverTrips.slice(0, 5)
 
     if (view === 'profile' && selectedDriver) {
@@ -145,7 +233,7 @@ export default function Drivers({ onBack }) {
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '24px', alignItems: 'start', marginTop: '24px' }}>
+                <div className="driver-profile-layout">
                     {/* Left Column: Personal info & actions */}
                     <div style={{ background: '#ffffff', borderRadius: '28px', padding: '28px', boxShadow: '0 10px 40px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
                         <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', marginBottom: '16px', boxShadow: '0 8px 24px rgba(233,30,99,0.3)', position: 'relative' }}>
@@ -180,20 +268,33 @@ export default function Drivers({ onBack }) {
                                     {selectedDriver.is_online ? 'TRABALHANDO ONLINE' : 'DESLIGADO / OFFLINE'}
                                 </span>
                             </div>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px' }}>
+                                <label htmlFor="driver-vehicle-category" style={{ fontWeight: 700, color: '#475569' }}>Categoria para despacho</label>
+                                <select id="driver-vehicle-category" value={vehicleCategoryDraft} onChange={event => setVehicleCategoryDraft(event.target.value)} style={{ minHeight: 40, border: '1px solid #cbd5e1', borderRadius: 8, padding: '0 10px', background: '#fff' }}>
+                                    <option value="">Por classificar</option>
+                                    <option value="moto">Motorizada</option>
+                                    <option value="car">Carro</option>
+                                    <option value="truck">Camião</option>
+                                </select>
+                                <button type="button" disabled={vehicleCategorySaving || !vehicleCategoryDraft} onClick={handleUpdateVehicleCategory} style={{ minHeight: 40, border: 0, borderRadius: 8, background: vehicleCategorySaving || !vehicleCategoryDraft ? '#cbd5e1' : '#e91e63', color: '#fff', fontWeight: 800, cursor: vehicleCategorySaving || !vehicleCategoryDraft ? 'not-allowed' : 'pointer' }}>
+                                    {vehicleCategorySaving ? 'A guardar…' : 'Guardar categoria'}
+                                </button>
+                                <small style={{ color: '#64748b', lineHeight: 1.4 }}>Motoristas sem categoria não recebem ofertas. Alterar a categoria coloca o motorista offline.</small>
+                            </div>
                         </div>
 
                         <div style={{ width: '100%', marginTop: '24px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                             {selectedDriver.status === 'pending' ? (
                                 <>
                                     <button
-                                        onClick={() => handleUpdateStatus(selectedDriver.id, 'active')}
+                                        onClick={() => setStatusAction({ type: 'status', status: 'active' })}
                                         style={{ width: '100%', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13px', fontWeight: '800', borderRadius: '12px', border: 'none', cursor: 'pointer', color: 'white', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', boxShadow: '0 4px 12px rgba(16,185,129,0.2)' }}
                                     >
                                         <CheckCircle2 size={18} />
                                         <span>APROVAR CADASTRO</span>
                                     </button>
                                     <button
-                                        onClick={() => handleUpdateStatus(selectedDriver.id, 'rejected')}
+                                        onClick={() => setStatusAction({ type: 'status', status: 'rejected' })}
                                         style={{ width: '100%', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13px', fontWeight: '800', borderRadius: '12px', border: 'none', cursor: 'pointer', color: 'white', background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', boxShadow: '0 4px 12px rgba(239,68,68,0.2)' }}
                                     >
                                         <XCircle size={18} />
@@ -204,8 +305,7 @@ export default function Drivers({ onBack }) {
                                 <>
                                     <button
                                         onClick={() => {
-                                            setDriverLocation([-8.839 + (Math.random() - 0.5) * 0.01, 13.289 + (Math.random() - 0.5) * 0.01])
-                                            setShowMap(true)
+                                            handleShowDriverLocation(selectedDriver)
                                         }}
                                         style={{ width: '100%', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13px', fontWeight: '800', borderRadius: '12px', border: '1px solid #e91e63', cursor: 'pointer', color: '#e91e63', background: 'transparent' }}
                                     >
@@ -213,7 +313,7 @@ export default function Drivers({ onBack }) {
                                         <span>VER LOCALIZAÇÃO</span>
                                     </button>
                                     <button
-                                        onClick={() => handleToggleStatus(selectedDriver.id, 'deactivate')}
+                                        onClick={() => setStatusAction({ type: 'toggle', action: 'deactivate' })}
                                         style={{ width: '100%', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '13px', fontWeight: '800', borderRadius: '12px', border: 'none', cursor: 'pointer', color: 'white', background: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)', boxShadow: '0 4px 12px rgba(239,68,68,0.2)' }}
                                     >
                                         <XCircle size={18} />
@@ -222,7 +322,7 @@ export default function Drivers({ onBack }) {
                                 </>
                             ) : (
                                 <button
-                                    onClick={() => handleToggleStatus(selectedDriver.id, 'activate')}
+                                    onClick={() => setStatusAction({ type: 'toggle', action: 'activate' })}
                                     style={{ width: '100%', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', fontSize: '14px', fontWeight: '800', borderRadius: '14px', border: 'none', cursor: 'pointer', color: 'white', background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', boxShadow: '0 6px 18px rgba(16,185,129,0.3)' }}
                                 >
                                     <CheckCircle2 size={18} />
@@ -242,7 +342,7 @@ export default function Drivers({ onBack }) {
                                 </div>
                                 <div>
                                     <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total de Corridas</span>
-                                    <span style={{ fontSize: '26px', fontWeight: '900', lineHeight: '1.1' }}>{driverTrips.length}</span>
+                                    <span style={{ fontSize: '26px', fontWeight: '900', lineHeight: '1.1' }}>{driverTripsTotal}</span>
                                 </div>
                             </div>
                             <div style={{ background: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)', borderRadius: '24px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 8px 24px rgba(233,30,99,0.2)', color: 'white' }}>
@@ -260,14 +360,17 @@ export default function Drivers({ onBack }) {
                                 </div>
                                 <div>
                                     <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Classificação</span>
-                                    <span style={{ fontSize: '26px', fontWeight: '900', lineHeight: '1.1' }}>{Number(selectedDriver.rating || 5.0).toFixed(1)} ★</span>
+                                    <span style={{ fontSize: '16px', fontWeight: '800', lineHeight: '1.1' }}>Sem avaliações</span>
                                 </div>
                             </div>
                         </div>
 
                         {/* Credentials Card */}
                         <div style={{ background: '#ffffff', borderRadius: '28px', padding: '24px', boxShadow: '0 10px 40px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9' }}>
-                            <h3 style={{ margin: '0 0 18px 0', fontSize: '16px', fontWeight: '900', color: '#1e293b' }}>Documentos e Credenciais</h3>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+                                <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '900', color: '#1e293b' }}>Documentos e Credenciais</h3>
+                                {documentsError && <button type="button" onClick={() => fetchDriverDocuments(selectedDriver.id)}>Tentar carregar documentos</button>}
+                            </div>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
                                 {[
                                     { key: 'doc_bi_frente', label: 'BI Frente' },
@@ -277,7 +380,9 @@ export default function Drivers({ onBack }) {
                                     <div key={doc.key} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '14px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                         <span style={{ fontSize: '11px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{doc.label}</span>
                                         <div style={{ height: '220px', background: '#f1f5f9', borderRadius: '12px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed #cbd5e1' }}>
-                                            {selectedDriver[doc.key] ? (
+                                            {documentsLoading && !selectedDriver[doc.key] ? (
+                                                <span style={{ color: '#64748b', fontSize: 12 }}>A carregar…</span>
+                                            ) : selectedDriver[doc.key] ? (
                                                 selectedDriver[doc.key].toLowerCase().endsWith('.pdf') ? (
                                                     <iframe
                                                         src={selectedDriver[doc.key]}
@@ -288,7 +393,7 @@ export default function Drivers({ onBack }) {
                                                     <img src={selectedDriver[doc.key]} alt={doc.label} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                                                 )
                                             ) : (
-                                                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>Documento não anexado</div>
+                                                <div style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 'bold' }}>{documentsError ? 'Não foi possível carregar' : 'Documento não anexado'}</div>
                                             )}
                                         </div>
                                         {selectedDriver[doc.key] && (
@@ -307,6 +412,11 @@ export default function Drivers({ onBack }) {
 
                             {tripsLoading ? (
                                 <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>A carregar corridas...</div>
+                            ) : tripsError ? (
+                                <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                                    <p>Não foi possível carregar as corridas.</p>
+                                    <button className="btn-pill-sm primary" onClick={fetchTrips}>Tentar novamente</button>
+                                </div>
                             ) : recentTrips.length > 0 ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {recentTrips.map(trip => (
@@ -341,24 +451,75 @@ export default function Drivers({ onBack }) {
                 </div>
 
                 {/* Real-time Location Map Modal */}
-                {showMap && driverLocation && (
-                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(15, 23, 42, 0.6)', backdropFilter: 'blur(8px)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '24px' }} onClick={() => setShowMap(false)}>
-                        <div style={{ background: 'white', borderRadius: '28px', width: '100%', maxWidth: '600px', padding: '24px', boxShadow: '0 20px 50px rgba(0,0,0,0.15)', border: '1px solid #e2e8f0' }} onClick={e => e.stopPropagation()}>
+                {showMap && selectedDriver && (
+                <div className="driver-map-overlay" onClick={() => setShowMap(false)}>
+                        <div className="driver-map-dialog" role="dialog" aria-modal="true" aria-label={`Localização de ${selectedDriver.full_name}`} onClick={e => e.stopPropagation()}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                 <div>
-                                    <h3 style={{ fontSize: '18px', fontWeight: '900', color: '#1e293b', margin: 0 }}>Localização em Tempo Real</h3>
-                                    <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>Motorista: {selectedDriver.full_name}</p>
+                                    <h3 style={{ fontSize: '18px', fontWeight: '900', color: '#1e293b', margin: 0 }}>Última localização recebida</h3>
+                                    <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
+                                        Motorista: {selectedDriver.full_name}
+                                        {driverLocation?.updatedAt && ` · ${new Date(driverLocation.updatedAt).toLocaleString('pt-AO')}`}
+                                    </p>
                                 </div>
                                 <button style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748b' }} onClick={() => setShowMap(false)}>
                                     <X size={18} />
                                 </button>
                             </div>
                             <div style={{ height: '350px', borderRadius: '18px', overflow: 'hidden', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                                <DriverMap location={driverLocation} name={selectedDriver.full_name} />
+                                {isLocationLoading ? (
+                                    <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: '#64748b' }}>
+                                        A carregar a última localização…
+                                    </div>
+                                ) : driverLocation?.position ? (
+                                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                                        {driverLocation.state !== 'fresh' && (
+                                            <div role="status" style={{ padding: '8px 12px', background: driverLocation.state === 'stale' ? '#fff7ed' : '#f1f5f9', color: driverLocation.state === 'stale' ? '#9a3412' : '#475569', fontSize: 12, fontWeight: 700 }}>
+                                                {driverLocation.state === 'stale'
+                                                    ? `Posição desatualizada (${formatLocationAge(driverLocation.ageMs)}).`
+                                                    : 'Não foi possível confirmar a hora desta posição.'}
+                                            </div>
+                                        )}
+                                        {driverLocation.accuracyMeters != null && (
+                                            <div style={{ padding: '6px 12px', background: '#f8fafc', color: '#475569', fontSize: 12 }}>
+                                                Precisão reportada pelo GPS: ±{Math.round(driverLocation.accuracyMeters)} m
+                                            </div>
+                                        )}
+                                        <div style={{ flex: 1, minHeight: 0 }}>
+                                            <DriverMap location={driverLocation.position} name={selectedDriver.full_name} />
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div style={{ height: '100%', display: 'grid', placeItems: 'center', padding: '24px', textAlign: 'center', color: '#64748b' }}>
+                                        <div>
+                                            <p>{driverLocation?.state === 'error'
+                                                ? 'Não foi possível carregar a localização.'
+                                                : 'Ainda não há uma localização válida enviada por este motorista.'}</p>
+                                            {driverLocation?.state === 'error' && (
+                                                <button type="button" onClick={() => handleShowDriverLocation(selectedDriver)} style={{ border: 0, borderRadius: 8, padding: '8px 14px', background: '#e91e63', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
+                                                    Tentar novamente
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </div>
                 )}
+                {statusAction && <StatusReasonDialog
+                    title={statusAction.type === 'status'
+                        ? (statusAction.status === 'active' ? 'Aprovar motorista' : 'Rejeitar motorista')
+                        : (statusAction.action === 'activate' ? 'Ativar motorista' : 'Suspender motorista')}
+                    description="Registe o motivo para alterar o estado desta conta."
+                    confirmLabel={statusAction.type === 'status'
+                        ? (statusAction.status === 'active' ? 'Aprovar cadastro' : 'Rejeitar cadastro')
+                        : (statusAction.action === 'activate' ? 'Ativar conta' : 'Suspender conta')}
+                    onSubmit={reason => statusAction.type === 'status'
+                        ? handleUpdateStatus(selectedDriver.id, statusAction.status, reason)
+                        : handleToggleStatus(selectedDriver.id, statusAction.action, reason)}
+                    onClose={() => !statusPending && setStatusAction(null)}
+                />}
             </div>
         )
     }
@@ -370,7 +531,7 @@ export default function Drivers({ onBack }) {
                     <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
                     <div className="title-area">
                         <h2>Gestão de Motoristas</h2>
-                        <p>{filteredDrivers.length} motoristas encontrados</p>
+                        <p>{filteredDriverCount} {filteredDriverCount === 1 ? 'motorista encontrado' : 'motoristas encontrados'}</p>
                     </div>
                 </div>
 
@@ -379,6 +540,7 @@ export default function Drivers({ onBack }) {
                         <Search size={18} />
                         <input
                             type="text"
+                            maxLength={120}
                             placeholder="Buscar motorista..."
                             value={searchTerm}
                             onChange={(e) => setSearchTerm(e.target.value)}
@@ -396,21 +558,40 @@ export default function Drivers({ onBack }) {
                 </div>
             </div>
 
-            <div className="drivers-table-grid mt-6">
+            <div className="admin-record-list drivers-record-list mt-6">
+                <div className="admin-record-list-head drivers-record-head" aria-hidden="true">
+                    <span>Motorista</span><span>Conta</span><span>Disponibilidade</span><span>Ações</span>
+                </div>
                 {loading ? (
-                    [1, 2, 3].map(i => <div key={i} className="driver-card-premium horizontal skeleton h-32"></div>)
+                    [1, 2, 3].map(i => <div key={i} className="admin-record-row admin-record-loading drivers-record-row" role="status" aria-label="A carregar motoristas"><span /><span /><span /><span /></div>)
+                ) : driversError ? (
+                    <div className="empty-state-container py-40">
+                        <p>Erro ao carregar motoristas.</p>
+                        <button className="btn-pill-sm primary" onClick={fetchDrivers}>Tentar novamente</button>
+                    </div>
                 ) : paginatedDrivers.length > 0 ? (
                     paginatedDrivers.map(driver => (
-                        <div key={driver.id} className="driver-card-premium horizontal animate-fade-in">
+                        <div key={driver.id} className="admin-record-row drivers-record-row animate-fade-in">
                             <div className="card-left-section">
-                                <div className="avatar-box">
-                                    <User size={24} />
+                                <div className="avatar-box" aria-hidden="true">
+                                    {(driver.full_name || 'MO').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()}
                                 </div>
                                 <div className="info-group">
                                     <h3>{driver.full_name}</h3>
                                     <p>{driver.phone}</p>
                                 </div>
-                                <div className="actions-inline">
+                            </div>
+
+                            <div className={`driver-account-state ${driver.status}`}>
+                                <span className={`status-pill-mini ${driver.status}`}>
+                                    {({ active: 'Ativo', pending: 'Pendente', rejected: 'Rejeitado', suspended: 'Suspenso' })[driver.status] || driver.status}
+                                </span>
+                            </div>
+                            <div className="driver-presence-label">
+                                <span className={`status-indicator-dot ${driver.is_online ? 'online' : 'offline'}`}></span>
+                                <span>{driver.is_online ? 'Online' : 'Offline'}</span>
+                            </div>
+                            <div className="actions-inline">
                                     <button
                                         className="btn-pill-sm primary"
                                         onClick={() => handleViewProfile(driver)}
@@ -422,28 +603,13 @@ export default function Drivers({ onBack }) {
                                         <button
                                             className="btn-pill-sm outline"
                                             onClick={() => {
-                                                setSelectedDriver(driver)
-                                                setDriverLocation([-8.839 + (Math.random() - 0.5) * 0.01, 13.289 + (Math.random() - 0.5) * 0.01])
-                                                setShowMap(true)
+                                                handleShowDriverLocation(driver)
                                             }}
                                         >
                                             <Navigation size={14} className="text-pink-500" />
                                             <span className="text-pink-500">Mapa</span>
                                         </button>
                                     )}
-                                </div>
-                            </div>
-
-                            <div className="card-right-section">
-                                <div className={`status-pill-mini ${driver.status}`}>
-                                    {driver.status.toUpperCase()}
-                                </div>
-                                <div className="flex items-center gap-2 mt-2">
-                                    <div className="rating-box">
-                                        <span>★ {Number(driver.rating || 5).toFixed(1)}</span>
-                                    </div>
-                                    <div className={`status-indicator-dot ${driver.is_online ? 'online' : 'offline'}`}></div>
-                                </div>
                             </div>
                         </div>
                     ))

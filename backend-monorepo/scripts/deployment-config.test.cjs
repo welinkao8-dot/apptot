@@ -20,6 +20,19 @@ test('production Compose requires credentials and starts compiled API entrypoint
   assert.doesNotMatch(`${compose}\n${dockerfiles.join('\n')}`, /db push|accept-data-loss|nest start/);
 });
 
+test('HERE map key is injected into browser builds separately from private routing key', () => {
+  const clientApi = compose.match(/  client-api:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:|\nvolumes:)/)?.[1] || '';
+  const clientPortal = compose.match(/  client-portal:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:|\nvolumes:)/)?.[1] || '';
+  const driverPortal = compose.match(/  driver-portal:\n([\s\S]*?)(?=\n  [a-z][a-z-]*:|\nvolumes:)/)?.[1] || '';
+
+  assert.match(clientApi, /HERE_ROUTING_API_KEY: \$\{HERE_ROUTING_API_KEY:\?HERE_ROUTING_API_KEY is required for quotes\}/);
+  assert.match(clientApi, /HERE_MAP_API_KEY: \$\{HERE_MAP_API_KEY:\?HERE_MAP_API_KEY is required for browser maps\}/);
+  for (const portal of [clientPortal, driverPortal]) {
+    assert.match(portal, /VITE_HERE_API_KEY: \$\{HERE_MAP_API_KEY:\?HERE_MAP_API_KEY is required for browser maps\}/);
+    assert.doesNotMatch(portal, /HERE_ROUTING_API_KEY|\$\{HERE_API_KEY\}/);
+  }
+});
+
 test('API images install the backend lockfile and default to compiled Node entrypoints', () => {
   for (const [index, dockerfile] of dockerfiles.entries()) {
     assert.match(dockerfile, /npm ci/);

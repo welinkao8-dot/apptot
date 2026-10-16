@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext, useRef } from 'react';
+import React, { useState, useEffect, useContext, useRef, useCallback } from 'react';
 import {
     View, Text, StyleSheet, TouchableOpacity, ScrollView,
     ActivityIndicator, Platform, DeviceEventEmitter, AppState,
@@ -7,21 +7,30 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { openNavigationApp } from '../utils/openNavigation';
 import { AuthContext } from '../context/AuthContext';
-import { connectSocket } from '../services/socket';
+import { connectSocket, disconnectSocket } from '../services/socket';
 import colors from '../theme/colors';
 import api from '../services/api';
 import Toast from 'react-native-toast-message';
 import { NativeModules } from 'react-native';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
+import messaging from '@react-native-firebase/messaging';
 import Animated, { useSharedValue, useAnimatedStyle, withRepeat, withSequence, withTiming, interpolate } from 'react-native-reanimated';
 
-import { Bell, User, Power, Info } from 'lucide-react-native';
+import { User, Power, Info } from 'lucide-react-native';
 
 import GoingToClientView from '../components/ride/GoingToClientView';
 import OngoingRideView from '../components/ride/OngoingRideView';
 import AwaitingPaymentView from '../components/ride/AwaitingPaymentView';
 import { formatCurrency } from '../utils/formatters';
 import { emitSocketCommand } from '../services/socketCommands';
+import { requestDriverAvailability, restoreDriverAvailability } from '../services/driverAvailability';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
+import { getTripFare } from '../utils/tripFare';
+import { startAndWaitForLocationFix as waitForGpsFix } from '../services/driverLocation';
+import { acceptRideWithReconciliation } from '../services/rideAcceptance';
+import { runRideTransitionWithReconciliation } from '../services/rideTransition';
+import { reconcileActiveRide } from '../services/rideReconciliation';
+import { isTripOfferMessage, registerDriverPushToken } from '../services/driverPushNotifications';
 
 const { LocationModule } = NativeModules;
 const { width } = Dimensions.get('window');
@@ -39,6 +48,20 @@ export default function DashboardScreen({ navigation }) {
     const [isPaymentUpdating, setIsPaymentUpdating] = useState(false);
     const socket = useRef(null);
     const notifiedOfferIds = useRef(new Set());
+    const activeTripRef = useRef(activeTrip);
+    const reconcilingTrip = useRef(null);
+    const reconciliationGeneration = useRef(0);
+    const invalidateRideReconciliation = () => {
+        reconciliationGeneration.current += 1;
+        reconcilingTrip.current = null;
+    };
+
+    useEffect(() => { activeTripRef.current = activeTrip; }, [activeTrip]);
+
+    useEffect(() => () => {
+        reconciliationGeneration.current += 1;
+        reconcilingTrip.current = null;
+    }, []);
 
     // Carousel states
     const [currentSlide, setCurrentSlide] = useState(0);
@@ -79,39 +102,71 @@ export default function DashboardScreen({ navigation }) {
     }, []);
 
     useEffect(() => {
-        if (token) { socket.current = connectSocket(token); setupSocketListeners(); }
+        if (!token || !user) {
+            disconnectSocket();
+            socket.current = null;
+            return undefined;
+        }
+
+        socket.current = connectSocket(token);
+        const removeSocketListeners = setupSocketListeners();
         fetchStats();
-        return () => {};
-    }, [token]);
+        return () => removeSocketListeners?.();
+    }, [token, user?.id]);
 
     const setupSocketListeners = () => {
         if (!socket.current || !user) return;
-        socket.current.on('connect', () => { if (user?.id) socket.current.emit('join'); });
-        socket.current.on('login_status', (data) => {
-            setIsOnline(data.isOnline);
-            AsyncStorage.setItem('@tot_is_online', data.isOnline.toString());
-            if (data.isOnline) { fetchPendingTrips(); if (LocationModule) LocationModule.startLocationUpdates(); }
-            else { if (LocationModule) LocationModule.stopLocationUpdates(); }
-        });
-        socket.current.on('new_trip_available', (trip) => {
+        const currentSocket = socket.current;
+        const handlers = {
+        connect: () => {
+            if (user?.id) currentSocket.emit('join');
+            if (activeTripRef.current) refreshActiveRide(activeTripRef.current);
+        },
+        login_status: async (data) => {
+            const result = await restoreDriverAvailability({
+                socket: currentSocket,
+                locationModule: LocationModule,
+                platform: Platform.OS,
+                isOnline: data?.isOnline === true,
+                hasLocationPermission: hasExistingLocationPermission,
+                ensureBackgroundLocationAuthorization: () => LocationModule?.ensureBackgroundLocationAuthorization?.(),
+                startAndWaitForLocationFix: () => waitForGpsFix({ locationModule: LocationModule, eventEmitter: DeviceEventEmitter }),
+            });
+            setIsOnline(result.serverOnline);
+            await AsyncStorage.setItem('@tot_is_online', result.serverOnline.toString());
+            if (result.serverOnline) fetchPendingTrips();
+            else setRequests([]);
+            if (result.syncFailed) {
+                Toast.show({ type: 'error', text1: 'Localização indisponível', text2: 'O servidor ainda considera a conta online. Desative a disponibilidade quando recuperar a ligação.' });
+            }
+        },
+        new_trip_available: (trip) => {
             if (!notifiedOfferIds.current.has(trip.id)) {
                 notifiedOfferIds.current.add(trip.id);
                 ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
                 Toast.show({ type: 'info', text1: 'Nova solicitação', text2: 'Uma oferta foi adicionada à lista.' });
             }
             setRequests(prev => prev.some(r => r.id === trip.id) ? prev : [trip, ...prev]);
-        });
-        socket.current.on('trip_taken', (data) => {
+        },
+        trip_taken: (data) => {
             notifiedOfferIds.current.delete(data.tripId);
             setRequests(prev => prev.filter(r => r.id !== data.tripId));
-        });
-        socket.current.on('restore_ride', (trip) => {
+        },
+        restore_ride: (trip) => {
             const restoredStatus = trip.status === 'completed' ? 'finished' : (trip.status || 'ongoing');
+            invalidateRideReconciliation();
             setActiveTrip(trip); setRideStatus(restoredStatus);
+            activeTripRef.current = trip;
             AsyncStorage.setItem('@tot_active_trip', JSON.stringify(trip));
             AsyncStorage.setItem('@tot_ride_status', restoredStatus);
-        });
-        socket.current.on('trip_cancelled', () => { Toast.show({ type: 'error', text1: 'Corrida cancelada.' }); resetRide(); });
+            refreshActiveRide(trip);
+        },
+        trip_cancelled: () => { Toast.show({ type: 'error', text1: 'Corrida cancelada.' }); resetRide(); },
+        pending_trips: (trips) => { if (Array.isArray(trips)) setRequests(trips); },
+        };
+
+        Object.entries(handlers).forEach(([event, handler]) => currentSocket.on(event, handler));
+        return () => Object.entries(handlers).forEach(([event, handler]) => currentSocket.off(event, handler));
     };
 
     const fetchStats = async () => { 
@@ -125,69 +180,162 @@ export default function DashboardScreen({ navigation }) {
                 });
             }
         } catch (e) {
-            console.error('Error fetching dashboard stats:', e);
+            console.error('Error fetching dashboard stats:', toSafeErrorLog(e));
         } 
     };
     const fetchPendingTrips = async () => { try { const r = await api.get('/trips/pending'); if (r.data) setRequests(r.data); } catch (e) {} };
 
     useEffect(() => {
-        const refresh = () => { if (isOnline) fetchPendingTrips(); };
-        const focus = navigation.addListener('focus', refresh);
-        const appState = AppState.addEventListener('change', (state) => { if (state === 'active') refresh(); });
-        const expiry = setInterval(() => setRequests((current) => current.filter((offer) => !offer.offerExpiresAt || Date.parse(offer.offerExpiresAt) > Date.now())), 3000);
-        return () => { focus(); appState.remove(); clearInterval(expiry); };
-    }, [isOnline, navigation]);
+        if (!token || Platform.OS !== 'android') return undefined;
+
+        const handlePushMessage = (message) => {
+            const tripId = isTripOfferMessage(message);
+            if (!tripId) return;
+            if (!notifiedOfferIds.current.has(tripId)) {
+                notifiedOfferIds.current.add(tripId);
+                ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
+                Toast.show({ type: 'info', text1: 'Nova solicitação', text2: 'Abre a lista para ver a oferta.' });
+            }
+            fetchPendingTrips();
+        };
+
+        const instance = messaging();
+        const unsubscribeForeground = instance.onMessage(handlePushMessage);
+        const unsubscribeOpened = instance.onNotificationOpenedApp(handlePushMessage);
+        instance.getInitialNotification().then(handlePushMessage).catch(() => {});
+        return () => {
+            unsubscribeForeground();
+            unsubscribeOpened();
+        };
+    }, [token]);
+
+    const refreshActiveRide = useCallback(async (trip = activeTripRef.current) => {
+        if (!trip?.id || !user?.id || reconcilingTrip.current?.tripId === trip.id) return;
+        const request = { tripId: trip.id, generation: ++reconciliationGeneration.current };
+        reconcilingTrip.current = request;
+        try {
+            const result = await reconcileActiveRide({
+                cachedTrip: trip,
+                driverId: user.id,
+                fetchTrip: async (tripId) => (await api.get(`/trips/${tripId}`)).data,
+                fetchPayment: async (tripId) => {
+                    try {
+                        return (await api.get(`/trips/${tripId}/payment`)).data;
+                    } catch (error) {
+                        if (error.response?.status === 404) return null;
+                        throw error;
+                    }
+                },
+            });
+            if (request.generation !== reconciliationGeneration.current) return;
+            if (activeTripRef.current?.id && activeTripRef.current.id !== trip.id) return;
+            if (result.clear) {
+                invalidateRideReconciliation();
+                activeTripRef.current = null;
+                setActiveTrip(null);
+                setRideStatus('idle');
+                await AsyncStorage.removeItem('@tot_active_trip');
+                await AsyncStorage.removeItem('@tot_ride_status');
+                return;
+            }
+            activeTripRef.current = result.trip;
+            setActiveTrip(result.trip);
+            setRideStatus(result.status);
+            await AsyncStorage.setItem('@tot_active_trip', JSON.stringify(result.trip));
+            await AsyncStorage.setItem('@tot_ride_status', result.status);
+        } catch (error) {
+            console.warn('Trip state sync failed:', toSafeErrorLog(error));
+        } finally {
+            if (reconcilingTrip.current === request) reconcilingTrip.current = null;
+        }
+    }, [user?.id]);
 
     useEffect(() => {
-        const sub = DeviceEventEmitter.addListener('onLocationUpdate', (loc) => {
-            if (!loc?.coords || !socket.current || !user) return;
-            socket.current.emit('update_location', {
-                lat: loc.coords.latitude,
-                lng: loc.coords.longitude,
-                accuracy: loc.coords.accuracy,
-                heading: loc.coords.heading,
-                timestamp: loc.coords.timestamp,
-            });
+        const refresh = () => {
+            if (isOnline) fetchPendingTrips();
+            if (activeTripRef.current) refreshActiveRide(activeTripRef.current);
+        };
+        const focus = navigation.addListener('focus', refresh);
+        const appState = AppState.addEventListener('change', (state) => {
+            if (state === 'active') {
+                refresh();
+            }
         });
-        return () => sub.remove();
-    }, [activeTrip]);
+        const expiry = setInterval(() => setRequests((current) => current.filter((offer) => !offer.offerExpiresAt || Date.parse(offer.offerExpiresAt) > Date.now())), 3000);
+        return () => { focus(); appState.remove(); clearInterval(expiry); };
+    }, [isOnline, navigation, refreshActiveRide, user?.id]);
 
     const checkPermissions = async () => {
         if (Platform.OS !== 'android') return true;
         const perms = [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION, PermissionsAndroid.PERMISSIONS.ACCESS_COARSE_LOCATION];
         if (Platform.Version >= 33) perms.push(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
         const g = await PermissionsAndroid.requestMultiple(perms);
-        return g['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED;
+        if (Platform.Version >= 33 && g['android.permission.POST_NOTIFICATIONS'] !== PermissionsAndroid.RESULTS.GRANTED) {
+            throw Object.assign(new Error('Permissão de notificações necessária para receber novas ofertas.'), { code: 'NOTIFICATION_PERMISSION_DENIED' });
+        }
+        const hasLocation = g['android.permission.ACCESS_FINE_LOCATION'] === PermissionsAndroid.RESULTS.GRANTED;
+        if (!hasLocation) return false;
+        const pushToken = await messaging().getToken();
+        await registerDriverPushToken({ token: pushToken, platform: 'android', api });
+        return true;
+    };
+
+    const hasExistingLocationPermission = async () => {
+        if (Platform.OS !== 'android') return true;
+        return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION);
     };
 
     const toggleOnline = async () => {
         if (!user || isOnlineUpdating) return;
         const next = !isOnline;
         setIsOnlineUpdating(true);
-        if (next) {
-            const ok = await checkPermissions();
-            if (!ok) { setIsOnlineUpdating(false); Toast.show({ type: 'error', text1: 'Permissão de localização necessária.' }); return; }
-        }
         try {
-            await emitSocketCommand(socket.current, 'toggle_online', { isOnline: next });
+            await requestDriverAvailability({
+                socket: socket.current,
+                locationModule: LocationModule,
+                platform: Platform.OS,
+                isOnline: next,
+                hasLocationPermission: checkPermissions,
+                ensureBackgroundLocationAuthorization: () => LocationModule?.ensureBackgroundLocationAuthorization?.(),
+                startAndWaitForLocationFix: () => waitForGpsFix({ locationModule: LocationModule, eventEmitter: DeviceEventEmitter }),
+            });
             setIsOnline(next);
             await AsyncStorage.setItem('@tot_is_online', next.toString());
-            if (next && LocationModule) LocationModule.startLocationUpdates();
-            if (!next && LocationModule) LocationModule.stopLocationUpdates();
             ReactNativeHapticFeedback.trigger('impactHeavy', hapticOptions);
             if (!next) setRequests([]); else fetchPendingTrips();
         } catch (error) {
-            Toast.show({ type: 'error', text1: 'Não foi possível alterar a disponibilidade', text2: 'Verifique a ligação e tente novamente.' });
+            const message = error.code === 'NOTIFICATION_PERMISSION_DENIED'
+                ? 'Permita as notificações para ficar disponível para corridas.'
+                : error.code === 'PUSH_TOKEN_UNAVAILABLE'
+                    ? 'Não foi possível ativar notificações neste telemóvel.'
+                : error.code === 'LOCATION_PERMISSION_DENIED'
+                ? 'Permissão de localização necessária.'
+                : error.code === 'LOCATION_BACKGROUND_PERMISSION_DENIED'
+                    ? 'Autorize localização “Sempre” para ficar disponível enquanto usa a navegação.'
+                : error.code === 'LOCATION_FIX_TIMEOUT'
+                    ? 'Não foi possível obter uma localização GPS válida.'
+                : error.code?.startsWith('LOCATION_')
+                    ? 'Não foi possível iniciar o serviço de localização.'
+                    : 'Não foi possível alterar a disponibilidade';
+            Toast.show({ type: 'error', text1: message, text2: 'Verifique a localização e a ligação e tente novamente.' });
         } finally { setIsOnlineUpdating(false); }
     };
 
     const handleAcceptRide = async (trip) => {
         if (!user) return;
         try {
-            await emitSocketCommand(socket.current, 'accept_trip', { tripId: trip.id });
-            setActiveTrip(trip); setRideStatus('accepted'); setRequests([]);
-            await AsyncStorage.setItem('@tot_active_trip', JSON.stringify(trip));
-            await AsyncStorage.setItem('@tot_ride_status', 'accepted');
+            const result = await acceptRideWithReconciliation({
+                trip,
+                driverId: user.id,
+                accept: () => emitSocketCommand(socket.current, 'accept_trip', { tripId: trip.id }),
+                fetchTrip: async (tripId) => (await api.get(`/trips/${tripId}`)).data,
+            });
+            invalidateRideReconciliation();
+            activeTripRef.current = result.trip;
+            setActiveTrip(result.trip); setRideStatus(result.rideStatus); setRequests([]);
+            await AsyncStorage.setItem('@tot_active_trip', JSON.stringify(result.trip));
+            await AsyncStorage.setItem('@tot_ride_status', result.rideStatus);
+            if (result.reconciled) Toast.show({ type: 'success', text1: 'Corrida aceite', text2: 'O estado foi recuperado do servidor.' });
         } catch { Toast.show({ type: 'error', text1: 'Corrida já não disponível', text2: 'Atualize a lista e tente outra solicitação.' }); }
     };
 
@@ -204,23 +352,53 @@ export default function DashboardScreen({ navigation }) {
 
     const handleStartRide = async () => {
         if (!activeTrip) return;
-        try { await emitSocketCommand(socket.current, 'start_ride', { tripId: activeTrip.id }); setRideStatus('ongoing'); await AsyncStorage.setItem('@tot_ride_status', 'ongoing'); }
+        try {
+            const result = await runRideTransitionWithReconciliation({
+                trip: activeTrip,
+                driverId: user?.id,
+                targetStatus: 'ongoing',
+                transition: () => emitSocketCommand(socket.current, 'start_ride', { tripId: activeTrip.id }),
+                fetchTrip: async (tripId) => (await api.get(`/trips/${tripId}`)).data,
+            });
+            invalidateRideReconciliation();
+            activeTripRef.current = result.trip;
+            setActiveTrip(result.trip);
+            setRideStatus(result.status);
+            await AsyncStorage.setItem('@tot_active_trip', JSON.stringify(result.trip));
+            await AsyncStorage.setItem('@tot_ride_status', result.status);
+        }
         catch { Toast.show({ type: 'error', text1: 'Não foi possível iniciar a corrida', text2: 'Confirme a ligação e tente novamente.' }); }
     };
 
     const handleFinishRide = async () => {
         if (!activeTrip) return;
         try {
-            await emitSocketCommand(socket.current, 'finish_ride', { tripId: activeTrip.id });
-            setRideStatus('finished'); await AsyncStorage.setItem('@tot_ride_status', 'finished');
+            const result = await runRideTransitionWithReconciliation({
+                trip: activeTrip,
+                driverId: user?.id,
+                targetStatus: 'completed',
+                transition: () => emitSocketCommand(socket.current, 'finish_ride', { tripId: activeTrip.id }),
+                fetchTrip: async (tripId) => (await api.get(`/trips/${tripId}`)).data,
+            });
+            invalidateRideReconciliation();
+            activeTripRef.current = result.trip;
+            setActiveTrip(result.trip);
+            setRideStatus('finished');
+            await AsyncStorage.setItem('@tot_active_trip', JSON.stringify(result.trip));
+            await AsyncStorage.setItem('@tot_ride_status', 'finished');
         } catch { Toast.show({ type: 'error', text1: 'Não foi possível concluir a corrida', text2: 'O estado será mantido até confirmação do servidor.' }); }
     };
 
     const handleConfirmPayment = async () => {
         if (!activeTrip || isPaymentUpdating) return;
+        const fare = getTripFare(activeTrip, { requireFinalFare: true });
+        if (fare === null) {
+            Toast.show({ type: 'error', text1: 'Valor da viagem indisponível', text2: 'Sincronize a viagem com o servidor antes de confirmar o recebimento.' });
+            return;
+        }
         setIsPaymentUpdating(true);
         try {
-            await emitSocketCommand(socket.current, 'confirm_cash_payment', { tripId: activeTrip.id, amount: String(activeTrip.final_fare || activeTrip.current_fare || activeTrip.price || '0') });
+            await emitSocketCommand(socket.current, 'confirm_cash_payment', { tripId: activeTrip.id, amount: fare.toFixed(2) });
             resetRide(); fetchStats();
         } catch (error) {
             if (error.code === 'ACK_TIMEOUT' || error.code === 'SOCKET_DISCONNECTED') {
@@ -234,6 +412,8 @@ export default function DashboardScreen({ navigation }) {
     };
 
     const resetRide = () => {
+        invalidateRideReconciliation();
+        activeTripRef.current = null;
         setActiveTrip(null); setRideStatus('idle');
         AsyncStorage.removeItem('@tot_active_trip'); AsyncStorage.removeItem('@tot_ride_status');
     };
@@ -269,9 +449,6 @@ export default function DashboardScreen({ navigation }) {
                     </View>
                     <Text style={styles.logoText}>TOT</Text>
                 </View>
-                <TouchableOpacity style={styles.notifyBtn} activeOpacity={0.8}>
-                    <Bell size={20} color={colors.primary} />
-                </TouchableOpacity>
             </View>
 
             {/* ─── MAIN CONTENT ─── */}
@@ -434,7 +611,6 @@ const styles = StyleSheet.create({
     avatarMiniBorder: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: colors.primary, overflow: 'hidden' },
     avatarMini: { width: '100%', height: '100%', objectFit: 'cover' },
     logoText: { fontSize: 20, fontWeight: '900', color: colors.primary, letterSpacing: -1 },
-    notifyBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
 
     // Scroll View canvas
     scrollCanvas: { flex: 1 },

@@ -2,7 +2,7 @@ import React, { useRef, useImperativeHandle, forwardRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-const HERE_API_KEY = 'UN2gxhPRLhPhUiKVSUTeegOmmDuDwsFcPsQZhX8V040';
+const HERE_API_KEY = ''; // Removed committed API credential.
 
 const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
     const webViewRef = useRef(null);

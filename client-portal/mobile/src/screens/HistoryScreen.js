@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -14,44 +14,66 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import colors from '../theme/colors';
-import { ArrowLeft, Clock, MapPin, ChevronRight, Info, Calendar, Menu, Search, Navigation, CreditCard, X } from 'lucide-react-native';
+import { ArrowLeft, Clock, MapPin, ChevronRight, Info, Calendar, Menu, Search, Navigation, Banknote, X } from 'lucide-react-native';
 import api from '../services/api';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
+import { getReceiptPaymentSummary, getReceiptTitle } from '../utils/receiptSummary';
 
 const { width } = Dimensions.get('window');
 
 export default function HistoryScreen({ navigation }) {
     const { user } = useAuth();
     const [trips, setTrips] = useState([]);
-    const [status, setStatus] = useState({ loading: true, loadingMore: false });
+    const [status, setStatus] = useState({ loading: true, loadingMore: false, error: false, errorPage: 1 });
     const [query, setQuery] = useState({ filter: 'all', page: 1, hasMore: true });
     const [receiptTrip, setReceiptTrip] = useState(null);
+    const receiptSummary = getReceiptPaymentSummary(receiptTrip);
+    const requestIdRef = useRef(0);
+    const activeRequestRef = useRef(null);
 
     useEffect(() => {
         setTrips([]);
         setQuery(prev => ({ ...prev, page: 1, hasMore: true }));
-        fetchHistory(1, true);
+        fetchHistory(1, true, query.filter);
     }, [query.filter]);
 
-    const fetchHistory = async (pageNumber = 1, isInitial = false) => {
+    useEffect(() => () => {
+        requestIdRef.current += 1;
+        activeRequestRef.current = null;
+    }, []);
+
+    const fetchHistory = async (pageNumber = 1, isInitial = false, filter = query.filter, isRetry = false) => {
         if (!query.hasMore && !isInitial) return;
+        if (!isInitial && status.error && status.errorPage === pageNumber && !isRetry) return;
+        if (!isInitial && activeRequestRef.current) return;
+
+        const requestId = ++requestIdRef.current;
+        activeRequestRef.current = requestId;
 
         try {
-            if (isInitial) setStatus(prev => ({ ...prev, loading: true }));
-            else setStatus(prev => ({ ...prev, loadingMore: true }));
+            if (isInitial) setStatus(prev => ({ ...prev, loading: true, error: false }));
+            else setStatus(prev => ({ ...prev, loadingMore: true, error: false }));
 
             const res = await api.get(`/trips/history/${user.id}`, {
                 params: {
-                    status: query.filter,
+                    status: filter,
                     role: 'client',
                     page: pageNumber,
                     limit: 15
                 }
             });
 
+            if (!Array.isArray(res.data) || res.data.some((trip) => (
+                !trip || typeof trip !== 'object' || Array.isArray(trip) ||
+                typeof trip.id !== 'string' || trip.id.trim() === ''
+            ))) throw new Error('Resposta inválida do histórico')
+
+            if (requestId !== requestIdRef.current) return;
             const newTrips = res.data;
             if (newTrips.length < 15) {
                 setQuery(prev => ({ ...prev, hasMore: false }));
             }
+            setQuery(prev => ({ ...prev, page: pageNumber }));
 
             if (isInitial) {
                 setTrips(newTrips);
@@ -59,16 +81,20 @@ export default function HistoryScreen({ navigation }) {
                 setTrips(prev => [...prev, ...newTrips]);
             }
         } catch (error) {
-            console.error('Error fetching history:', error);
+            if (requestId !== requestIdRef.current) return;
+            console.error('Error fetching history:', toSafeErrorLog(error));
+            setStatus(prev => ({ ...prev, error: true, errorPage: pageNumber }));
         } finally {
-            setStatus(prev => ({ ...prev, loading: false, loadingMore: false }));
+            if (requestId === requestIdRef.current) {
+                activeRequestRef.current = null;
+                setStatus(prev => ({ ...prev, loading: false, loadingMore: false }));
+            }
         }
     };
 
     const handleLoadMore = () => {
-        if (!status.loading && !status.loadingMore && query.hasMore) {
+        if (!status.loading && !status.loadingMore && !status.error && query.hasMore && !activeRequestRef.current) {
             const nextPage = query.page + 1;
-            setQuery(prev => ({ ...prev, page: nextPage }));
             fetchHistory(nextPage);
         }
     };
@@ -117,7 +143,7 @@ export default function HistoryScreen({ navigation }) {
                             setReceiptTrip(item);
                         }}
                     >
-                        <Text style={styles.receiptBtnText}>Recibo</Text>
+                        <Text style={styles.receiptBtnText}>Resumo</Text>
                         <ChevronRight size={14} color={colors.primary} />
                     </TouchableOpacity>
                 </View>
@@ -176,6 +202,10 @@ export default function HistoryScreen({ navigation }) {
                     ListFooterComponent={
                         status.loadingMore ? (
                             <ActivityIndicator style={{ marginVertical: 20 }} color={colors.primary} />
+                        ) : status.error && trips.length > 0 ? (
+                            <TouchableOpacity style={{ padding: 16, alignItems: 'center' }} onPress={() => fetchHistory(status.errorPage, false, query.filter, true)}>
+                                <Text style={{ color: colors.primary, fontWeight: '700' }}>Falha ao carregar mais. Tentar novamente</Text>
+                            </TouchableOpacity>
                         ) : <View style={{ height: 20 }} />
                     }
                     ListEmptyComponent={
@@ -183,8 +213,9 @@ export default function HistoryScreen({ navigation }) {
                             <View style={styles.emptyIconBox}>
                                 <Clock size={40} color={colors.primary} strokeWidth={1} />
                             </View>
-                            <Text style={styles.emptyTitle}>Sem registros</Text>
-                            <Text style={styles.emptyText}>Não encontramos viagens com este filtro.</Text>
+                            <Text style={styles.emptyTitle}>{status.error ? 'Falha ao carregar' : 'Sem registros'}</Text>
+                            <Text style={styles.emptyText}>{status.error ? 'Verifique a ligação e tente novamente.' : 'Não encontramos viagens com este filtro.'}</Text>
+                            {status.error && <TouchableOpacity onPress={() => fetchHistory(status.errorPage, true)} style={{ marginTop: 12, padding: 12 }}><Text style={{ color: colors.primary, fontWeight: '700' }}>Tentar novamente</Text></TouchableOpacity>}
                         </View>
                     }
                 />
@@ -200,7 +231,7 @@ export default function HistoryScreen({ navigation }) {
                 <View style={styles.modalOverlay}>
                     <View style={styles.receiptCard}>
                         <View style={styles.receiptPinkHeader}>
-                            <Text style={styles.receiptHeaderText}>RECIBO</Text>
+                            <Text style={styles.receiptHeaderText}>{getReceiptTitle()}</Text>
                             <TouchableOpacity style={styles.closeReceipt} onPress={() => setReceiptTrip(null)}>
                                 <X size={24} color="#FFF" />
                             </TouchableOpacity>
@@ -229,37 +260,23 @@ export default function HistoryScreen({ navigation }) {
                             <View style={styles.receiptDivider} />
 
                             <View style={styles.receiptSection}>
-                                <Text style={styles.receiptLabel}>RESUMO DO FILTRO</Text>
+                                <Text style={styles.receiptLabel}>VALOR REGISTADO</Text>
                                 <View style={styles.fareRow}>
-                                    <Text style={styles.fareLabel}>Preço Base</Text>
-                                    <Text style={styles.fareVal}>Kz {(Number(receiptTrip?.final_fare || receiptTrip?.estimated_fare) * 0.8).toLocaleString()}</Text>
-                                </View>
-                                <View style={styles.fareRow}>
-                                    <Text style={styles.fareLabel}>Taxas e Impostos</Text>
-                                    <Text style={styles.fareVal}>Kz {(Number(receiptTrip?.final_fare || receiptTrip?.estimated_fare) * 0.2).toLocaleString()}</Text>
-                                </View>
-                                <View style={[styles.fareRow, { marginTop: 10 }]}>
-                                    <Text style={styles.totalLabel}>Total Pago</Text>
-                                    <Text style={styles.totalVal}>Kz {Number(receiptTrip?.final_fare || receiptTrip?.estimated_fare).toLocaleString()}</Text>
+                                    <Text style={styles.totalLabel}>{receiptSummary.amountLabel}</Text>
+                                    <Text style={styles.totalVal}>Kz {receiptSummary.amount.toLocaleString()}</Text>
                                 </View>
                             </View>
 
                             <View style={styles.receiptDivider} />
 
                             <View style={styles.receiptSection}>
-                                <Text style={styles.receiptLabel}>MÉTODO DE PAGAMENTO</Text>
+                                <Text style={styles.receiptLabel}>MÉTODO E ESTADO DO PAGAMENTO</Text>
                                 <View style={styles.paymentMethodRow}>
-                                    <CreditCard size={18} color={colors.primary} />
-                                    <Text style={styles.paymentMethodText}>Carteira TOT / Dinheiro</Text>
+                                    <Banknote size={18} color={colors.primary} />
+                                    <Text style={styles.paymentMethodText}>{receiptSummary.paymentLabel}</Text>
                                 </View>
                             </View>
 
-                            <TouchableOpacity
-                                style={styles.downloadBtn}
-                                onPress={() => { }}
-                            >
-                                <Text style={styles.downloadBtnText}>Baixar Recibo (PDF)</Text>
-                            </TouchableOpacity>
                         </ScrollView>
                     </View>
                 </View>

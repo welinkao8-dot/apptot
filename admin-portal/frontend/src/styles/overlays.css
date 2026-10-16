@@ -1,0 +1,623 @@
+/* ============================================================================
+   TOT Admin — sobreposições e vistas de detalhe
+   Modais, diálogos, recibos, faturas, formulários e a operação em tempo real.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Casca de modal
+   -------------------------------------------------------------------------- */
+.modal-overlay,
+.receipt-overlay,
+.invoice-dialog-overlay,
+.driver-map-overlay,
+.map-overlay,
+.status-reason-overlay,
+.verif-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--tot-space-5);
+    background: rgba(20, 27, 38, .5);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.modal-content,
+.glass-modal,
+.receipt-modal,
+.invoice-dialog,
+.driver-map-dialog,
+.status-reason-dialog,
+.map-modal,
+.verif-modal {
+    width: min(100%, 560px);
+    max-height: calc(100dvh - var(--tot-space-10));
+    margin: auto;
+    overflow-y: auto;
+    background: var(--tot-surface);
+    border: 0;
+    border-radius: var(--tot-radius-lg);
+    box-shadow: var(--tot-shadow-overlay);
+}
+
+.glass-modal,
+.glass {
+    background: var(--tot-surface);
+    backdrop-filter: none;
+}
+
+.wide-modal {
+    width: min(100%, 900px);
+}
+
+.modal-header,
+.verif-header,
+.map-modal-header {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--tot-space-3);
+    padding: var(--tot-space-5);
+    background: var(--tot-surface);
+    border-bottom: 1px solid var(--tot-line);
+}
+
+/* O recibo tem cabeçalho empilhado e centrado, por isso não partilha a regra
+   horizontal dos restantes diálogos. */
+.receipt-header {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--tot-space-1);
+    padding: var(--tot-space-6) var(--tot-space-5) var(--tot-space-4);
+    text-align: center;
+}
+
+.receipt-header > svg {
+    color: var(--tot-brand);
+}
+
+.receipt-value {
+    max-width: 60%;
+    overflow: hidden;
+    text-align: right;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.modal-header h2,
+.modal-header h3,
+.receipt-header h3,
+.verif-header h2,
+.map-modal-header h3 {
+    font-size: var(--tot-text-2xl);
+    font-weight: var(--tot-weight-semibold);
+}
+
+.modal-header p,
+.receipt-header p {
+    margin-top: var(--tot-space-1);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+}
+
+.modal-footer,
+.receipt-actions {
+    position: sticky;
+    bottom: 0;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--tot-space-3);
+    padding: var(--tot-space-4) var(--tot-space-5);
+    background: var(--tot-surface);
+    border-top: 1px solid var(--tot-line);
+}
+
+.btn-close-circle,
+.btn-close-receipt,
+.btn-icon-only {
+    display: inline-flex;
+    width: 34px;
+    height: 34px;
+    flex: 0 0 34px;
+    align-items: center;
+    justify-content: center;
+    color: var(--tot-ink-2);
+    background: var(--tot-surface-2);
+    border: 0;
+    border-radius: var(--tot-radius-md);
+    cursor: pointer;
+}
+
+.btn-close-circle:hover,
+.btn-close-receipt:hover,
+.btn-icon-only:hover {
+    color: var(--tot-ink);
+    background: var(--tot-line);
+}
+
+/* --------------------------------------------------------------------------
+   Formulários
+   -------------------------------------------------------------------------- */
+.service-form,
+.receipt-body,
+.verif-body,
+.invoice-dialog {
+    padding: var(--tot-space-5);
+}
+
+.service-form {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tot-space-5);
+}
+
+.form-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tot-space-3);
+}
+
+.form-section h4,
+.group-header {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-semibold);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.form-sections-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--tot-space-5);
+}
+
+.group-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--tot-space-3);
+}
+
+.input-group,
+.input-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--tot-space-4);
+}
+
+.input-field,
+.input-field-premium {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--tot-space-2);
+}
+
+.input-field label,
+.input-field-premium label,
+.file-label {
+    color: var(--tot-ink-2);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-medium);
+}
+
+.input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.input-icon {
+    position: absolute;
+    left: var(--tot-space-3);
+    color: var(--tot-muted);
+    pointer-events: none;
+}
+
+.input-field input,
+.input-field select,
+.input-field textarea,
+.input-field-premium input,
+.input-field-premium select,
+.input-field-premium textarea,
+.input-wrapper input,
+.file-label input {
+    width: 100%;
+    min-height: 44px;
+    padding: var(--tot-space-3);
+    color: var(--tot-ink);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-md);
+    transition: border-color .14s ease, box-shadow .14s ease;
+}
+
+.input-wrapper input {
+    padding-left: var(--tot-space-8);
+}
+
+.input-field input:focus,
+.input-field select:focus,
+.input-field-premium input:focus,
+.input-field-premium select:focus,
+.input-field-premium textarea:focus,
+.input-wrapper input:focus {
+    border-color: var(--tot-brand-ink);
+    outline: none;
+    box-shadow: 0 0 0 3px var(--tot-focus-ring);
+}
+
+.input-wrapper input:focus ~ .input-icon,
+.input-wrapper input:focus + .input-icon {
+    color: var(--tot-brand-ink);
+}
+
+.input-field input::placeholder,
+.input-field-premium input::placeholder,
+.input-wrapper input::placeholder {
+    color: var(--tot-muted-2);
+}
+
+.input-field-premium small,
+.input-field small {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    line-height: var(--tot-leading-snug);
+}
+
+.file-input-wrapper {
+    display: flex;
+    align-items: center;
+    gap: var(--tot-space-3);
+}
+
+/* --------------------------------------------------------------------------
+   Tarifas
+   -------------------------------------------------------------------------- */
+.pricing-module,
+.clients-module,
+.drivers-module,
+.trips-module {
+    min-width: 0;
+}
+
+.pricing-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: var(--tot-space-4);
+}
+
+.pricing-group-card {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--tot-space-4);
+    padding: var(--tot-space-5);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-lg);
+    box-shadow: var(--tot-shadow-card);
+}
+
+.pricing-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--tot-space-2);
+    padding: var(--tot-space-3);
+    background: var(--tot-surface-2);
+    border-radius: var(--tot-radius-md);
+}
+
+.summary-item {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.summary-item span,
+.total-label {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+}
+
+.summary-item strong {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-semibold);
+    font-variant-numeric: tabular-nums;
+}
+
+.price-tag-modern {
+    display: flex;
+    align-items: baseline;
+    gap: var(--tot-space-2);
+}
+
+.price-tag-modern strong {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-2xl);
+    font-weight: var(--tot-weight-bold);
+    font-variant-numeric: tabular-nums;
+}
+
+.total-value {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-4xl);
+    font-weight: var(--tot-weight-bold);
+    letter-spacing: -.02em;
+}
+
+.pricing-info-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tot-space-2);
+    padding: var(--tot-space-3);
+    color: var(--tot-pending);
+    background: var(--tot-pending-bg);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+}
+
+/* --------------------------------------------------------------------------
+   Recibo e fatura
+   -------------------------------------------------------------------------- */
+.receipt-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--tot-space-4);
+    padding: var(--tot-space-3) 0;
+}
+
+.receipt-row label {
+    flex: 0 0 120px;
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+}
+
+.receipt-row span {
+    min-width: 0;
+    color: var(--tot-ink);
+    font-size: var(--tot-text-sm);
+    text-align: right;
+    overflow-wrap: anywhere;
+}
+
+.receipt-divider {
+    height: 1px;
+    margin: var(--tot-space-2) 0;
+    background: var(--tot-line);
+}
+
+.receipt-total {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--tot-space-4);
+    padding-top: var(--tot-space-3);
+    border-top: 1px solid var(--tot-line-strong);
+}
+
+.invoice-table-wrap > div {
+    min-width: 720px;
+}
+
+/* --------------------------------------------------------------------------
+   Verificação de documentos
+   -------------------------------------------------------------------------- */
+.verif-body {
+    display: flex;
+    gap: 0;
+}
+
+.verif-sidebar {
+    width: 280px;
+    flex: 0 0 280px;
+    padding: var(--tot-space-5);
+    border-left: 1px solid var(--tot-line);
+}
+
+/* --------------------------------------------------------------------------
+   Perfis e configurações
+   -------------------------------------------------------------------------- */
+.client-profile-layout,
+.driver-profile-layout,
+.config-services-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    align-items: start;
+    gap: var(--tot-space-5);
+}
+
+.client-profile-layout > *,
+.driver-profile-layout > *,
+.config-services-grid > * {
+    min-width: 0;
+}
+
+/* --------------------------------------------------------------------------
+   Blocos de estatística (perfis)
+   -------------------------------------------------------------------------- */
+.admin-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: var(--tot-space-4);
+}
+
+.admin-stat-card {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--tot-space-3);
+    padding: var(--tot-space-4);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-lg);
+    box-shadow: var(--tot-shadow-card);
+}
+
+.stat-icon {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    place-items: center;
+    color: var(--tot-brand-ink);
+    background: var(--tot-brand-soft);
+    border-radius: var(--tot-radius-md);
+}
+
+.stat-info {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.stat-info .label {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-medium);
+}
+
+.stat-info .value {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-3xl);
+    font-weight: var(--tot-weight-bold);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+}
+
+/* --------------------------------------------------------------------------
+   Operação em tempo real
+   -------------------------------------------------------------------------- */
+.live-ops-layout {
+    display: flex;
+    min-height: 420px;
+    flex-direction: column;
+    height: min(760px, calc(100dvh - 200px));
+}
+
+.live-ops-layout .module-header-nav {
+    flex-shrink: 0;
+}
+
+.live-ops-body {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    gap: var(--tot-space-4);
+}
+
+.live-ops-map {
+    position: relative;
+    min-width: 0;
+    min-height: 420px;
+    flex: 1 1 auto;
+    overflow: hidden;
+    background: var(--tot-surface-2);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-lg);
+}
+
+.here-map-container {
+    width: 100%;
+    height: 100%;
+    min-height: 420px;
+}
+
+.live-ops-sidebar {
+    display: flex;
+    min-width: 0;
+    max-height: 100%;
+    flex: 0 0 340px;
+    flex-direction: column;
+    gap: var(--tot-space-3);
+    overflow-y: auto;
+}
+
+.live-ops-panel {
+    min-width: 0;
+    overflow: hidden;
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-md);
+}
+
+@media (max-width: 900px) {
+    .modal-overlay,
+    .receipt-overlay,
+    .invoice-dialog-overlay,
+    .driver-map-overlay,
+    .map-overlay,
+    .status-reason-overlay,
+    .verif-overlay {
+        padding: var(--tot-space-3);
+        align-items: flex-start;
+    }
+
+    .modal-content,
+    .glass-modal,
+    .receipt-modal,
+    .invoice-dialog,
+    .driver-map-dialog,
+    .status-reason-dialog,
+    .map-modal,
+    .verif-modal {
+        width: 100%;
+        max-height: calc(100dvh - var(--tot-space-6));
+        border-radius: var(--tot-radius-md);
+    }
+
+    .form-sections-grid,
+    .input-group,
+    .input-row,
+    .client-profile-layout,
+    .driver-profile-layout,
+    .config-services-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .live-ops-layout {
+        height: auto;
+    }
+
+    .live-ops-body {
+        flex-direction: column;
+    }
+
+    .live-ops-map {
+        min-height: 52dvh;
+    }
+
+    .live-ops-sidebar {
+        max-height: 42dvh;
+        flex: 0 1 auto;
+    }
+
+    .verif-body {
+        flex-direction: column;
+    }
+
+    .verif-sidebar {
+        width: 100%;
+        flex-basis: auto;
+        border-top: 1px solid var(--tot-line);
+        border-left: 0;
+    }
+
+    .receipt-row label {
+        flex-basis: 96px;
+    }
+}

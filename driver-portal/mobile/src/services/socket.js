@@ -2,15 +2,22 @@ import io from 'socket.io-client';
 import { API_URL } from '../context/AuthContext';
 
 let socket = null;
+let socketToken = null;
 
 export const connectSocket = (token) => {
-    if (socket?.connected) return socket;
+    if (socket && socketToken === token) {
+        if (!socket.connected) socket.connect();
+        return socket;
+    }
+
+    if (socket) socket.disconnect();
 
     socket = io(API_URL, {
         auth: { token },
         transports: ['websocket'],
         autoConnect: true,
     });
+    socketToken = token;
 
     socket.on('connect', () => {
         console.log('✅ Socket connected:', socket.id);
@@ -29,5 +36,6 @@ export const disconnectSocket = () => {
     if (socket) {
         socket.disconnect();
         socket = null;
+        socketToken = null;
     }
 };

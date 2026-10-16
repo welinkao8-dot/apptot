@@ -10,13 +10,14 @@ import {
     Clock,
     Car
 } from 'lucide-react'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
 import { MapContainer, TileLayer, Marker, Popup, Circle } from 'react-leaflet'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
+import { resolveLiveOpsResults } from '../services/liveOpsData'
+import { formatLocationAge, resolveDriverLocation } from '../services/driverLocation'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 // Fix leaflet default marker icon
@@ -60,9 +61,11 @@ export default function LiveOps({ onBack }) {
     const [drivers, setDrivers] = useState([])
     const [activeTrips, setActiveTrips] = useState([])
     const [loading, setLoading] = useState(true)
-    const [lastUpdate, setLastUpdate] = useState(null)
+    const [errors, setErrors] = useState({ drivers: null, trips: null })
+    const [lastUpdated, setLastUpdated] = useState({ drivers: null, trips: null })
     const [selectedDriver, setSelectedDriver] = useState(null)
     const intervalRef = useRef(null)
+    const snapshotRef = useRef({ drivers: [], activeTrips: [], lastUpdated: { drivers: null, trips: null } })
 
     useEffect(() => {
         fetchData()
@@ -71,29 +74,23 @@ export default function LiveOps({ onBack }) {
     }, [])
 
     const fetchData = async () => {
-        try {
-            const [driversRes, tripsRes] = await Promise.allSettled([
-                axios.get(`${API_URL}/admin/drivers/locations`),
-                axios.get(`${API_URL}/admin/trips`)
-            ])
-
-            if (driversRes.status === 'fulfilled') {
-                setDrivers(Array.isArray(driversRes.value.data) ? driversRes.value.data : [])
-            }
-            if (tripsRes.status === 'fulfilled') {
-                const trips = Array.isArray(tripsRes.value.data) ? tripsRes.value.data : []
-                setActiveTrips(trips.filter(t => ['requested', 'accepted', 'arrived', 'ongoing'].includes(t.status)))
-            }
-            setLastUpdate(new Date())
-        } catch (err) {
-            console.error('LiveOps fetch error:', err)
-        } finally {
-            setLoading(false)
-        }
+        const results = await Promise.allSettled([
+            adminApi.get('/admin/drivers/locations'),
+            adminApi.get('/admin/trips')
+        ])
+        const snapshot = resolveLiveOpsResults(results, snapshotRef.current)
+        snapshotRef.current = snapshot
+        setDrivers(snapshot.drivers)
+        setActiveTrips(snapshot.activeTrips)
+        setErrors(snapshot.errors)
+        setLastUpdated(snapshot.lastUpdated)
+        setLoading(false)
     }
 
-    const driversWithCoords = drivers.filter(d => d.current_lat && d.current_lng)
-    const driversWithoutCoords = drivers.filter(d => !d.current_lat || !d.current_lng)
+    const locationByDriverId = new Map(drivers.map(driver => [driver.id, resolveDriverLocation(driver)]))
+    const driversWithCoords = drivers.filter(driver => locationByDriverId.get(driver.id)?.position)
+    const freshLocationCount = drivers.filter(driver => locationByDriverId.get(driver.id)?.state === 'fresh').length
+    const staleLocationCount = drivers.filter(driver => locationByDriverId.get(driver.id)?.state === 'stale').length
 
     const STATUS_COLOR = {
         active: '#10b981',
@@ -110,7 +107,7 @@ export default function LiveOps({ onBack }) {
     }
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 40px)', gap: 0 }}>
+        <div className="live-ops-layout">
             {/* Header */}
             <div className="module-header-nav" style={{ flexShrink: 0 }}>
                 <div className="flex items-center gap-4">
@@ -127,8 +124,9 @@ export default function LiveOps({ onBack }) {
                                 display: 'inline-block',
                                 animation: 'pulse-dot 2s infinite'
                             }} />
-                            {drivers.length} motoristas online · {activeTrips.length} corridas activas
-                            {lastUpdate && ` · Atualizado às ${lastUpdate.toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
+                            {drivers.length} motoristas online · {freshLocationCount} posições recentes · {staleLocationCount} desatualizadas · {activeTrips.length} corridas activas
+                            {lastUpdated.drivers && ` · Motoristas: ${new Date(lastUpdated.drivers).toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
+                            {lastUpdated.trips && ` · Corridas: ${new Date(lastUpdated.trips).toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`}
                         </p>
                     </div>
                 </div>
@@ -142,9 +140,9 @@ export default function LiveOps({ onBack }) {
             </div>
 
             {/* Main Content: Map + Sidebar */}
-            <div style={{ display: 'flex', gap: 20, flex: 1, minHeight: 0, marginTop: 16 }}>
+            <div className="live-ops-body">
                 {/* Map */}
-                <div style={{ flex: 1, borderRadius: 20, overflow: 'hidden', border: '1.5px solid #f1f5f9', position: 'relative' }}>
+                <div className="live-ops-map" style={{ position: 'relative' }}>
                     {loading ? (
                         <div style={{
                             height: '100%', display: 'flex', flexDirection: 'column',
@@ -166,35 +164,48 @@ export default function LiveOps({ onBack }) {
                                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                             />
                             {driversWithCoords.map(driver => (
-                                <Marker
-                                    key={driver.id}
-                                    position={[driver.current_lat, driver.current_lng]}
-                                    icon={createDriverIcon(STATUS_COLOR[driver.status] || '#e91e63')}
-                                    eventHandlers={{ click: () => setSelectedDriver(driver) }}
-                                >
-                                    <Popup>
-                                        <div style={{ minWidth: 160 }}>
-                                            <strong style={{ fontSize: 14 }}>{driver.full_name}</strong>
-                                            <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b' }}>
-                                                📞 {driver.phone}
-                                            </p>
-                                            <p style={{ margin: '2px 0 0', fontSize: 12 }}>
-                                                <span style={{
-                                                    background: `${STATUS_COLOR[driver.status] || '#e91e63'}22`,
-                                                    color: STATUS_COLOR[driver.status] || '#e91e63',
-                                                    padding: '2px 8px', borderRadius: 10, fontWeight: 700
-                                                }}>
-                                                    {driver.status?.toUpperCase() || 'ONLINE'}
-                                                </span>
-                                            </p>
-                                            {driver.rating && (
-                                                <p style={{ margin: '6px 0 0', fontSize: 12, color: '#f59e0b' }}>
-                                                    ⭐ {Number(driver.rating).toFixed(1)}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </Popup>
-                                </Marker>
+                                (() => {
+                                    const location = locationByDriverId.get(driver.id)
+                                    const locationColor = location.state === 'stale'
+                                        ? '#64748b'
+                                        : (STATUS_COLOR[driver.status] || '#e91e63')
+                                    return (
+                                        <Marker
+                                            key={driver.id}
+                                            position={location.position}
+                                            icon={createDriverIcon(locationColor)}
+                                            eventHandlers={{ click: () => setSelectedDriver(driver) }}
+                                        >
+                                            <Popup>
+                                                <div style={{ minWidth: 160 }}>
+                                                    <strong style={{ fontSize: 14 }}>{driver.full_name}</strong>
+                                                    <p style={{ margin: '4px 0 0', fontSize: 12, color: '#64748b' }}>
+                                                        📞 {driver.phone}
+                                                    </p>
+                                                    <p style={{ margin: '2px 0 0', fontSize: 12 }}>
+                                                        <span style={{
+                                                            background: `${locationColor}22`,
+                                                            color: locationColor,
+                                                            padding: '2px 8px', borderRadius: 10, fontWeight: 700
+                                                        }}>
+                                                            {location.state === 'stale' ? 'POSIÇÃO DESATUALIZADA' : (driver.status?.toUpperCase() || 'ONLINE')}
+                                                        </span>
+                                                    </p>
+                                                    <p style={{ margin: '4px 0 0', fontSize: 11, color: '#64748b' }}>
+                                                        {location.updatedAt
+                                                            ? `Último GPS ${formatLocationAge(location.ageMs)}`
+                                                            : 'Hora do GPS desconhecida'}
+                                                    </p>
+                                                    {location.accuracyMeters != null && (
+                                                        <p style={{ margin: '2px 0 0', fontSize: 11, color: '#64748b' }}>
+                                                            Precisão GPS: ±{Math.round(location.accuracyMeters)} m
+                                                        </p>
+                                                    )}
+                                                </div>
+                                            </Popup>
+                                        </Marker>
+                                    )
+                                })()
                             ))}
                         </MapContainer>
                     )}
@@ -216,9 +227,9 @@ export default function LiveOps({ onBack }) {
                 </div>
 
                 {/* Sidebar */}
-                <div style={{ width: 320, display: 'flex', flexDirection: 'column', gap: 16, overflow: 'auto' }}>
+                <div className="live-ops-sidebar">
                     {/* Online Drivers */}
-                    <div style={{ background: '#fff', borderRadius: 20, border: '1.5px solid #f1f5f9', overflow: 'hidden', flexShrink: 0 }}>
+                    <div className="live-ops-panel">
                         <div style={{ padding: '14px 18px', borderBottom: '1.5px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Bike size={18} style={{ color: '#e91e63' }} />
                             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
@@ -226,9 +237,10 @@ export default function LiveOps({ onBack }) {
                             </h3>
                         </div>
                         <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+                            {errors.drivers && <ResourceError message={errors.drivers} onRetry={fetchData} />}
                             {loading ? (
                                 <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>A carregar...</div>
-                            ) : drivers.length === 0 ? (
+                            ) : drivers.length === 0 && errors.drivers ? null : drivers.length === 0 ? (
                                 <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
                                     <Bike size={32} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
                                     <p style={{ fontSize: 13, margin: 0 }}>Nenhum motorista online</p>
@@ -267,7 +279,9 @@ export default function LiveOps({ onBack }) {
                                         <div style={{ flex: 1, minWidth: 0 }}>
                                             <p style={{ margin: 0, fontWeight: 600, fontSize: 13, color: '#0f172a', truncate: true }}>{driver.full_name}</p>
                                             <p style={{ margin: 0, fontSize: 11, color: '#94a3b8' }}>
-                                                {driver.current_lat ? `📍 ${driver.current_lat.toFixed(4)}, ${driver.current_lng.toFixed(4)}` : '📍 Localização desconhecida'}
+                                                {locationByDriverId.get(driver.id)?.position
+                                                    ? `📍 ${locationByDriverId.get(driver.id).position.map(value => value.toFixed(4)).join(', ')} · ${locationByDriverId.get(driver.id).state === 'stale' ? `desatualizada ${formatLocationAge(locationByDriverId.get(driver.id).ageMs)}` : locationByDriverId.get(driver.id).state === 'fresh' ? `atualizada ${formatLocationAge(locationByDriverId.get(driver.id).ageMs)}` : 'hora desconhecida'}`
+                                                    : '📍 Localização desconhecida'}
                                             </p>
                                         </div>
                                         <span style={{
@@ -283,7 +297,7 @@ export default function LiveOps({ onBack }) {
                     </div>
 
                     {/* Active Trips */}
-                    <div style={{ background: '#fff', borderRadius: 20, border: '1.5px solid #f1f5f9', overflow: 'hidden' }}>
+                    <div className="live-ops-panel">
                         <div style={{ padding: '14px 18px', borderBottom: '1.5px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Activity size={18} style={{ color: '#3b82f6' }} />
                             <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700, color: '#0f172a' }}>
@@ -291,9 +305,10 @@ export default function LiveOps({ onBack }) {
                             </h3>
                         </div>
                         <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+                            {errors.trips && <ResourceError message={errors.trips} onRetry={fetchData} />}
                             {loading ? (
                                 <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: 13 }}>A carregar...</div>
-                            ) : activeTrips.length === 0 ? (
+                            ) : activeTrips.length === 0 && errors.trips ? null : activeTrips.length === 0 ? (
                                 <div style={{ padding: '24px', textAlign: 'center', color: '#94a3b8' }}>
                                     <Car size={32} style={{ margin: '0 auto 8px', opacity: 0.3 }} />
                                     <p style={{ fontSize: 13, margin: 0 }}>Nenhuma corrida activa</p>
@@ -337,6 +352,17 @@ export default function LiveOps({ onBack }) {
                     </div>
                 </div>
             </div>
+        </div>
+    )
+}
+
+function ResourceError({ message, onRetry }) {
+    return (
+        <div role="alert" style={{ padding: '12px 16px', background: '#fff7ed', color: '#9a3412', fontSize: 12 }}>
+            <p style={{ margin: '0 0 8px' }}>{message}</p>
+            <button type="button" onClick={onRetry} style={{ border: 0, padding: 0, background: 'transparent', color: '#c2410c', cursor: 'pointer', fontWeight: 700 }}>
+                Tentar novamente
+            </button>
         </div>
     )
 }

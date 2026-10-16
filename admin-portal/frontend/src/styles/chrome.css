@@ -1,0 +1,416 @@
+/* ============================================================================
+   TOT Admin — chrome
+   Navegação, marca, topo e o drawer móvel.
+   A marca aparece aqui e só aqui: chrome, rail, estado ativo e a ação primária.
+   Nota de cascata: todas as media queries deste ficheiro ficam no fim.
+   ========================================================================== */
+
+.admin-layout {
+    display: flex;
+    min-height: 100dvh;
+    background: var(--tot-canvas);
+    color: var(--tot-ink);
+}
+
+/* --------------------------------------------------------------------------
+   Navegação
+   Um só tom de marca, plano. O gradiente de três paragens que existia aqui
+   (#8d063e → #ba0b54 → #870436) fazia a superfície mais pesada do produto
+   competir com os dados.
+   -------------------------------------------------------------------------- */
+.admin-sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    width: var(--tot-sidebar-width);
+    flex: 0 0 var(--tot-sidebar-width);
+    height: 100dvh;
+    flex-direction: column;
+    padding: var(--tot-space-5) var(--tot-space-4) var(--tot-space-4);
+    overflow: hidden;
+    background: var(--tot-brand-deep);
+}
+
+.admin-logo {
+    display: flex;
+    flex: 0 0 auto;
+    margin: 0 var(--tot-space-2) var(--tot-space-6);
+    align-items: center;
+    gap: var(--tot-space-3);
+}
+
+.admin-logo-mark {
+    display: grid;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    place-items: center;
+    color: var(--tot-brand-deep);
+    background: #fff;
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-lg);
+    font-weight: var(--tot-weight-bold);
+    letter-spacing: -.03em;
+}
+
+.admin-logo-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.admin-logo-copy strong {
+    color: #fff;
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-bold);
+    letter-spacing: -.01em;
+    line-height: 1.2;
+}
+
+.admin-logo-copy em {
+    margin-left: var(--tot-space-1);
+    color: #f8c8dc;
+    font-size: var(--tot-text-xs);
+    font-style: normal;
+    font-weight: var(--tot-weight-medium);
+}
+
+.admin-logo-copy small {
+    color: #f8c8dc;
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-regular);
+}
+
+/* O ponto "sistema ligado" foi removido: a sua presença não carregava
+   informação nenhuma ao utilizador — se o painel abre, o sistema está ligado. */
+
+.admin-nav {
+    display: flex;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: var(--tot-space-1);
+    padding-bottom: var(--tot-space-3);
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, .28) transparent;
+    scrollbar-gutter: stable;
+}
+
+.admin-nav-section {
+    margin: var(--tot-space-5) var(--tot-space-3) var(--tot-space-2);
+    color: #f8c8dc;
+}
+
+.admin-nav-section:first-child {
+    margin-top: 0;
+}
+
+.nav-link {
+    display: flex;
+    width: 100%;
+    min-height: var(--tot-row-height);
+    align-items: center;
+    gap: var(--tot-space-3);
+    padding: var(--tot-space-3);
+    color: rgba(255, 255, 255, .84);
+    background: transparent;
+    border: 0;
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-medium);
+    text-align: left;
+    cursor: pointer;
+    transition: background-color .14s ease, color .14s ease;
+}
+
+.nav-link svg {
+    flex: 0 0 auto;
+    opacity: .9;
+}
+
+.nav-link:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, .1);
+}
+
+/* Ativo: a pill branca mantém-se porque funciona, mas o rótulo passa a
+   --tot-brand-ink: #e91e63 sobre branco mede 4,35:1 e falhava AA. */
+.nav-link.active {
+    color: var(--tot-brand-ink);
+    background: #fff;
+    font-weight: var(--tot-weight-semibold);
+}
+
+.nav-link.active svg {
+    opacity: 1;
+}
+
+.nav-live-badge {
+    margin-left: auto;
+    padding: 2px var(--tot-space-2);
+    color: var(--tot-active);
+    background: var(--tot-active-bg);
+    border-radius: var(--tot-radius-full);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-semibold);
+    letter-spacing: .04em;
+}
+
+.admin-footer {
+    flex: 0 0 auto;
+    padding-top: var(--tot-space-3);
+    border-top: 1px solid rgba(255, 255, 255, .18);
+}
+
+.btn-logout {
+    color: rgba(255, 255, 255, .84);
+}
+
+.sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 30;
+    display: none;
+    background: rgba(20, 27, 38, .5);
+    border: 0;
+    cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   Topo e conteúdo
+   -------------------------------------------------------------------------- */
+.admin-main {
+    width: auto;
+    max-width: 1760px;
+    min-width: 0;
+    flex: 1 1 auto;
+    margin-right: auto;
+    padding: var(--tot-space-6) var(--tot-space-8) var(--tot-space-10);
+}
+
+.tot-admin-topbar {
+    display: flex;
+    min-height: var(--tot-topbar-height);
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--tot-space-4);
+    margin: calc(var(--tot-space-6) * -1) calc(var(--tot-space-8) * -1) var(--tot-space-6);
+    padding: 0 var(--tot-space-8);
+    background: var(--tot-surface);
+    border-bottom: 1px solid var(--tot-line);
+}
+
+.tot-admin-topbar-context {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.tot-admin-topbar-context strong {
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-semibold);
+}
+
+.tot-admin-topbar-context span {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+}
+
+.tot-admin-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--tot-space-3);
+}
+
+/* Era um botão que parecia um dropdown e não fazia nada. */
+.tot-admin-period {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-medium);
+    white-space: nowrap;
+}
+
+.mobile-toggle {
+    display: none;
+    width: 40px;
+    height: 40px;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    background: var(--tot-brand-ink);
+    border: 0;
+    border-radius: var(--tot-radius-md);
+    cursor: pointer;
+}
+
+/* --------------------------------------------------------------------------
+   Cabeçalho de página e de módulo
+   -------------------------------------------------------------------------- */
+.page-header,
+.module-header-nav {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--tot-space-4);
+    margin: 0 0 var(--tot-space-6);
+    padding: 0 0 var(--tot-space-4);
+    border-bottom: 1px solid var(--tot-line);
+}
+
+.module-header-left {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 320px;
+    align-items: center;
+    gap: var(--tot-space-3);
+}
+
+.title-area,
+.page-title {
+    min-width: 0;
+}
+
+.title-area h2,
+.page-title h1 {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-5xl);
+    font-weight: var(--tot-weight-bold);
+    letter-spacing: -.02em;
+}
+
+.title-area p,
+.page-title p {
+    margin-top: var(--tot-space-1);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-regular);
+    line-height: var(--tot-leading-snug);
+}
+
+.title-with-icon {
+    display: flex;
+    align-items: center;
+    gap: var(--tot-space-2);
+}
+
+.header-actions {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 320px;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--tot-space-3);
+}
+
+.btn-back-square {
+    display: inline-flex;
+    width: 40px;
+    height: 40px;
+    flex: 0 0 40px;
+    align-items: center;
+    justify-content: center;
+    color: var(--tot-ink-2);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-md);
+    cursor: pointer;
+    transition: background-color .14s ease, color .14s ease, border-color .14s ease;
+}
+
+.btn-back-square:hover {
+    color: var(--tot-brand-ink);
+    background: var(--tot-brand-soft);
+    border-color: var(--tot-brand-soft);
+}
+
+.under-construction {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--tot-space-3);
+    padding: var(--tot-space-10) var(--tot-space-5);
+    color: var(--tot-muted);
+    text-align: center;
+}
+
+.under-construction h2 {
+    font-size: var(--tot-text-3xl);
+}
+
+/* --------------------------------------------------------------------------
+   Drawer móvel — no fim, como todas as media queries desta camada.
+   O bloco anterior re-declarava larguras base DEPOIS destas regras e
+   anulava-as em silêncio: a sidebar ficava em 322px em qualquer ecrã e o
+   conteúdo levava 42px de margem lateral num telemóvel de 360px.
+   -------------------------------------------------------------------------- */
+@media (max-width: 1100px) {
+    :root { --tot-sidebar-width: 252px; }
+
+    .admin-main {
+        padding: var(--tot-space-5) var(--tot-space-6) var(--tot-space-8);
+    }
+
+    .tot-admin-topbar {
+        margin: calc(var(--tot-space-5) * -1) calc(var(--tot-space-6) * -1) var(--tot-space-5);
+        padding: 0 var(--tot-space-6);
+    }
+}
+
+@media (max-width: 900px) {
+    .admin-sidebar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        z-index: 50;
+        width: min(300px, 86vw);
+        flex-basis: min(300px, 86vw);
+        transform: translateX(-100%);
+        transition: transform .24s ease;
+    }
+
+    .admin-sidebar.open {
+        transform: none;
+    }
+
+    .sidebar-overlay.visible {
+        display: block;
+    }
+
+    .mobile-toggle {
+        display: inline-flex;
+    }
+
+    .admin-main {
+        padding: var(--tot-space-4) var(--tot-space-4) var(--tot-space-8);
+    }
+
+    .tot-admin-topbar {
+        margin: calc(var(--tot-space-4) * -1) calc(var(--tot-space-4) * -1) var(--tot-space-4);
+        padding: 0 var(--tot-space-4);
+    }
+
+    .module-header-left,
+    .header-actions {
+        flex: 1 1 100%;
+    }
+
+    .header-actions {
+        justify-content: flex-start;
+    }
+}
+
+@media (max-width: 520px) {
+    .title-area h2,
+    .page-title h1 {
+        font-size: var(--tot-text-4xl);
+    }
+}

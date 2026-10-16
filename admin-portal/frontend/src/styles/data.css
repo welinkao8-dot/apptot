@@ -1,0 +1,1282 @@
+/* ============================================================================
+   TOT Admin — dados
+   A grelha de registos, as tabelas, os indicadores, os estados e os vazios.
+   Aqui vive a assinatura do painel: a traça de percurso (.trip-route).
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Indicadores — três, com peso igual. A caixa com gradiente por indicador,
+   a barra superior colorida, o ponto com halo e os seis tintes diferentes
+   foram removidos: eram dezoito marcas de cor para três números.
+   -------------------------------------------------------------------------- */
+.tot-indicators {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--tot-space-4);
+    margin-bottom: var(--tot-space-4);
+}
+
+.tot-indicator {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--tot-space-3);
+    padding: var(--tot-space-5);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-lg);
+    box-shadow: var(--tot-shadow-card);
+    text-align: left;
+}
+
+.tot-indicator-label {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-medium);
+}
+
+.tot-indicator-value {
+    display: flex;
+    align-items: baseline;
+    gap: var(--tot-space-2);
+    color: var(--tot-ink);
+    font-size: var(--tot-text-6xl);
+    font-weight: var(--tot-weight-bold);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.03em;
+    line-height: 1;
+    overflow-wrap: anywhere;
+}
+
+.tot-indicator-value small {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-medium);
+    letter-spacing: 0;
+}
+
+.tot-indicator-link {
+    padding: 0;
+    color: var(--tot-brand-ink);
+    background: none;
+    border: 0;
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-semibold);
+    cursor: pointer;
+}
+
+.tot-indicator-link:hover {
+    text-decoration: underline;
+}
+
+.tot-indicators-note {
+    margin: 0 0 var(--tot-space-4);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+}
+
+/* --------------------------------------------------------------------------
+   Faixa "agora" — a única superfície do painel onde existe movimento real.
+   -------------------------------------------------------------------------- */
+.tot-now {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tot-space-3) var(--tot-space-6);
+    margin-bottom: var(--tot-space-4);
+    padding: var(--tot-space-4) var(--tot-space-5);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-left: 3px solid var(--tot-brand);
+    border-radius: var(--tot-radius-md);
+    box-shadow: var(--tot-shadow-card);
+}
+
+.tot-now-lead {
+    display: flex;
+    align-items: center;
+    gap: var(--tot-space-3);
+}
+
+.tot-now-lamp {
+    width: 9px;
+    height: 9px;
+    flex: 0 0 9px;
+    background: var(--tot-live);
+    border-radius: var(--tot-radius-full);
+    animation: tot-pulse-dot 1.8s ease-in-out infinite;
+}
+
+.tot-now-lead strong {
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-semibold);
+}
+
+.tot-now-lead span {
+    display: block;
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+}
+
+.tot-now-item {
+    display: flex;
+    align-items: baseline;
+    gap: var(--tot-space-2);
+    padding: 0;
+    color: var(--tot-ink-2);
+    background: none;
+    border: 0;
+    font-size: var(--tot-text-sm);
+    cursor: pointer;
+}
+
+.tot-now-item strong {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-2xl);
+    font-weight: var(--tot-weight-bold);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+}
+
+.tot-now-item:hover strong {
+    color: var(--tot-brand-ink);
+}
+
+.tot-now-alert {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tot-space-2);
+    margin-left: auto;
+    padding: var(--tot-space-2) var(--tot-space-3);
+    color: var(--tot-pending);
+    background: var(--tot-pending-bg);
+    border: 1px solid transparent;
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-semibold);
+    cursor: pointer;
+}
+
+.tot-now-alert:hover {
+    border-color: var(--tot-pending);
+}
+
+/* --------------------------------------------------------------------------
+   Grelha de registos — um sistema, três familias com as suas colunas.
+   A faixa de cabeçalho rosa (#fce4ec) sai: o cabeçalho passa a superfície
+   neutra e o rótulo de #851044 sobre rosa a cinzento legível (5,83:1).
+   -------------------------------------------------------------------------- */
+.admin-record-list {
+    overflow: hidden;
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-lg);
+    box-shadow: var(--tot-shadow-card);
+}
+
+.clients-record-list,
+.drivers-record-list,
+.trips-record-list { min-width: 0; }
+
+/* Agrupamento de ações da linha em páginas ainda não migradas. */
+.card-right-section {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--tot-space-3);
+}
+
+.admin-record-list-head,
+.admin-record-row {
+    display: grid;
+    min-width: 0;
+    align-items: center;
+    column-gap: var(--tot-space-4);
+}
+
+.admin-record-list-head {
+    min-height: 38px;
+    padding: 0 var(--tot-space-4);
+    background: var(--tot-surface-2);
+    border-bottom: 1px solid var(--tot-line);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-semibold);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+.admin-record-row {
+    min-height: 48px;
+    padding: var(--tot-space-2) var(--tot-space-4);
+    background: var(--tot-surface);
+    border-bottom: 1px solid var(--tot-line);
+    transition: background-color .14s ease;
+}
+
+.admin-record-row:last-child {
+    border-bottom: 0;
+}
+
+.admin-record-row:hover {
+    background: var(--tot-surface-2);
+}
+
+.clients-record-head,
+.clients-record-row {
+    grid-template-columns: minmax(200px, 1.8fr) minmax(104px, .8fr) minmax(104px, .8fr) minmax(190px, auto);
+}
+
+.drivers-record-head,
+.drivers-record-row {
+    grid-template-columns: minmax(200px, 1.8fr) minmax(96px, .65fr) minmax(112px, .75fr) minmax(190px, auto);
+}
+
+.trips-record-head,
+.trip-record-row {
+    grid-template-columns: minmax(260px, 1fr) minmax(104px, 150px) minmax(96px, 130px) minmax(120px, auto);
+}
+
+/* Célula principal: avatar + identificação. */
+.card-left-section {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--tot-space-3);
+}
+
+.avatar-box {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    place-items: center;
+    color: var(--tot-brand-ink-soft);
+    background: var(--tot-brand-soft);
+    border-radius: var(--tot-radius-full);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-bold);
+    letter-spacing: .02em;
+    text-transform: uppercase;
+}
+
+.info-group {
+    min-width: 0;
+}
+
+.info-group h3 {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-semibold);
+    line-height: var(--tot-leading-snug);
+    overflow-wrap: anywhere;
+}
+
+.info-group p {
+    margin-top: 1px;
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+    font-variant-numeric: tabular-nums;
+    line-height: var(--tot-leading-snug);
+    overflow-wrap: anywhere;
+}
+
+.record-primary-value {
+    display: block;
+    color: var(--tot-ink);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-semibold);
+}
+
+.record-secondary-label {
+    display: block;
+    margin-top: 1px;
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+}
+
+.client-record-activity,
+.client-record-date,
+.driver-account-state,
+.trip-record-state,
+.trip-record-fare {
+    min-width: 0;
+    justify-self: start;
+}
+
+.client-record-activity {
+    display: flex;
+    align-items: baseline;
+    gap: var(--tot-space-1);
+}
+
+.client-record-activity .record-secondary-label {
+    margin: 0;
+}
+
+.driver-presence-label {
+    justify-self: start;
+    color: var(--tot-ink-2);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-medium);
+}
+
+.trip-record-fare {
+    width: auto;
+    color: var(--tot-ink);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
+/* --------------------------------------------------------------------------
+   AÇÕES DE LINHA
+   Antes: sete blocos magenta cheios por ecrã (`.btn-pill-sm.primary` a 100px),
+   e o mesmo botão em rosa-pálido noutra lista. Agora: uma ligação de texto por
+   linha, revelada no hover/foco, e ícones para o resto. Em ecrãs estreitos
+   ficam sempre visíveis, porque não há hover no toque.
+   -------------------------------------------------------------------------- */
+.record-actions {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--tot-space-2);
+    opacity: 0;
+    transition: opacity .14s ease;
+}
+
+.admin-record-row:hover .record-actions,
+.admin-record-row:focus-within .record-actions {
+    opacity: 1;
+}
+
+.record-action {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tot-space-1);
+    padding: var(--tot-space-1) var(--tot-space-2);
+    color: var(--tot-brand-ink);
+    background: none;
+    border: 0;
+    border-radius: var(--tot-radius-sm);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-semibold);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.record-action:hover {
+    background: var(--tot-brand-soft);
+}
+
+.record-action svg {
+    transition: transform .14s ease;
+}
+
+.record-action:hover svg {
+    transform: translateX(2px);
+}
+
+.record-action-icon {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    align-items: center;
+    justify-content: center;
+    color: var(--tot-ink-2);
+    background: none;
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-md);
+    cursor: pointer;
+}
+
+.record-action-icon:hover {
+    color: var(--tot-brand-ink);
+    background: var(--tot-brand-soft);
+    border-color: var(--tot-brand-soft);
+}
+/* Linha em curso: a única linha do painel que se destaca, e destaca-se
+   com o verde do estado, não com a cor da marca. */
+.trip-record-row.is-live {
+    background: var(--tot-live-bg);
+    box-shadow: inset 3px 0 var(--tot-live);
+}
+
+.trip-record-row.is-live:last-child {
+    border-bottom: 0;
+}
+
+.trip-record-row.is-live:hover {
+    background: var(--tot-live-bg);
+}
+
+/* --------------------------------------------------------------------------
+   ASSINATURA — a traça de percurso.
+   Existia esquecida a 0.68rem, em caixa alta e cor de marca, e lia-se como
+   bullets de lista. Passa a ser o elemento reconhecível da consola: uma linha
+   contínua com dois nós, origem marcada pela cor da marca (nunca para
+   significado de estado) e destino em tinta.
+   -------------------------------------------------------------------------- */
+.trip-route {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: var(--tot-space-2);
+    padding-left: var(--tot-space-4);
+}
+
+.trip-route::before {
+    position: absolute;
+    top: 5px;
+    bottom: 5px;
+    left: 3px;
+    width: 1px;
+    background: var(--tot-line-strong);
+    content: '';
+}
+
+.trip-route-stop {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: var(--tot-space-2);
+}
+
+.trip-route-stop::before {
+    position: absolute;
+    top: .42em;
+    left: calc(var(--tot-space-4) * -1 + 0px);
+    width: 7px;
+    height: 7px;
+    background: var(--tot-ink-2);
+    border: 1px solid var(--tot-surface);
+    border-radius: var(--tot-radius-full);
+    content: '';
+}
+
+.trip-route-stop:first-child::before {
+    background: var(--tot-brand);
+}
+
+.trip-route-label {
+    flex: 0 0 auto;
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-medium);
+}
+
+.trip-route-value {
+    min-width: 0;
+    color: var(--tot-ink-2);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+    overflow-wrap: anywhere;
+}
+
+.trip-address-row {
+    min-width: 0;
+}
+
+.trip-address {
+    display: block;
+    color: var(--tot-ink-2);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+    overflow-wrap: anywhere;
+}
+
+.trip-list-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+/* --------------------------------------------------------------------------
+   Tabelas (painel e financeiro)
+   -------------------------------------------------------------------------- */
+.trips-table,
+.drivers-table-grid,
+.invoice-table-wrap {
+    min-width: 0;
+}
+
+.invoice-table-wrap {
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+}
+
+.admin-main thead th {
+    padding: var(--tot-space-2) var(--tot-space-3);
+    color: var(--tot-muted);
+    background: var(--tot-surface-2);
+    border-bottom: 1px solid var(--tot-line);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-semibold);
+    letter-spacing: .06em;
+    text-align: left;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.admin-main tbody tr {
+    border-bottom: 1px solid var(--tot-line);
+}
+
+.admin-main tbody tr:hover {
+    background: var(--tot-surface-2);
+}
+
+.admin-main td {
+    padding: var(--tot-space-3);
+    color: var(--tot-ink);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+    overflow-wrap: anywhere;
+    vertical-align: middle;
+}
+
+/* --------------------------------------------------------------------------
+   Estados
+   -------------------------------------------------------------------------- */
+.status-pill,
+.status-pill-mini,
+.badge-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tot-space-1);
+    padding: 3px var(--tot-space-2);
+    border: 1px solid transparent;
+    border-radius: var(--tot-radius-full);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-semibold);
+    line-height: 1.4;
+    white-space: nowrap;
+}
+
+/* Modificadores de estado. A marca não aparece em nenhum deles: "cancelada"
+   nunca é magenta. */
+.status-pill--waiting,
+.status-pill-mini.waiting {
+    color: var(--tot-waiting);
+    background: var(--tot-waiting-bg);
+}
+
+.status-pill--accepted,
+.status-pill-mini.accepted {
+    color: var(--tot-accepted);
+    background: var(--tot-accepted-bg);
+}
+
+.status-pill--live,
+.status-pill-mini.live {
+    color: var(--tot-live);
+    background: var(--tot-live-bg);
+}
+
+.status-pill--done,
+.status-pill-mini.done {
+    color: var(--tot-done);
+    background: var(--tot-done-bg);
+}
+
+.status-pill--cancelled,
+.status-pill-mini.cancelled {
+    color: var(--tot-cancelled);
+    background: var(--tot-cancelled-bg);
+}
+
+.status-pill--active,
+.status-pill-mini.active {
+    color: var(--tot-active);
+    background: var(--tot-active-bg);
+}
+
+.status-pill--suspended,
+.status-pill-mini.suspended,
+.status-pill--rejected,
+.status-pill-mini.rejected {
+    color: var(--tot-suspended);
+    background: var(--tot-suspended-bg);
+}
+
+.status-pill--pending,
+.status-pill-mini.pending {
+    color: var(--tot-pending);
+    background: var(--tot-pending-bg);
+}
+
+.status-pill--neutral,
+.status-pill-mini.neutral {
+    color: var(--tot-ink-2);
+    background: var(--tot-surface-2);
+}
+
+/* Marcas de atividade: o tom vem do significado da ação. */
+.tot-dashboard-activity-mark--positive { background: var(--tot-active); }
+.tot-dashboard-activity-mark--negative { background: var(--tot-cancelled); }
+.tot-dashboard-activity-mark--info { background: var(--tot-accepted); }
+.tot-dashboard-activity-mark--neutral { background: var(--tot-faint); }
+
+.status-indicator-dot {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    background: var(--tot-faint);
+    border-radius: var(--tot-radius-full);
+}
+
+.status-indicator-dot.is-online {
+    background: var(--tot-active);
+}
+
+.status-indicator-dot.is-offline {
+    background: var(--tot-faint);
+}
+
+.badge-status {
+    color: var(--tot-ink-2);
+    background: var(--tot-surface-2);
+    border-color: var(--tot-line);
+}
+
+.badge-status.pink,
+.badge-status.is-pink {
+    color: var(--tot-brand-ink-soft);
+    background: var(--tot-brand-soft);
+    border-color: var(--tot-brand-soft);
+}
+
+.badge-status.emerald,
+.badge-status.is-emerald {
+    color: var(--tot-active);
+    background: var(--tot-active-bg);
+    border-color: var(--tot-active-bg);
+}
+
+.badge-status.amber,
+.badge-status.is-amber {
+    color: var(--tot-pending);
+    background: var(--tot-pending-bg);
+    border-color: var(--tot-pending-bg);
+}
+
+.badge-status.blue,
+.badge-status.is-blue {
+    color: var(--tot-accepted);
+    background: var(--tot-accepted-bg);
+    border-color: var(--tot-accepted-bg);
+}
+
+.icon-badge {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    place-items: center;
+    color: var(--tot-brand-ink);
+    background: var(--tot-brand-soft);
+    border-radius: var(--tot-radius-md);
+}
+
+/* --------------------------------------------------------------------------
+   Vazios — dizer o que fazer, não decorar a ausência.
+   -------------------------------------------------------------------------- */
+.empty-state-container,
+.tot-empty {
+    display: flex;
+    min-height: 180px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tot-space-2);
+    padding: var(--tot-space-8) var(--tot-space-5);
+    color: var(--tot-muted);
+    text-align: center;
+}
+
+.empty-state-container p,
+.tot-empty p {
+    max-width: 46ch;
+    margin: 0;
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-normal);
+}
+
+.empty-state-container strong,
+.tot-empty strong {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-md);
+}
+
+/* --------------------------------------------------------------------------
+   Painel: cartões de análise e atividade
+   -------------------------------------------------------------------------- */
+.dashboard-content {
+    min-width: 0;
+}
+
+.dashboard-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tot-space-3);
+}
+
+.dashboard-updated-at {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+}
+
+.tot-dashboard-analytics,
+.tot-dashboard-lower-grid {
+    display: grid;
+    gap: var(--tot-space-4);
+    margin-bottom: var(--tot-space-4);
+}
+
+.tot-dashboard-analytics {
+    grid-template-columns: minmax(0, 1.7fr) minmax(290px, .85fr);
+}
+
+.tot-dashboard-lower-grid {
+    grid-template-columns: minmax(0, 1.62fr) minmax(280px, .83fr);
+}
+
+.tot-dashboard-card {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    padding: var(--tot-space-5);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-lg);
+    box-shadow: var(--tot-shadow-card);
+}
+
+.tot-dashboard-card-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--tot-space-3);
+}
+
+.tot-dashboard-card-heading h2 {
+    display: flex;
+    margin-top: var(--tot-space-1);
+    align-items: center;
+    gap: var(--tot-space-2);
+    color: var(--tot-ink);
+    font-size: var(--tot-text-xl);
+    font-weight: var(--tot-weight-semibold);
+}
+
+.tot-dashboard-card-heading h2 svg {
+    color: var(--tot-muted);
+}
+
+.tot-dashboard-card-heading p {
+    margin-top: var(--tot-space-1);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+}
+
+.tot-dashboard-heading-icon {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 36px;
+    place-items: center;
+    color: var(--tot-ink-2);
+    background: var(--tot-surface-2);
+    border-radius: var(--tot-radius-md);
+}
+
+.tot-dashboard-chart {
+    height: 220px;
+    margin-top: var(--tot-space-4);
+}
+
+.tot-dashboard-chart .recharts-tooltip-wrapper {
+    outline: none;
+}
+
+.tot-dashboard-chart .recharts-default-tooltip {
+    border: 1px solid var(--tot-line) !important;
+    border-radius: var(--tot-radius-md);
+    box-shadow: var(--tot-shadow-overlay);
+    font-family: var(--tot-font);
+    font-size: var(--tot-text-sm);
+}
+
+.tot-dashboard-empty-chart {
+    display: flex;
+    min-height: 220px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tot-space-3);
+    margin-top: var(--tot-space-4);
+    padding: var(--tot-space-5);
+    color: var(--tot-muted);
+    background: var(--tot-surface-2);
+    border: 1px dashed var(--tot-line-strong);
+    border-radius: var(--tot-radius-md);
+    text-align: left;
+}
+
+.tot-dashboard-empty-chart > svg {
+    flex: 0 0 auto;
+    color: var(--tot-faint);
+}
+
+.tot-dashboard-empty-chart div {
+    display: flex;
+    max-width: 320px;
+    flex-direction: column;
+    gap: var(--tot-space-1);
+}
+
+.tot-dashboard-empty-chart strong {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-md);
+}
+
+.tot-dashboard-empty-chart span {
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+}
+
+.tot-dashboard-category-body {
+    display: grid;
+    min-height: 200px;
+    margin-top: var(--tot-space-4);
+    grid-template-columns: minmax(140px, .9fr) minmax(0, 1fr);
+    align-items: center;
+    gap: var(--tot-space-3);
+}
+
+.tot-dashboard-donut {
+    position: relative;
+    width: 156px;
+    height: 156px;
+    margin: 0 auto;
+}
+
+.tot-dashboard-donut > span {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.tot-dashboard-donut strong {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-4xl);
+    font-weight: var(--tot-weight-bold);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.02em;
+    line-height: 1;
+}
+
+.tot-dashboard-donut small {
+    margin-top: var(--tot-space-1);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+}
+
+.tot-dashboard-category-legend {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.tot-dashboard-category-legend > div {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--tot-space-3);
+    padding: var(--tot-space-2) 0;
+    border-bottom: 1px solid var(--tot-line);
+}
+
+.tot-dashboard-category-legend > div:last-child {
+    border-bottom: 0;
+}
+
+.tot-dashboard-category-legend span {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: var(--tot-space-2);
+    color: var(--tot-ink-2);
+    font-size: var(--tot-text-sm);
+    overflow-wrap: anywhere;
+}
+
+.tot-dashboard-category-legend i {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 8px;
+    border-radius: var(--tot-radius-full);
+}
+
+.tot-dashboard-category-legend strong {
+    color: var(--tot-ink);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-semibold);
+    font-variant-numeric: tabular-nums;
+}
+
+.tot-dashboard-text-link {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--tot-space-1);
+    padding: var(--tot-space-1) 0;
+    color: var(--tot-brand-ink);
+    background: transparent;
+    border: 0;
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-semibold);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.tot-dashboard-text-link:hover {
+    text-decoration: underline;
+}
+
+.tot-dashboard-table-wrap {
+    margin-top: var(--tot-space-4);
+    overflow-x: auto;
+}
+
+.tot-dashboard-trips-table {
+    min-width: 540px;
+}
+
+.tot-dashboard-trips-table th {
+    padding: var(--tot-space-2) var(--tot-space-2);
+    color: var(--tot-muted);
+    border-bottom: 1px solid var(--tot-line);
+    text-align: left;
+}
+
+.tot-dashboard-trips-table td {
+    padding: var(--tot-space-3) var(--tot-space-2);
+    border-bottom: 1px solid var(--tot-line);
+    vertical-align: middle;
+}
+
+.tot-dashboard-trips-table tr:last-child td {
+    border-bottom: 0;
+}
+
+.tot-dashboard-trips-table td > strong {
+    display: block;
+    color: var(--tot-ink);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-semibold);
+}
+
+.tot-dashboard-trips-table td > span:not(.status-pill) {
+    display: flex;
+    max-width: 300px;
+    margin-top: 2px;
+    align-items: center;
+    gap: var(--tot-space-1);
+    overflow: hidden;
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.tot-dashboard-trips-table td > span svg {
+    flex: 0 0 auto;
+    color: var(--tot-faint);
+}
+
+.tot-dashboard-driver-name {
+    color: var(--tot-ink-2);
+    font-size: var(--tot-text-sm);
+}
+
+.tot-dashboard-fare {
+    color: var(--tot-ink);
+    font-weight: var(--tot-weight-semibold);
+    white-space: nowrap;
+}
+
+.tot-dashboard-empty-list {
+    display: flex;
+    min-height: 130px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tot-space-2);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+    text-align: center;
+}
+
+.tot-dashboard-empty-list svg {
+    color: var(--tot-faint);
+}
+
+.tot-dashboard-pending-card {
+    display: flex;
+    width: 100%;
+    margin: var(--tot-space-4) 0 var(--tot-space-2);
+    align-items: center;
+    gap: var(--tot-space-3);
+    padding: var(--tot-space-3);
+    color: var(--tot-pending);
+    text-align: left;
+    background: var(--tot-pending-bg);
+    border: 1px solid transparent;
+    border-radius: var(--tot-radius-md);
+    cursor: pointer;
+}
+
+.tot-dashboard-pending-card:hover {
+    border-color: var(--tot-pending);
+}
+
+.tot-dashboard-pending-card span {
+    display: flex;
+    min-width: 0;
+    flex: 1;
+    flex-direction: column;
+}
+
+.tot-dashboard-pending-card strong {
+    color: var(--tot-pending);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+}
+
+.tot-dashboard-pending-card small {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+}
+
+.tot-dashboard-activity-list {
+    display: flex;
+    min-height: 0;
+    flex-direction: column;
+}
+
+.tot-dashboard-activity-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--tot-space-3);
+    padding: var(--tot-space-3) 0;
+    border-bottom: 1px solid var(--tot-line);
+}
+
+.tot-dashboard-activity-row:last-child {
+    border-bottom: 0;
+}
+
+.tot-dashboard-activity-mark {
+    width: 7px;
+    height: 7px;
+    flex: 0 0 7px;
+    margin-top: 6px;
+    background: var(--tot-brand);
+    border-radius: var(--tot-radius-full);
+}
+
+.tot-dashboard-activity-row div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+}
+
+.tot-dashboard-activity-row strong {
+    color: var(--tot-ink-2);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-medium);
+    line-height: var(--tot-leading-snug);
+    overflow-wrap: anywhere;
+}
+
+.tot-dashboard-activity-row span {
+    overflow: hidden;
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tot-dashboard-audit-link {
+    margin-top: auto;
+    padding-top: var(--tot-space-3);
+    align-self: flex-start;
+}
+
+/* --------------------------------------------------------------------------
+   Esqueleto de carregamento
+   -------------------------------------------------------------------------- */
+.skeleton,
+.dashboard-loading-title,
+.dashboard-loading-operations span,
+.dashboard-loading-finance span,
+.admin-record-loading span {
+    background-image: linear-gradient(90deg, var(--tot-line) 0%, var(--tot-surface-2) 50%, var(--tot-line) 100%);
+    background-size: 200% 100%;
+    border-radius: var(--tot-radius-sm);
+    animation: tot-skeleton 1.4s ease-in-out infinite;
+}
+
+.dashboard-loading {
+    display: flex;
+    flex-direction: column;
+    gap: var(--tot-space-4);
+}
+
+.dashboard-loading-title {
+    width: min(100%, 260px);
+    height: 26px;
+}
+
+.dashboard-loading-operations {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--tot-space-4);
+}
+
+.dashboard-loading-operations span {
+    height: 148px;
+    border-radius: var(--tot-radius-lg);
+}
+
+.dashboard-loading-finance {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--tot-space-4);
+}
+
+.dashboard-loading-finance span {
+    height: 300px;
+    border-radius: var(--tot-radius-lg);
+}
+
+.admin-record-loading span {
+    display: block;
+    width: min(100%, 140px);
+    height: 10px;
+}
+
+.admin-record-loading span:first-child {
+    width: min(100%, 220px);
+}
+
+/* --------------------------------------------------------------------------
+   Media queries — invariante desta camada: sempre no fim do ficheiro.
+   -------------------------------------------------------------------------- */
+@media (max-width: 1100px) {
+    .tot-dashboard-analytics {
+        grid-template-columns: minmax(0, 1.35fr) minmax(270px, .9fr);
+    }
+
+    .tot-dashboard-lower-grid {
+        grid-template-columns: minmax(0, 1.3fr) minmax(260px, .85fr);
+    }
+}
+
+@media (max-width: 900px) {
+    .tot-indicators {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .tot-dashboard-analytics,
+    .tot-dashboard-lower-grid {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    /* Sem hover no toque: as ações ficam sempre visíveis. */
+    .record-actions {
+        opacity: 1;
+    }
+
+    .admin-record-list-head {
+        display: none;
+    }
+
+    .clients-record-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            'who who'
+            'activity date'
+            'actions actions';
+        row-gap: var(--tot-space-2);
+        padding: var(--tot-space-3) var(--tot-space-4);
+    }
+
+    .clients-record-row .card-left-section { grid-area: who; }
+    .clients-record-row .client-record-activity { grid-area: activity; }
+    .clients-record-row .client-record-date { grid-area: date; justify-self: end; text-align: right; }
+    .clients-record-row .record-actions { grid-area: actions; justify-content: flex-start; }
+
+    .drivers-record-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            'who status'
+            'presence actions';
+        row-gap: var(--tot-space-2);
+        padding: var(--tot-space-3) var(--tot-space-4);
+    }
+
+    .drivers-record-row .card-left-section { grid-area: who; }
+    .drivers-record-row .driver-account-state { grid-area: status; justify-self: end; }
+    .drivers-record-row .driver-presence-label { grid-area: presence; }
+    .drivers-record-row .record-actions { grid-area: actions; }
+
+    .trip-record-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+        grid-template-areas:
+            'route route'
+            'state fare'
+            'actions actions';
+        row-gap: var(--tot-space-2);
+        padding: var(--tot-space-3) var(--tot-space-4);
+    }
+
+    .trip-record-row .card-left-section { grid-area: route; align-items: flex-start; }
+    .trip-record-row .trip-record-state { grid-area: state; }
+    .trip-record-row .trip-record-fare { grid-area: fare; justify-self: end; }
+    .trip-record-row .trip-list-actions { display: contents; }
+    .trip-record-row .record-actions { grid-area: actions; justify-content: flex-start; }
+
+    .tot-dashboard-category-body {
+        grid-template-columns: minmax(0, 1fr);
+    }
+}
+
+@media (max-width: 620px) {
+    .tot-indicators {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .dashboard-loading-operations,
+    .dashboard-loading-finance {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
+    .tot-now-alert {
+        margin-left: 0;
+    }
+
+    .tot-indicator-value {
+        font-size: var(--tot-text-5xl);
+    }
+}

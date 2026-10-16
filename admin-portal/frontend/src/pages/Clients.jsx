@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
     Search,
     User,
@@ -21,58 +21,91 @@ import {
     Navigation,
     Activity
 } from 'lucide-react'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
+import { fetchClientTripsPage } from '../services/clientTripsPage'
 import toast from 'react-hot-toast'
 import { hasReceiptFile } from '../services/adminPortalContracts'
+import StatusReasonDialog from '../components/StatusReasonDialog'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export default function Clients({ onBack }) {
     const [clients, setClients] = useState([])
+    const [totalClients, setTotalClients] = useState(0)
+    const [clientsError, setClientsError] = useState(false)
+    const requestId = useRef(0)
     const [loading, setLoading] = useState(true)
     const [searchTerm, setSearchTerm] = useState('')
     
     // Sub-views states
     const [view, setView] = useState('list') // 'list' | 'history' | 'profile'
     const [selectedClient, setSelectedClient] = useState(null)
-    const [allTrips, setAllTrips] = useState([])
+    const [clientTripPage, setClientTripPage] = useState([])
+    const [clientTripsTotal, setClientTripsTotal] = useState(0)
+    const [clientTripSummary, setClientTripSummary] = useState(null)
+    const [tripsError, setTripsError] = useState(false)
+    const tripsRequestId = useRef(0)
     const [tripsLoading, setTripsLoading] = useState(false)
     const [selectedTrip, setSelectedTrip] = useState(null)
     const [currentPage, setCurrentPage] = useState(1)
-    const itemsPerPage = 10
+    const [statusDialog, setStatusDialog] = useState(false)
+    const [statusPending, setStatusPending] = useState(false)
+    const itemsPerPage = 20
 
     useEffect(() => {
         setCurrentPage(1)
     }, [searchTerm])
 
     useEffect(() => {
+        if (view !== 'list') return
         fetchClients()
-    }, [])
+        return () => { requestId.current += 1 }
+    }, [currentPage, searchTerm, view])
 
     const fetchClients = async () => {
+        const id = ++requestId.current
         try {
             setLoading(true)
-            const res = await axios.get(`${API_URL}/admin/clients`)
-            setClients(Array.isArray(res.data) ? res.data : [])
+            setClientsError(false)
+            const res = await adminApi.get('/admin/clients', { params: { page: currentPage, limit: itemsPerPage, search: searchTerm.slice(0, 120) } })
+            if (id !== requestId.current) return
+            setClients(Array.isArray(res.data?.items) ? res.data.items : [])
+            setTotalClients(Number.isFinite(res.data?.total) ? res.data.total : 0)
         } catch (error) {
+            if (id !== requestId.current) return
             console.error('❌ Error fetching clients:', error)
-            toast.error('Erro ao carregar clientes')
+            setClientsError(true)
             setClients([])
+            setTotalClients(0)
         } finally {
-            setLoading(false)
+            if (id === requestId.current) setLoading(false)
         }
     }
 
-    const fetchTrips = async () => {
+    const fetchTrips = async (client, page = 1) => {
+        const id = ++tripsRequestId.current
         try {
             setTripsLoading(true)
-            const res = await axios.get(`${API_URL}/admin/trips`)
-            setAllTrips(res.data || [])
+            setTripsError(false)
+            const result = await fetchClientTripsPage(async (pageNumber, limit) => {
+                const res = await adminApi.get(`/admin/clients/${encodeURIComponent(client.id)}/trips`, {
+                    params: { page: pageNumber, limit },
+                })
+                return res.data
+            }, client.id, page, itemsPerPage)
+            if (id !== tripsRequestId.current) return
+            setClientTripPage(result.items)
+            setClientTripsTotal(result.total)
+            setClientTripSummary(result.summary)
         } catch (error) {
+            if (id !== tripsRequestId.current) return
             console.error('Error fetching trips:', error)
+            setClientTripPage([])
+            setClientTripsTotal(0)
+            setClientTripSummary(null)
+            setTripsError(true)
             toast.error('Erro ao carregar histórico de corridas')
         } finally {
-            setTripsLoading(false)
+            if (id === tripsRequestId.current) setTripsLoading(false)
         }
     }
 
@@ -80,43 +113,57 @@ export default function Clients({ onBack }) {
         setSelectedClient(client)
         setView('history')
         setCurrentPage(1)
-        await fetchTrips()
+        setClientTripPage([])
+        setClientTripsTotal(0)
+        setClientTripSummary(null)
+        setTripsError(false)
+        await fetchTrips(client, 1)
     }
 
     const handleViewProfile = async (client) => {
         setSelectedClient(client)
         setView('profile')
         setCurrentPage(1)
-        await fetchTrips()
+        setClientTripPage([])
+        setClientTripsTotal(0)
+        setClientTripSummary(null)
+        setTripsError(false)
+        await fetchTrips(client, 1)
     }
 
-    const toggleClientStatus = async () => {
+    const goToHistoryPage = (page) => {
+        if (!selectedClient || page < 1 || page > totalHistoryPages) return
+        setCurrentPage(page)
+        fetchTrips(selectedClient, page)
+    }
+
+    const toggleClientStatus = async reason => {
         const newStatus = selectedClient.status === 'suspended' ? 'active' : 'suspended';
+        setStatusPending(true)
         try {
-            await axios.post(`${API_URL}/admin/clients/${selectedClient.id}/status`, { status: newStatus });
+            await adminApi.post(`/admin/clients/${encodeURIComponent(selectedClient.id)}/status`, { status: newStatus, reason });
             toast.success(`Cliente ${newStatus === 'active' ? 'reativado' : 'suspenso'} com sucesso!`);
             
             const updatedClient = { ...selectedClient, status: newStatus };
             setSelectedClient(updatedClient);
             setClients(prev => prev.map(c => c.id === selectedClient.id ? updatedClient : c));
+            setStatusDialog(false)
         } catch (error) {
             console.error('Error toggling client status:', error);
             toast.error('Erro ao atualizar status do cliente');
+            throw error
+        } finally {
+            setStatusPending(false)
         }
     }
 
-    const filteredClients = (Array.isArray(clients) ? clients : []).filter(c =>
-        c.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        c.phone?.includes(searchTerm)
-    )
-
-    const totalPages = Math.ceil(filteredClients.length / itemsPerPage)
-    const paginatedClients = filteredClients.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+    const totalPages = Math.ceil(totalClients / itemsPerPage)
+    const paginatedClients = clients
 
     // Filter trips for selected client
-    const clientTrips = selectedClient ? allTrips.filter(t => t.client_id === selectedClient.id) : []
-    const totalHistoryPages = Math.ceil(clientTrips.length / itemsPerPage)
-    const paginatedHistoryTrips = clientTrips.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+    const clientTrips = selectedClient ? clientTripPage : []
+    const totalHistoryPages = Math.ceil(clientTripsTotal / itemsPerPage)
+    const paginatedHistoryTrips = clientTrips
 
     // Render list view
     if (view === 'list') {
@@ -126,8 +173,8 @@ export default function Clients({ onBack }) {
                     <div className="flex items-center gap-4">
                         <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
                         <div className="title-area">
-                            <h2>Explorador de Clientes</h2>
-                            <p>{filteredClients.length} utilizadores registados</p>
+                            <h2>Clientes</h2>
+                            <p>{totalClients} {totalClients === 1 ? 'cliente registado' : 'clientes registados'}</p>
                         </div>
                     </div>
 
@@ -136,6 +183,7 @@ export default function Clients({ onBack }) {
                             <Search size={18} />
                             <input
                                 type="text"
+                                maxLength={120}
                                 placeholder="Buscar por nome ou telefone..."
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
@@ -144,21 +192,34 @@ export default function Clients({ onBack }) {
                     </div>
                 </div>
 
-                <div className="drivers-table-grid mt-6">
+                <div className="admin-record-list clients-record-list mt-6">
+                    <div className="admin-record-list-head clients-record-head" aria-hidden="true">
+                        <span>Cliente</span><span>Atividade</span><span>Registado</span><span>Ações</span>
+                    </div>
                     {loading ? (
-                        [1, 2, 3].map(i => <div key={i} className="driver-card-premium horizontal skeleton h-32"></div>)
+                        [1, 2, 3].map(i => <div key={i} className="admin-record-row admin-record-loading clients-record-row" role="status" aria-label="A carregar clientes"><span /><span /><span /><span /></div>)
                     ) : paginatedClients.length > 0 ? (
                         paginatedClients.map(client => (
-                            <div key={client.id} className="driver-card-premium horizontal animate-fade-in">
+                            <div key={client.id} className="admin-record-row clients-record-row animate-fade-in">
                                 <div className="card-left-section">
-                                    <div className="avatar-box">
-                                        <User size={24} />
+                                    <div className="avatar-box" aria-hidden="true">
+                                        {(client.full_name || 'CL').trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase()}
                                     </div>
                                     <div className="info-group">
                                         <h3>{client.full_name || 'Cliente sem nome'}</h3>
                                         <p>{client.phone}</p>
                                     </div>
-                                    <div className="actions-inline">
+                                </div>
+
+                                <div className="client-record-activity">
+                                    <span className="record-primary-value">{client.paidTripsCount || 0}</span>
+                                    <span className="record-secondary-label">{client.paidTripsCount === 1 ? 'corrida paga' : 'corridas pagas'}</span>
+                                </div>
+                                <div className="client-record-date">
+                                    <span className="record-primary-value">{new Date(client.created_at).toLocaleDateString('pt-AO')}</span>
+                                    <span className="record-secondary-label">Membro desde</span>
+                                </div>
+                                <div className="actions-inline" aria-label={`Ações para ${client.full_name || 'cliente'}`}>
                                         <button className="btn-pill-sm primary" onClick={() => handleViewHistory(client)}>
                                             <History size={14} />
                                             <span>Histórico</span>
@@ -167,28 +228,15 @@ export default function Clients({ onBack }) {
                                             <User size={14} />
                                             <span>Perfil</span>
                                         </button>
-                                    </div>
-                                </div>
-
-                                <div className="card-right-section">
-                                    <div className="flex flex-col items-end gap-2">
-                                        <div className="flex items-center gap-4">
-                                            <div className="flex items-center gap-1 text-[11px] font-bold text-slate-500">
-                                                <CreditCard size={14} className="text-pink-500" />
-                                                <span>{client.paidTripsCount || 0} CORRIDAS PAGAS</span>
-                                            </div>
-                                            <div className="rating-box">
-                                                <span>★ 5.0</span>
-                                            </div>
-                                            <div className="flex items-center gap-1 text-[11px] font-bold text-emerald-500">
-                                                <div className="w-2 h-2 rounded-full bg-emerald-500"></div>
-                                                <span>Membro desde {new Date(client.created_at).toLocaleDateString()}</span>
-                                            </div>
-                                        </div>
-                                    </div>
                                 </div>
                             </div>
                         ))
+                    ) : clientsError ? (
+                        <div className="empty-state-container py-40">
+                            <User size={64} className="opacity-10 mx-auto mb-4" />
+                            <p>Erro ao carregar clientes.</p>
+                            <button className="btn-pill-sm primary" onClick={fetchClients}>Tentar novamente</button>
+                        </div>
                     ) : (
                         <div className="empty-state-container py-40">
                             <User size={64} className="opacity-10 mx-auto mb-4" />
@@ -276,7 +324,7 @@ export default function Clients({ onBack }) {
                         <button className="btn-back-square" onClick={() => { setView('list'); setCurrentPage(1); }}><ArrowLeft size={20} /></button>
                         <div className="title-area">
                             <h2>Histórico de {selectedClient.full_name || 'Cliente'}</h2>
-                            <p>{clientTrips.length} corridas registradas</p>
+                            <p>{clientTripsTotal} corridas registradas</p>
                         </div>
                     </div>
                 </div>
@@ -327,6 +375,12 @@ export default function Clients({ onBack }) {
                                 </div>
                             </div>
                         ))
+                    ) : tripsError ? (
+                        <div className="empty-state-container py-40">
+                            <Clock size={64} className="opacity-10 mx-auto mb-4" />
+                            <p>Não foi possível carregar o histórico deste cliente.</p>
+                            <button className="btn-pill-sm primary" onClick={() => fetchTrips(selectedClient, currentPage)}>Tentar novamente</button>
+                        </div>
                     ) : (
                         <div className="empty-state-container py-40">
                             <Clock size={64} className="opacity-10 mx-auto mb-4" />
@@ -355,7 +409,7 @@ export default function Clients({ onBack }) {
                     return (
                         <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24, marginBottom: 12 }}>
                             <button
-                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                                onClick={() => goToHistoryPage(currentPage - 1)}
                                 disabled={currentPage === 1}
                                 style={{
                                     padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
@@ -373,7 +427,7 @@ export default function Clients({ onBack }) {
                                 return (
                                     <button
                                         key={page}
-                                        onClick={() => setCurrentPage(page)}
+                                        onClick={() => goToHistoryPage(page)}
                                         style={{
                                             width: 36, height: 36, borderRadius: 8, border: 'none',
                                             background: currentPage === page ? 'linear-gradient(135deg, #e91e63, #c2185b)' : '#f1f5f9',
@@ -387,7 +441,7 @@ export default function Clients({ onBack }) {
                                 );
                             })}
                             <button
-                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalHistoryPages))}
+                                onClick={() => goToHistoryPage(currentPage + 1)}
                                 disabled={currentPage === totalHistoryPages}
                                 style={{
                                     padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
@@ -404,7 +458,7 @@ export default function Clients({ onBack }) {
 
                 {selectedTrip && (
                     <div className="receipt-overlay animate-fade-in" onClick={() => setSelectedTrip(null)}>
-                        <div className="receipt-modal shadow-2xl" onClick={e => e.stopPropagation()}>
+                        <div className="receipt-modal shadow-2xl" role="dialog" aria-modal="true" aria-label="Resumo da viagem" onClick={e => e.stopPropagation()}>
                             <div className="receipt-header">
                                 <FileText size={40} className="mx-auto mb-2 opacity-50" />
                                 <h3>Resumo da viagem</h3>
@@ -463,10 +517,7 @@ export default function Clients({ onBack }) {
 
     // Render profile view
     if (view === 'profile') {
-        const totalSpent = clientTrips
-            .filter(t => t.trip_payment?.status === 'confirmed')
-            .reduce((sum, t) => sum + Number(t.trip_payment.amount || 0), 0)
-
+        const totalSpent = clientTripSummary?.confirmedSpend
         const recentTrips = clientTrips.slice(0, 5)
 
         return (
@@ -481,7 +532,7 @@ export default function Clients({ onBack }) {
                     </div>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: '24px', alignItems: 'start' }}>
+                <div className="client-profile-layout">
                     {/* Left Column: Personal info */}
                     <div style={{ background: '#ffffff', borderRadius: '28px', padding: '28px', boxShadow: '0 10px 40px rgba(0,0,0,0.05)', border: '1px solid #f1f5f9', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center' }}>
                         <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', marginBottom: '16px', boxShadow: '0 8px 24px rgba(233,30,99,0.3)' }}>
@@ -514,7 +565,8 @@ export default function Clients({ onBack }) {
                         </div>
 
                         <button
-                            onClick={toggleClientStatus}
+                            onClick={() => setStatusDialog(true)}
+                            disabled={statusPending}
                             style={{
                                 width: '100%',
                                 marginTop: '24px',
@@ -553,7 +605,7 @@ export default function Clients({ onBack }) {
                                 </div>
                                 <div>
                                     <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total de Corridas</span>
-                                    <span style={{ fontSize: '26px', fontWeight: '900', lineHeight: '1.1' }}>{clientTrips.length}</span>
+                                    <span style={{ fontSize: '26px', fontWeight: '900', lineHeight: '1.1' }}>{clientTripsTotal}</span>
                                 </div>
                             </div>
                             <div style={{ background: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)', borderRadius: '24px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 8px 24px rgba(233,30,99,0.2)', color: 'white' }}>
@@ -562,7 +614,9 @@ export default function Clients({ onBack }) {
                                 </div>
                                 <div>
                                     <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Gasto</span>
-                                    <span style={{ fontSize: '20px', fontWeight: '900', lineHeight: '1.1' }}>Kz {totalSpent.toLocaleString()}</span>
+                                    <span style={{ fontSize: '20px', fontWeight: '900', lineHeight: '1.1' }}>
+                                        {Number.isFinite(totalSpent) ? `Kz ${totalSpent.toLocaleString()}` : 'Indisponível'}
+                                    </span>
                                 </div>
                             </div>
                             <div style={{ background: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)', borderRadius: '24px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 8px 24px rgba(233,30,99,0.2)', color: 'white' }}>
@@ -571,7 +625,7 @@ export default function Clients({ onBack }) {
                                 </div>
                                 <div>
                                     <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Avaliação Média</span>
-                                    <span style={{ fontSize: '26px', fontWeight: '900', lineHeight: '1.1' }}>5.0 ★</span>
+                                    <span style={{ fontSize: '16px', fontWeight: '800', lineHeight: '1.1' }}>Sem avaliações</span>
                                 </div>
                             </div>
                         </div>
@@ -582,6 +636,11 @@ export default function Clients({ onBack }) {
 
                             {tripsLoading ? (
                                 <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>A carregar corridas...</div>
+                            ) : tripsError ? (
+                                <div style={{ padding: '40px', textAlign: 'center', color: '#94a3b8' }}>
+                                    Não foi possível carregar as corridas deste cliente.
+                                    <button className="btn-pill-sm primary" onClick={() => fetchTrips(selectedClient, 1)}>Tentar novamente</button>
+                                </div>
                             ) : recentTrips.length > 0 ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                                     {recentTrips.map(trip => (
@@ -614,6 +673,13 @@ export default function Clients({ onBack }) {
                         </div>
                     </div>
                 </div>
+                {statusDialog && <StatusReasonDialog
+                    title={selectedClient.status === 'suspended' ? 'Reativar cliente' : 'Suspender cliente'}
+                    description="Registe o motivo para alterar o estado desta conta."
+                    confirmLabel={selectedClient.status === 'suspended' ? 'Reativar conta' : 'Suspender conta'}
+                    onSubmit={toggleClientStatus}
+                    onClose={() => !statusPending && setStatusDialog(false)}
+                />}
             </div>
         )
     }

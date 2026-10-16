@@ -1,8 +1,10 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@app/database';
 import { AdminGateway } from './admin-api.gateway';
 import { ConfigService } from '@nestjs/config';
 import { requireInternalServiceToken } from '@app/auth';
+import { assertCompatibleServiceRouting } from './service-routing';
+import { cleanupServiceImageIfUnreferenced } from './service-image-cleanup';
 
 function publicDriver(driver: any) {
   if (!driver) return driver;
@@ -17,6 +19,23 @@ function publicProfile(profile: any) {
 }
 
 const SERVICE_ROUTING_MODES = new Set(['car', 'scooter', 'truck']);
+const SENSITIVE_AUDIT_DETAIL_KEY = /(password|secret|token|credential|authorization|cookie|document|^doc_|latitude|longitude|coordinate|location|phone|email|address|(^|_)(lat|lng)(_|$))/i;
+
+function sanitizeAuditDetails(value: unknown, depth = 0): unknown {
+  if (value === null || typeof value === 'boolean' || typeof value === 'number') return value;
+  if (typeof value === 'string') {
+    if (/^data:image\//i.test(value)) return '[redacted]';
+    return value.length > 500 ? `${value.slice(0, 500)}…` : value;
+  }
+  if (depth >= 4) return '[truncated]';
+  if (Array.isArray(value)) return value.slice(0, 20).map(item => sanitizeAuditDetails(item, depth + 1));
+  if (!value || typeof value !== 'object') return undefined;
+
+  return Object.fromEntries(Object.entries(value as Record<string, unknown>)
+    .slice(0, 50)
+    .filter(([key]) => !SENSITIVE_AUDIT_DETAIL_KEY.test(key))
+    .map(([key, item]) => [key, sanitizeAuditDetails(item, depth + 1)]));
+}
 
 function assertServiceRoutingMode(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !SERVICE_ROUTING_MODES.has(value)) {
@@ -44,17 +63,96 @@ export class AdminApiService {
     return (drivers || []).map(publicDriver);
   }
 
-  async getAllDrivers() {
-    const drivers = await this.prisma.drivers.findMany({
-      orderBy: { created_at: 'desc' }
-    });
-    return (drivers || []).map(publicDriver);
+  async getAllDrivers(page = 1, limit = 20, status = 'all', search = '') {
+    const where: any = {};
+    if (status !== 'all') where.status = status;
+    if (search) where.OR = [
+      { full_name: { contains: search, mode: 'insensitive' } },
+      { phone: { contains: search, mode: 'insensitive' } },
+    ];
+    const [drivers, total] = await Promise.all([
+      this.prisma.drivers.findMany({ where, skip: (page - 1) * limit, take: limit, orderBy: [{ created_at: 'desc' }, { id: 'desc' }] }),
+      this.prisma.drivers.count({ where }),
+    ]);
+    return { items: (drivers || []).map(publicDriver), total, page, pageSize: limit };
+  }
+
+  async getClientTrips(clientId: string, page = 1, limit = 20) {
+    const where = { client_id: clientId };
+    const [items, total, spend] = await Promise.all([
+      this.prisma.trips.findMany({
+        where, skip: (page - 1) * limit, take: limit, orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        include: {
+          profiles_trips_driver_idToprofiles: { select: { full_name: true, phone: true } },
+          trip_payment: true,
+          invoices: true,
+        },
+      }),
+      this.prisma.trips.count({ where }),
+      this.prisma.trip_payments.aggregate({
+        where: { status: 'confirmed', trips: { is: { client_id: clientId } } },
+        _sum: { amount: true },
+      }),
+    ]);
+    return {
+      items: items || [], total, page, pageSize: limit,
+      summary: { confirmedSpend: Number(spend._sum.amount || 0) },
+    };
+  }
+
+  async getDriverTrips(driverId: string, page = 1, limit = 20) {
+    const where = { driver_id: driverId };
+    const [items, total, earnings] = await Promise.all([
+      this.prisma.trips.findMany({
+        where, skip: (page - 1) * limit, take: limit, orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+        include: {
+          profiles_trips_client_idToprofiles: { select: { full_name: true, phone: true } },
+          trip_payment: true,
+          invoices: true,
+        },
+      }),
+      this.prisma.trips.count({ where }),
+      this.prisma.trips.aggregate({ where: { driver_id: driverId, status: 'completed' }, _sum: { final_fare: true } }),
+    ]);
+    return {
+      items: items || [], total, page, pageSize: limit,
+      summary: { completedEarnings: Number(earnings._sum.final_fare || 0) },
+    };
   }
 
   async getDriverById(id: string) {
     return publicDriver(await this.prisma.drivers.findUnique({
       where: { id: id as any }
     }));
+  }
+
+  async getDriverDocuments(id: string) {
+    const driver = await this.prisma.drivers.findUnique({
+      where: { id: id as any },
+      select: { id: true, doc_bi_frente: true, doc_bi_verso: true, doc_carta_conducao: true },
+    });
+    if (!driver) throw new NotFoundException('Motorista não encontrado.');
+    return driver;
+  }
+
+  async updateDriverVehicleCategory(id: string, vehicleCategory: 'car' | 'moto' | 'truck', adminId: string | null = null) {
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRawUnsafe('SELECT id FROM drivers WHERE id = $1::uuid FOR UPDATE', id);
+      const activeTrips = await tx.trips.count({ where: { driver_id: id, status: { in: ['accepted', 'ongoing'] } } });
+      if (activeTrips > 0) throw new ConflictException('Não é possível alterar o veículo durante uma corrida ativa.');
+      const driver = await tx.drivers.update({
+        where: { id: id as any },
+        data: { vehicle_category: vehicleCategory, is_online: false },
+      });
+      await tx.audit_logs.create({ data: {
+        admin_id: adminId,
+        action: 'UPDATE_DRIVER_VEHICLE_CATEGORY',
+        target: 'driver',
+        target_id: id,
+        details: { vehicle_category: vehicleCategory, forced_offline: true },
+      } });
+      return publicDriver(driver);
+    });
   }
 
   async getTripById(id: string) {
@@ -75,8 +173,19 @@ export class AdminApiService {
     });
   }
 
-  async getAllInvoices() {
-    return this.prisma.invoices.findMany({
+  async getAllInvoices(page = 1, pageSize = 20, type = 'all', search = '') {
+    const where: any = {};
+    if (type !== 'all') where.invoice_type = type;
+    if (search) where.OR = [
+      { id: { contains: search, mode: 'insensitive' } },
+      { profiles: { is: { full_name: { contains: search, mode: 'insensitive' } } } },
+    ];
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+    const [items, total, receiptTotal, monthlyReceiptCount, typeRows] = await Promise.all([
+      this.prisma.invoices.findMany({
+        where, skip: (page - 1) * pageSize, take: pageSize,
       include: {
         trips: {
           select: {
@@ -84,19 +193,43 @@ export class AdminApiService {
             origin_address: true,
             dest_address: true,
             status: true,
-            created_at: true
+            created_at: true,
+            trip_payment: { select: { method: true, amount: true, status: true, confirmed_at: true } },
           }
         },
         profiles: {
           select: { full_name: true, phone: true, email: true, role: true }
         }
       },
-      orderBy: { created_at: 'desc' }
-    });
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }]
+      }),
+      this.prisma.invoices.count({ where }),
+      this.prisma.invoices.aggregate({ _sum: { amount: true } }),
+      this.prisma.invoices.count({ where: { created_at: { gte: monthStart } } }),
+      this.prisma.invoices.findMany({ distinct: ['invoice_type'], select: { invoice_type: true } }),
+    ]);
+    return {
+      items: items || [], total, page, pageSize,
+      summary: {
+        receiptTotal: Number(receiptTotal._sum.amount || 0),
+        monthlyReceiptCount,
+        invoiceTypes: typeRows.map(row => row.invoice_type).filter((value): value is string => Boolean(value)),
+      },
+    };
   }
 
-  async getAllPayments() {
-    return this.prisma.trip_payments.findMany({
+  async getAllPayments(page = 1, pageSize = 20, status = 'all', search = '') {
+    const where: any = {};
+    if (status !== 'all') where.status = status;
+    if (search) where.OR = [
+      { trip_id: { contains: search, mode: 'insensitive' } },
+      { trips: { is: { profiles_trips_client_idToprofiles: { is: { full_name: { contains: search, mode: 'insensitive' } } } } } },
+      { trips: { is: { profiles_trips_driver_idToprofiles: { is: { full_name: { contains: search, mode: 'insensitive' } } } } } },
+      { profiles: { is: { full_name: { contains: search, mode: 'insensitive' } } } },
+    ];
+    const [items, total, pendingCount, confirmedCount, confirmedCash, pendingCash] = await Promise.all([
+      this.prisma.trip_payments.findMany({
+        where, skip: (page - 1) * pageSize, take: pageSize,
       include: {
         trips: {
           select: {
@@ -111,8 +244,22 @@ export class AdminApiService {
         },
         profiles: { select: { id: true, full_name: true, role: true } },
       },
-      orderBy: { created_at: 'desc' },
-    });
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      }),
+      this.prisma.trip_payments.count({ where }),
+      this.prisma.trip_payments.count({ where: { status: 'pending' } }),
+      this.prisma.trip_payments.count({ where: { status: 'confirmed' } }),
+      this.prisma.trip_payments.aggregate({ where: { status: 'confirmed', method: 'cash' }, _sum: { amount: true } }),
+      this.prisma.trip_payments.aggregate({ where: { status: 'pending', method: 'cash' }, _sum: { amount: true } }),
+    ]);
+    return {
+      items: items || [], total, page, pageSize,
+      summary: {
+        pendingCount, confirmedCount,
+        confirmedCashTotal: Number(confirmedCash._sum.amount || 0),
+        cashPendingTotal: Number(pendingCash._sum.amount || 0),
+      },
+    };
   }
 
   async getInvoicesByUser(userId: string) {
@@ -129,7 +276,7 @@ export class AdminApiService {
           }
         }
       },
-      orderBy: { created_at: 'desc' }
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }]
     });
   }
 
@@ -141,24 +288,19 @@ export class AdminApiService {
       this.prisma.profiles.count({ where: { role: 'client' } }),
       this.prisma.trips.count()
     ]);
-    return {
-      platform_name: 'TOT Angola',
-      platform_version: '1.0.0',
-      max_driver_radius_km: 10,
-      trip_timeout_minutes: 5,
-      default_commission_pct: 15,
-      currency: 'AOA',
-      currency_symbol: 'Kz',
-      country: 'Angola',
-      support_phone: '+244 900 000 000',
-      support_email: 'suporte@tot.ao',
-      stats: { totalDrivers, activeDrivers, totalClients, totalTrips }
-    };
+    return { stats: { totalDrivers, activeDrivers, totalClients, totalTrips } };
   }
 
-  async getAllClients() {
-    const clients = await this.prisma.profiles.findMany({
-      where: { role: 'client' },
+  async getAllClients(page = 1, limit = 20, search = '') {
+    const where: any = { role: 'client' };
+    if (search) where.OR = [
+      { full_name: { contains: search, mode: 'insensitive' } },
+      { phone: { contains: search, mode: 'insensitive' } },
+    ];
+    const [clients, total] = await Promise.all([this.prisma.profiles.findMany({
+      where,
+      skip: (page - 1) * limit,
+      take: limit,
       include: {
         _count: {
           select: {
@@ -168,29 +310,43 @@ export class AdminApiService {
           }
         }
       },
-      orderBy: { created_at: 'desc' }
-    });
+      orderBy: [{ created_at: 'desc' }, { id: 'asc' }]
+    }), this.prisma.profiles.count({ where })]);
 
-    return clients.map(c => ({
+    const items = clients.map(c => ({
       ...publicProfile(c),
       paidTripsCount: (c as any)._count?.trips_trips_client_idToprofiles || 0
     }));
+    return { items, total, page, pageSize: limit };
   }
 
-  async approveDriver(id: string) {
-    // Approve both in drivers and profiles
-    await this.prisma.drivers.update({
-      where: { id: id as any },
-      data: { status: 'active' },
+  async approveDriver(id: string, adminId: string | null = null) {
+    return this.prisma.$transaction(async tx => {
+      await tx.$queryRawUnsafe('SELECT id FROM drivers WHERE id = $1::uuid FOR UPDATE', id);
+      await tx.drivers.update({
+        where: { id: id as any },
+        data: { status: 'active' },
+      });
+
+      const approvedProfile = await tx.profiles.update({
+        where: { id },
+        data: { status: 'active' },
+      });
+      await tx.audit_logs.create({
+        data: {
+          admin_id: adminId,
+          action: 'APPROVE_DRIVER',
+          target: 'driver',
+          target_id: id,
+          details: {},
+        },
+      });
+
+      return publicProfile(approvedProfile);
     });
-
-    return publicProfile(await this.prisma.profiles.update({
-      where: { id },
-      data: { status: 'active' },
-    }));
   }
 
-  async updateDriverStatus(id: string, status: string) {
+  async updateDriverStatus(id: string, status: string, adminId: string | null = null, reason?: string) {
     const internalServiceToken = (status === 'suspended' || status === 'active')
       ? requireInternalServiceToken(this.config)
       : undefined;
@@ -200,27 +356,32 @@ export class AdminApiService {
       throw new Error('DRIVER_API_URL must be configured in production.');
     }
 
-    // Update both drivers and profiles tables to keep them in sync
-    await this.prisma.drivers.update({
-      where: { id: id as any },
-      data: {
-        status,
-        // If suspending, force driver offline
-        ...(status === 'suspended' && { is_online: false })
-      },
-    });
+    await this.prisma.$transaction(async tx => {
+      await tx.$queryRawUnsafe('SELECT id FROM drivers WHERE id = $1::uuid FOR UPDATE', id);
+      await tx.drivers.update({
+        where: { id: id as any },
+        data: {
+          status,
+          // If suspending, force driver offline
+          ...(status === 'suspended' && { is_online: false })
+        },
+      });
 
-    try {
-      await this.prisma.profiles.update({
+      await tx.profiles.update({
         where: { id },
         data: { status },
       });
-    } catch (e) {
-      console.error('Profile not found for driver:', id);
-    }
 
-    // LOG
-    await this.createAuditLog(null, `UPDATE_STATUS_${status.toUpperCase()}`, 'driver', id);
+      await tx.audit_logs.create({
+        data: {
+          admin_id: adminId,
+          action: `UPDATE_STATUS_${status.toUpperCase()}`,
+          target: 'driver',
+          target_id: id,
+          details: reason ? { reason } : {},
+        },
+      });
+    });
 
     // REAL-TIME BROADCAST TO ADMINS
     this.adminGateway.sendToAdmins('driver_status_updated', { id, status });
@@ -243,13 +404,23 @@ export class AdminApiService {
     return { success: true };
   }
 
-  async updateClientStatus(id: string, status: string) {
-    await this.prisma.profiles.update({
-      where: { id },
-      data: { status },
-    });
+  async updateClientStatus(id: string, status: string, adminId: string | null = null, reason?: string) {
+    await this.prisma.$transaction(async tx => {
+      await tx.profiles.update({
+        where: { id },
+        data: { status },
+      });
 
-    await this.createAuditLog(null, `UPDATE_CLIENT_STATUS_${status.toUpperCase()}`, 'client', id);
+      await tx.audit_logs.create({
+        data: {
+          admin_id: adminId,
+          action: `UPDATE_CLIENT_STATUS_${status.toUpperCase()}`,
+          target: 'client',
+          target_id: id,
+          details: reason ? { reason } : {},
+        },
+      });
+    });
 
     return { success: true };
   }
@@ -261,15 +432,16 @@ export class AdminApiService {
     return configs || [];
   }
 
-  async createServiceConfig(data: any) {
+  async createServiceConfig(data: any, adminId: string | null = null) {
     const createData = { ...data, routing_mode: data.routing_mode ?? 'car' };
     assertServiceRoutingMode(createData.routing_mode);
+    assertCompatibleServiceRouting(createData.vehicle_category, createData.routing_mode);
     const created = await this.prisma.service_configs.create({
       data: createData,
     });
 
     // LOG
-    await this.createAuditLog(null, 'CREATE_SERVICE', 'service_config', created.id.toString(), createData);
+    await this.createAuditLog(adminId, 'CREATE_SERVICE', 'service_config', created.id.toString(), createData);
 
     // REAL-TIME BROADCAST
     this.adminGateway.sendToAdmins('pricing_updated', created);
@@ -277,43 +449,75 @@ export class AdminApiService {
     return created;
   }
 
-  async updateServiceConfig(id: number, data: any) {
+  async updateServiceConfig(id: number, data: any, adminId: string | null = null) {
     // Basic validation / cleaning of data if needed
     const { id: _, trips, updated_at, ...cleanData } = data;
     if (cleanData.routing_mode !== undefined) assertServiceRoutingMode(cleanData.routing_mode);
+    const result = await this.prisma.$transaction(async tx => {
+      const lockedServices = await tx.$queryRawUnsafe<Array<{
+        id: number;
+        image_url: string | null;
+        vehicle_category: string | null;
+        routing_mode: string;
+      }>>(
+        'SELECT "id", "image_url", "vehicle_category", "routing_mode" FROM "service_configs" WHERE "id" = $1 FOR UPDATE',
+        Number(id),
+      );
+      const existing = lockedServices[0];
+      if (!existing) throw new NotFoundException('Serviço não encontrado.');
+      assertCompatibleServiceRouting(
+        cleanData.vehicle_category ?? existing.vehicle_category,
+        cleanData.routing_mode ?? existing.routing_mode,
+      );
 
-    const updated = await this.prisma.service_configs.update({
-      where: { id: Number(id) },
-      data: cleanData,
+      const updated = await tx.service_configs.update({
+        where: { id: Number(id) },
+        data: cleanData,
+      });
+      return { updated, previousImageUrl: existing.image_url };
     });
 
     // LOG
-    await this.createAuditLog(null, 'UPDATE_PRICING', 'service_config', id.toString(), cleanData);
+    await this.createAuditLog(adminId, 'UPDATE_PRICING', 'service_config', id.toString(), cleanData);
 
-    // REAL-TIME BROADCAST
-    this.adminGateway.sendToAdmins('pricing_updated', updated);
-
-    return updated;
-  }
-
-  async deleteServiceConfig(id: number) {
-    // Check if there are trips associated with this config
-    const tripCount = await this.prisma.trips.count({
-      where: { service_config_id: id }
-    });
-
-    if (tripCount > 0) {
-      throw new Error('Não é possível excluir um serviço que já possui viagens registradas.');
+    if (cleanData.image_url !== undefined && result.previousImageUrl && result.previousImageUrl !== result.updated.image_url) {
+      await cleanupServiceImageIfUnreferenced(result.previousImageUrl, async imageUrl => (
+        await this.prisma.service_configs.count({ where: { image_url: imageUrl } }) > 0
+      ));
     }
 
-    await this.prisma.service_configs.delete({
-      where: { id }
+    // REAL-TIME BROADCAST
+    this.adminGateway.sendToAdmins('pricing_updated', result.updated);
+
+    return result.updated;
+  }
+
+  async deleteServiceConfig(id: number, adminId: string) {
+    const result = await this.prisma.$transaction(async tx => {
+      const lockedService = await tx.$queryRaw<Array<{ id: number; image_url: string | null }>>`
+        SELECT "id", "image_url" FROM "service_configs" WHERE "id" = ${id} FOR UPDATE
+      `;
+      if (lockedService.length === 0) throw new NotFoundException('Serviço não encontrado.');
+
+      const tripCount = await tx.trips.count({ where: { service_config_id: id } });
+      if (tripCount > 0) throw new ConflictException('Não é possível excluir um serviço que já possui viagens registradas.');
+
+      const activeQuoteCount = await tx.trip_quotes.count({
+        where: { service_config_id: id, consumed_at: null, expires_at: { gt: new Date() } },
+      });
+      if (activeQuoteCount > 0) throw new ConflictException('Aguarde as cotações deste serviço expirarem antes de o excluir.');
+
+      const deleted = await tx.service_configs.delete({ where: { id } });
+      await tx.audit_logs.create({
+        data: { admin_id: adminId, action: 'DELETE_SERVICE', target: 'service_config', target_id: id.toString(), details: {} },
+      });
+      return { ...deleted, image_url: lockedService[0].image_url };
     });
-
-    // LOG
-    await this.createAuditLog(null, 'DELETE_SERVICE', 'service_config', id.toString());
-
-    return { success: true };
+    await cleanupServiceImageIfUnreferenced(result.image_url, async imageUrl => (
+      await this.prisma.service_configs.count({ where: { image_url: imageUrl } }) > 0
+    ));
+    this.adminGateway.sendToAdmins('pricing_updated', { id, deleted: true });
+    return { success: true, id: result.id };
   }
 
   async getDashboardStats() {
@@ -378,8 +582,21 @@ export class AdminApiService {
     return result;
   }
 
-  async getAllTrips() {
-    const trips = await this.prisma.trips.findMany({
+  async getAllTrips(page = 1, pageSize = 20, status = 'all', search = '') {
+    const where: any = {};
+    if (status === 'live') where.status = { in: ['requested', 'accepted', 'arrived', 'ongoing'] };
+    else if (status !== 'all') where.status = status;
+    if (search) {
+      where.OR = [
+        { id: { contains: search, mode: 'insensitive' } },
+        { profiles_trips_client_idToprofiles: { is: { full_name: { contains: search, mode: 'insensitive' } } } },
+        { profiles_trips_driver_idToprofiles: { is: { full_name: { contains: search, mode: 'insensitive' } } } },
+      ];
+    }
+    const [items, total] = await Promise.all([this.prisma.trips.findMany({
+      where,
+      skip: (page - 1) * pageSize,
+      take: pageSize,
       include: {
         profiles_trips_client_idToprofiles: {
           select: { full_name: true, phone: true }
@@ -390,9 +607,9 @@ export class AdminApiService {
         trip_payment: true,
         invoices: true,
       },
-      orderBy: { created_at: 'desc' }
-    });
-    return trips || [];
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }]
+    }), this.prisma.trips.count({ where })]);
+    return { items: items || [], total, page, pageSize };
   }
 
   async getOnlineDriversLocations() {
@@ -405,6 +622,7 @@ export class AdminApiService {
         status: true,
         current_lat: true,
         current_lng: true,
+        current_accuracy: true,
         last_location_update: true,
         rating: true
       }
@@ -423,16 +641,41 @@ export class AdminApiService {
     });
   }
 
-  async getAuditLogs() {
-    return this.prisma.audit_logs.findMany({
-      include: {
-        profiles: {
-          select: { full_name: true }
-        }
-      },
-      orderBy: { created_at: 'desc' },
-      take: 100
-    });
+  async getAuditLogs(page = 1, pageSize = 20, filters: { action?: string; target?: string; search?: string } = {}) {
+    const where: any = {};
+    if (filters.action) where.action = filters.action;
+    if (filters.target) where.target = filters.target;
+    if (filters.search) {
+      where.OR = [
+        { action: { contains: filters.search, mode: 'insensitive' } },
+        { target_id: { contains: filters.search, mode: 'insensitive' } },
+        { profiles: { is: { full_name: { contains: filters.search, mode: 'insensitive' } } } },
+      ];
+    }
+    const [rows, total] = await Promise.all([
+      this.prisma.audit_logs.findMany({
+        where,
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+        select: {
+          id: true,
+          action: true,
+          target: true,
+          target_id: true,
+          created_at: true,
+          details: true,
+          profiles: { select: { full_name: true } },
+        },
+        orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+      }),
+      this.prisma.audit_logs.count({ where }),
+    ]);
+    return {
+      items: (rows || []).map(row => ({ ...row, details: sanitizeAuditDetails(row.details) })),
+      total,
+      page,
+      pageSize,
+    };
   }
 
   async getAnalytics() {

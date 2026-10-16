@@ -12,6 +12,7 @@ import {
 import Toast from 'react-native-toast-message';
 import colors from '../theme/colors';
 import { formatCurrency, formatDate } from '../utils/formatters';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
 
 export default function HistoryScreen() {
     const { user } = useContext(AuthContext);
@@ -36,7 +37,7 @@ export default function HistoryScreen() {
                 });
             }
         } catch (e) {
-            console.error('Error fetching history stats:', e);
+            console.error('Error fetching history stats:', toSafeErrorLog(e));
         }
     };
 
@@ -46,7 +47,7 @@ export default function HistoryScreen() {
             const res = await api.get(`/trips/history/${user.id}`);
             setTrips(res.data || []);
         } catch (error) {
-            console.error('Error fetching history:', error);
+            console.error('Error fetching history:', toSafeErrorLog(error));
             Toast.show({
                 type: 'error',
                 text1: 'Erro ao carregar histórico',

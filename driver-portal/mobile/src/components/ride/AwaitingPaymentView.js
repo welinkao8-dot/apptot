@@ -1,12 +1,13 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Image, ActivityIndicator, Platform } from 'react-native';
 import colors from '../../theme/colors';
-import { User, Bell, CheckCircle, Hourglass, Coins } from 'lucide-react-native';
-import { formatCurrency } from '../../utils/formatters';
+import { User, CheckCircle, Hourglass, Coins } from 'lucide-react-native';
+import { getTripFare } from '../../utils/tripFare';
 
 export default function AwaitingPaymentView({ user, activeTrip, onConfirmPayment, loading = false }) {
 
     if (!activeTrip) return null;
+    const fare = getTripFare(activeTrip, { requireFinalFare: true });
 
     return (
         <View style={styles.root}>
@@ -28,9 +29,6 @@ export default function AwaitingPaymentView({ user, activeTrip, onConfirmPayment
                     </View>
                     <Text style={topBarStyles.logoText}>TOT</Text>
                 </View>
-                <TouchableOpacity style={topBarStyles.notifyBtn} activeOpacity={0.8}>
-                    <Bell size={20} color={colors.primary} />
-                </TouchableOpacity>
             </View>
 
             {/* ─── MAIN CONTENT ─── */}
@@ -48,7 +46,7 @@ export default function AwaitingPaymentView({ user, activeTrip, onConfirmPayment
                     <Text style={styles.summaryLabel}>Valor Total</Text>
                     <View style={styles.priceRow}>
                         <Text style={styles.currencySymbol}>Kz</Text>
-                        <Text style={styles.priceValue}>{parseFloat(activeTrip.price || 0).toFixed(2)}</Text>
+                        <Text style={styles.priceValue}>{fare === null ? 'Indisponível' : fare.toFixed(2)}</Text>
                     </View>
 
                     <View style={styles.cardDivider} />
@@ -74,12 +72,12 @@ export default function AwaitingPaymentView({ user, activeTrip, onConfirmPayment
                     </View>
                     <View style={{ flex: 1 }}>
                         <Text style={styles.passengerLabel}>Passageiro</Text>
-                        <Text style={styles.passengerName}>{activeTrip.userName || activeTrip.clientName || 'Marco Silva'}</Text>
+                        <Text style={styles.passengerName}>{activeTrip.userName || activeTrip.clientName || 'Cliente'}</Text>
                     </View>
-                    <View style={styles.ratingBadge}>
+                    {!!activeTrip.userRating && <View style={styles.ratingBadge}>
                         <Text style={styles.ratingStar}>⭐</Text>
-                        <Text style={styles.ratingValue}>{activeTrip.userRating || 4.9}</Text>
-                    </View>
+                        <Text style={styles.ratingValue}>{activeTrip.userRating}</Text>
+                    </View>}
                 </View>
 
                 <View style={{ flex: 1 }} />
@@ -96,7 +94,7 @@ export default function AwaitingPaymentView({ user, activeTrip, onConfirmPayment
                     <TouchableOpacity 
                         style={styles.confirmBtn} 
                         onPress={onConfirmPayment}
-                        disabled={loading}
+                        disabled={loading || fare === null}
                         activeOpacity={0.9}
                     >
                         {loading ? (
@@ -119,7 +117,6 @@ const topBarStyles = StyleSheet.create({
     avatarMiniBorder: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: colors.primary, overflow: 'hidden' },
     avatarMini: { width: '100%', height: '100%', objectFit: 'cover' },
     logoText: { fontSize: 20, fontWeight: '900', color: colors.primary, letterSpacing: -1 },
-    notifyBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
 });
 
 const styles = StyleSheet.create({

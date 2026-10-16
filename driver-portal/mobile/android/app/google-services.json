@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "427170349828",
+    "project_id": "apptot-angola",
+    "storage_bucket": "apptot-angola.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:427170349828:android:897c37f5e1ce4c06e40651",
+        "android_client_info": {
+          "package_name": "com.taxitot.client"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyALOMQgp_whFEgt_DwzDd8Jz3Pd8uKImSQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:427170349828:android:11b1f5b578992a9fe40651",
+        "android_client_info": {
+          "package_name": "com.taxitot.driver"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyALOMQgp_whFEgt_DwzDd8Jz3Pd8uKImSQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

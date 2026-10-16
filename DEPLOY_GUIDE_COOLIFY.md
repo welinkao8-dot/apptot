@@ -38,8 +38,9 @@ ADMIN_API_URL=https://admin-api.taxitot.com
 CLIENT_API_URL=https://api.taxitot.com
 DRIVER_API_URL=https://driver-api.taxitot.com
 DRIVER_API_SOCKET_URL=https://driver-api.taxitot.com
-HERE_API_KEY=sua_chave_here
 ```
+
+Adicione `HERE_MAP_API_KEY` e `HERE_ROUTING_API_KEY` como variáveis secretas do ambiente Coolify, sem copiar os valores para este guia ou para o repositório. `HERE_MAP_API_KEY` é a chave pública de browser usada nos builds dos portais e por `GET /locations/map-config`; restrinja-a às APIs necessárias, à aplicação e a quotas. `HERE_ROUTING_API_KEY` é privada e fica somente no `client-api` para chamadas HERE do servidor; nunca pode ser enviada ao browser nem usada como fallback de `GET /locations/map-config`.
 
 ## 4. Deploy Final
 1. Clique em **Deploy**.

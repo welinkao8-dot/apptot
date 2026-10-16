@@ -9,6 +9,7 @@ import { RidesGateway } from './../src/rides/rides.gateway';
 describe('DriverApiController (e2e)', () => {
   let app: INestApplication;
   let jwt: JwtService;
+  let findAuthProfile: jest.Mock;
   const trip = { id: 'trip-b', client_id: 'client-a', driver_id: 'driver-b' };
   const assignedTrip = {
     id: 'trip-a', client_id: 'client-a', driver_id: 'driver-a',
@@ -39,12 +40,21 @@ describe('DriverApiController (e2e)', () => {
       .overrideProvider(PrismaService)
       .useValue({
         $queryRawUnsafe: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
+        profiles: {
+          findFirst: (findAuthProfile = jest.fn().mockResolvedValue(null)),
+        },
+        drivers: { findUnique: jest.fn().mockResolvedValue(null) },
         $transaction: jest.fn((callback) => callback({
+          $queryRaw: jest.fn().mockResolvedValue([]),
           trip_quotes: {
             updateMany: jest.fn().mockResolvedValue({ count: 1 }),
             findUnique: jest.fn().mockResolvedValue(quote),
           },
-          trips: { create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)) },
+          trips: {
+            findFirst: jest.fn().mockResolvedValue(null),
+            findUnique: jest.fn().mockResolvedValue(null),
+            create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
+          },
         })),
         trips: {
           findMany: jest.fn().mockResolvedValue([]),
@@ -57,7 +67,7 @@ describe('DriverApiController (e2e)', () => {
       .compile();
 
     app = moduleFixture.createNestApplication();
-    app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+    app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
     await app.init();
     jwt = app.get(JwtService);
   });
@@ -77,6 +87,38 @@ describe('DriverApiController (e2e)', () => {
 
   it('rejects an unauthenticated pending-trip list request', () => {
     return request(app.getHttpServer()).get('/trips/pending').expect(401);
+  });
+
+  it('returns the same generic login response for an unknown phone and a wrong password', async () => {
+    findAuthProfile
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'driver-login',
+        phone: '+244900000000',
+        role: 'driver',
+        password_hash: '$2b$10$C7qUnuw7LBGMex..UsA/OuOKjk74be2cR3D5mZU9ZdmIcwKzJ9RAS',
+      });
+
+    const unknownPhone = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ phone: '+244900000000', password: 'wrong-password' })
+      .expect(401);
+    const wrongPassword = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ phone: '+244900000000', password: 'wrong-password' })
+      .expect(401);
+
+    expect(unknownPhone.body).toEqual(wrongPassword.body);
+    expect(unknownPhone.body.message).toBe('Credenciais inválidas');
+  });
+
+  it('rejects malformed login data before querying driver profiles', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ phone: 'x', password: '' })
+      .expect(400);
+
+    expect(findAuthProfile).not.toHaveBeenCalled();
   });
 
   it('rejects a client token on a driver pending-trip route', () => {
@@ -155,7 +197,6 @@ describe('DriverApiController (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({
         quoteId: quote.id,
-        price: '1',
       })
       .expect(201)
       .expect((response) => expect(response.body).toMatchObject({ client_id: 'client-a', estimated_fare: '950.00', quote_id: quote.id }));

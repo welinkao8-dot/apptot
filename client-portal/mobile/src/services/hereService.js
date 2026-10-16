@@ -1,26 +1,58 @@
+import { toSafeErrorLog } from '../utils/safeErrorLog';
+import api from './api';
+
+const successfulSearches = new Map();
+const MAX_CACHED_SEARCHES = 10;
+
+function withSearchState(items, status, retryable = false) {
+    Object.defineProperties(items, {
+        status: { value: status, configurable: true },
+        retryable: { value: retryable, configurable: true },
+    });
+    return items;
+}
+
+function getSearchKey(query, center) {
+    return `${query.trim().toLocaleLowerCase()}|${center.lat}|${center.lng}`;
+}
+
+function classifySearchError(error) {
+    const status = Number(error?.response?.status);
+    if (status === 429) return { status: 'rate_limited', retryable: true };
+    if (status >= 500) return { status: 'server_error', retryable: true };
+    if (status > 0) return { status: 'request_error', retryable: false };
+
+    const code = typeof error?.code === 'string' ? error.code.toUpperCase() : '';
+    if (['ECONNABORTED', 'ETIMEDOUT', 'ESOCKETTIMEDOUT'].includes(code)) {
+        return { status: 'timeout', retryable: true };
+    }
+    if (code === 'ERR_NETWORK' || (error?.request && !error?.response)) {
+        return { status: 'offline', retryable: true };
+    }
+    return { status: 'server_error', retryable: true };
+}
+
 /**
  * Serviço de Geocoding e Busca usando HERE Maps API v7
  */
-
-const HERE_API_KEY = 'UN2gxhPRLhPhUiKVSUTeegOmmDuDwsFcPsQZhX8V040';
-const BASE_URL = 'https://geocode.search.hereapi.com/v1';
 
 export const hereService = {
     /**
      * Busca sugestões de endereço (Autocomplete)
      */
     async fetchSuggestions(query, center = { lat: -8.839, lng: 13.289 }) {
-        if (!query || query.length < 3) return [];
         center = center || { lat: -8.839, lng: 13.289 }; // Search bias only; never used as a trip pickup.
+        if (!query || query.trim().length < 3) return withSearchState([], 'idle');
 
-        const url = `${BASE_URL}/autosuggest?q=${encodeURIComponent(query)}&apiKey=${HERE_API_KEY}&lang=pt&in=countryCode:AGO&limit=5&show=details&at=${center.lat},${center.lng}`;
+        const searchKey = getSearchKey(query, center);
 
         try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('HERE Autosuggest Error');
-            const data = await response.json();
+            const response = await api.get('/locations/autosuggest', {
+                params: { q: query, lat: center.lat, lng: center.lng },
+            });
+            const items = Array.isArray(response.data) ? response.data : [];
 
-            return data.items.map(item => {
+            const suggestions = items.map(item => {
                 let formattedAddress = item.address.label;
                 if (item.address.street) {
                     formattedAddress = `${item.address.street}${item.address.houseNumber ? ', ' + item.address.houseNumber : ''}`;
@@ -35,9 +67,23 @@ export const hereService = {
                     lng: item.position?.lng,
                 };
             });
+
+            if (suggestions.length === 0) {
+                successfulSearches.delete(searchKey);
+                return withSearchState([], 'no_results');
+            }
+
+            successfulSearches.delete(searchKey);
+            successfulSearches.set(searchKey, suggestions);
+            if (successfulSearches.size > MAX_CACHED_SEARCHES) {
+                successfulSearches.delete(successfulSearches.keys().next().value);
+            }
+            return withSearchState([...suggestions], 'success');
         } catch (error) {
-            console.error('HERE Autocomplete Error:', error);
-            return [];
+            console.info('Address search unavailable:', toSafeErrorLog(error));
+            const failure = classifySearchError(error);
+            const previousItems = [...(successfulSearches.get(searchKey) || [])];
+            return withSearchState(previousItems, failure.status, failure.retryable);
         }
     },
 
@@ -45,19 +91,11 @@ export const hereService = {
      * Reverse Geocoding (Coordenadas -> Endereço)
      */
     async reverseGeocode(lat, lng) {
-        const url = `${BASE_URL}/revgeocode?at=${lat},${lng}&apiKey=${HERE_API_KEY}&lang=pt`;
-
         try {
-            const response = await fetch(url);
-            if (!response.ok) throw new Error('HERE Reverse Geocoding Failed');
-            const data = await response.json();
-
-            if (data.items && data.items.length > 0) {
-                return data.items[0].address.label;
-            }
-            return null;
+            const response = await api.get('/locations/reverse-geocode', { params: { lat, lng } });
+            return response.data || null;
         } catch (error) {
-            console.error('HERE Reverse Geocoding Error:', error);
+            console.info('Reverse geocoding unavailable:', toSafeErrorLog(error));
             return null;
         }
     }

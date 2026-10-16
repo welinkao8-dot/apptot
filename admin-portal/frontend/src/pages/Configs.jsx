@@ -2,66 +2,15 @@ import { useState, useEffect } from 'react'
 import {
     ArrowLeft,
     Settings,
-    Globe,
-    Phone,
-    Mail,
-    MapPin,
-    Percent,
-    Clock,
-    Navigation,
     DollarSign,
-    Users,
-    Bike,
     Car,
     RefreshCw
 } from 'lucide-react'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-
-const SETTING_GROUPS = [
-    {
-        title: 'Identidade da Plataforma',
-        icon: <Globe size={18} />,
-        color: '#3b82f6',
-        keys: ['platform_name', 'platform_version', 'country', 'currency', 'currency_symbol']
-    },
-    {
-        title: 'Operações & Viagens',
-        icon: <Navigation size={18} />,
-        color: '#e91e63',
-        keys: ['max_driver_radius_km', 'trip_timeout_minutes']
-    },
-    {
-        title: 'Financeiro',
-        icon: <Percent size={18} />,
-        color: '#10b981',
-        keys: ['default_commission_pct']
-    },
-    {
-        title: 'Suporte',
-        icon: <Phone size={18} />,
-        color: '#8b5cf6',
-        keys: ['support_phone', 'support_email']
-    }
-]
-
-const SETTING_META = {
-    platform_name: { label: 'Nome da Plataforma', icon: <Globe size={16} />, type: 'text' },
-    platform_version: { label: 'Versão', icon: <Settings size={16} />, type: 'text', readOnly: true },
-    country: { label: 'País', icon: <MapPin size={16} />, type: 'text' },
-    currency: { label: 'Moeda (código)', icon: <DollarSign size={16} />, type: 'text' },
-    currency_symbol: { label: 'Símbolo da Moeda', icon: <DollarSign size={16} />, type: 'text' },
-    max_driver_radius_km: { label: 'Raio Máximo de Match (km)', icon: <Navigation size={16} />, type: 'number', suffix: 'km' },
-    trip_timeout_minutes: { label: 'Timeout de Corrida (min)', icon: <Clock size={16} />, type: 'number', suffix: 'min' },
-    default_commission_pct: { label: 'Comissão da Plataforma (%)', icon: <Percent size={16} />, type: 'number', suffix: '%' },
-    support_phone: { label: 'Telefone de Suporte', icon: <Phone size={16} />, type: 'text' },
-    support_email: { label: 'Email de Suporte', icon: <Mail size={16} />, type: 'email' },
-}
 
 export default function Configs({ onBack }) {
-    const [settings, setSettings] = useState(null)
     const [serviceConfigs, setServiceConfigs] = useState([])
     const [loading, setLoading] = useState(true)
 
@@ -72,24 +21,14 @@ export default function Configs({ onBack }) {
     const fetchAll = async () => {
         try {
             setLoading(true)
-            const [settingsRes, servicesRes] = await Promise.allSettled([
-                axios.get(`${API_URL}/admin/settings`),
-                axios.get(`${API_URL}/admin/configs`)
-            ])
-            if (settingsRes.status === 'fulfilled') {
-                setSettings(settingsRes.value.data)
-            }
-            if (servicesRes.status === 'fulfilled') {
-                setServiceConfigs(Array.isArray(servicesRes.value.data) ? servicesRes.value.data : [])
-            }
+            const servicesRes = await adminApi.get('/admin/configs')
+            setServiceConfigs(Array.isArray(servicesRes.data) ? servicesRes.data : [])
         } catch (err) {
             toast.error('Erro ao carregar configurações')
         } finally {
             setLoading(false)
         }
     }
-
-    const getValue = (key) => settings?.[key] ?? ''
 
     if (loading) {
         return (
@@ -121,7 +60,7 @@ export default function Configs({ onBack }) {
                         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Settings size={22} style={{ color: '#e91e63' }} /> Configurações da Plataforma
                         </h2>
-                        <p>Valores informativos fornecidos pela API</p>
+                        <p>Parâmetros globais ainda não configuráveis</p>
                     </div>
                 </div>
                 <button onClick={fetchAll} style={{
@@ -134,68 +73,8 @@ export default function Configs({ onBack }) {
             </div>
 
 
-            <div role="status" style={{ marginTop: 20, padding: 14, borderRadius: 12, background: '#fff7ed', color: '#9a3412' }}>
-                Estes parâmetros ainda não têm persistência configurada. A edição está desativada para evitar alterações que desaparecem ao atualizar.
-            </div>
-
-            {/* Settings Groups */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginTop: 24 }}>
-                {SETTING_GROUPS.map(group => (
-                    <div key={group.title} style={{
-                        background: '#fff', borderRadius: 20, border: '1.5px solid #f1f5f9',
-                        overflow: 'hidden'
-                    }}>
-                        <div style={{
-                            padding: '18px 24px', borderBottom: '1.5px solid #f1f5f9',
-                            display: 'flex', alignItems: 'center', gap: 10
-                        }}>
-                            <div style={{
-                                width: 36, height: 36, borderRadius: 10,
-                                background: `${group.color}18`, color: group.color,
-                                display: 'flex', alignItems: 'center', justifyContent: 'center'
-                            }}>{group.icon}</div>
-                            <h3 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: '#0f172a' }}>{group.title}</h3>
-                        </div>
-                        <div style={{ padding: '16px 24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                            {group.keys.map(key => {
-                                const meta = SETTING_META[key]
-                                if (!meta) return null
-                                const currentVal = getValue(key)
-                                return (
-                                    <div key={key}>
-                                        <label style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, display: 'flex', alignItems: 'center', gap: 5, marginBottom: 6 }}>
-                                            {meta.icon} {meta.label}
-                                        </label>
-                                        <div style={{ display: 'flex', gap: 8 }}>
-                                            <div style={{ position: 'relative', flex: 1 }}>
-                                                <input
-                                                    type={meta.type || 'text'}
-                                                    value={currentVal}
-                                                    readOnly
-                                                    style={{
-                                                        width: '100%', padding: meta.suffix ? '10px 40px 10px 14px' : '10px 14px',
-                                                        borderRadius: 10, border: '1.5px solid #e2e8f0',
-                                                        fontSize: 14, color: '#64748b',
-                                                        background: '#f8fafc',
-                                                        cursor: 'not-allowed',
-                                                        outline: 'none', boxSizing: 'border-box',
-                                                        transition: 'border 0.2s'
-                                                    }}
-                                                />
-                                                {meta.suffix && (
-                                                    <span style={{
-                                                        position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)',
-                                                        fontSize: 12, color: '#94a3b8', fontWeight: 600
-                                                    }}>{meta.suffix}</span>
-                                                )}
-                                            </div>
-                                        </div>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </div>
-                ))}
+            <div role="status" style={{ marginTop: 20, padding: 14, borderRadius: 12, background: '#f8fafc', color: '#475569' }}>
+                Esta plataforma ainda não tem configurações globais persistidas. O raio de procura, o timeout, a moeda e os contactos não estão disponíveis como parâmetros administrativos. A comissão é configurada por serviço em Tarifas.
             </div>
 
             {/* Service Configs Summary */}

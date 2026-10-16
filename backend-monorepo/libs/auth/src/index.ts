@@ -7,3 +7,4 @@ export * from './roles.guard';
 export * from './current-user.decorator';
 export * from './internal-service-token.guard';
 export * from './internal-service-token';
+export * from './cors-policy';

@@ -9,7 +9,7 @@ import { formatCurrency } from '../utils/formatters';
 import ReactNativeHapticFeedback from 'react-native-haptic-feedback';
 import { getSocket } from '../services/socket';
 import Toast from 'react-native-toast-message';
-import { getOfferSecondsRemaining } from '../utils/offerExpiry';
+import { getOfferSecondsRemaining, isOfferExpired } from '../utils/offerExpiry';
 
 const { width } = Dimensions.get('window');
 const hapticOptions = { enableVibrateFallback: true, ignoreAndroidSystemSettings: false };
@@ -17,7 +17,9 @@ const hapticOptions = { enableVibrateFallback: true, ignoreAndroidSystemSettings
 export default function RequestDetailsScreen({ route, navigation }) {
     const { trip, onAccept, onReject } = route.params || {};
     const [timer, setTimer] = useState(null);
+    const [isAccepting, setIsAccepting] = useState(false);
     const timerInterval = useRef(null);
+    const acceptanceStarted = useRef(false);
 
     // Timer logic
     useEffect(() => {
@@ -86,6 +88,15 @@ export default function RequestDetailsScreen({ route, navigation }) {
     }, [trip]);
 
     const handleAccept = () => {
+        if (!trip || acceptanceStarted.current) return;
+        if (isOfferExpired(trip.offerExpiresAt)) {
+            ReactNativeHapticFeedback.trigger('notificationError', hapticOptions);
+            Toast.show({ type: 'error', text1: 'Oferta expirada', text2: 'Atualize a lista para ver novas solicitações.' });
+            navigation.goBack();
+            return;
+        }
+        acceptanceStarted.current = true;
+        setIsAccepting(true);
         if (onAccept && trip) {
             onAccept(trip);
         }
@@ -99,6 +110,7 @@ export default function RequestDetailsScreen({ route, navigation }) {
     };
 
     if (!trip) return null;
+    const offerExpired = isOfferExpired(trip.offerExpiresAt);
 
     return (
         <View style={styles.root}>
@@ -187,7 +199,13 @@ export default function RequestDetailsScreen({ route, navigation }) {
                             <Text style={styles.rejectBtnTxt}>REJEITAR</Text>
                         </TouchableOpacity>
                         
-                        <TouchableOpacity style={styles.acceptBtn} onPress={handleAccept} activeOpacity={0.9}>
+                        <TouchableOpacity
+                            style={[styles.acceptBtn, (offerExpired || isAccepting) && styles.acceptBtnDisabled]}
+                            onPress={handleAccept}
+                            activeOpacity={0.9}
+                            disabled={offerExpired || isAccepting}
+                            accessibilityState={{ disabled: offerExpired || isAccepting }}
+                        >
                             <CheckCircle size={18} color="#fff" style={{ marginRight: 6 }} />
                             <Text style={styles.acceptBtnTxt}>ACEITAR</Text>
                         </TouchableOpacity>
@@ -285,5 +303,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row', justifyContent: 'center', alignItems: 'center',
         shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.25, shadowRadius: 10, elevation: 4
     },
+    acceptBtnDisabled: { opacity: 0.55 },
     acceptBtnTxt: { fontSize: 15, fontWeight: '900', color: '#fff' }
 });

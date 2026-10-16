@@ -1,8 +1,9 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Image, Platform } from 'react-native';
 import colors from '../../theme/colors';
-import { User, Bell, MessageSquare, Phone, Map, Coins } from 'lucide-react-native';
+import { User, Map, Coins } from 'lucide-react-native';
 import { formatCurrency } from '../../utils/formatters';
+import { getTripFare } from '../../utils/tripFare';
 
 export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishRide }) {
     if (!activeTrip) return null;
@@ -16,6 +17,7 @@ export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishR
     const durationText = Number.isFinite(estimatedMinutes) && estimatedMinutes > 0
         ? `${Math.round(estimatedMinutes)} min`
         : 'Indisponível';
+    const fare = getTripFare(activeTrip);
 
     return (
         <View style={styles.root}>
@@ -37,9 +39,6 @@ export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishR
                     </View>
                     <Text style={styles.logoText}>TOT</Text>
                 </View>
-                <TouchableOpacity style={styles.notifyBtn} activeOpacity={0.8}>
-                    <Bell size={20} color={colors.primary} />
-                </TouchableOpacity>
             </View>
 
             {/* ─── MAIN CONTENT ─── */}
@@ -54,7 +53,7 @@ export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishR
                 <View style={styles.detailsCard}>
                     <Text style={styles.cardSectionLabel}>Destino</Text>
                     <Text style={styles.destinationTitle} numberOfLines={2}>
-                        {activeTrip.dropoffAddress || activeTrip.destAddress || 'Estrely Park'}
+                        {activeTrip.dropoffAddress || activeTrip.destAddress || 'Destino indisponível'}
                     </Text>
 
                     <View style={styles.metricsGrid}>
@@ -82,14 +81,6 @@ export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishR
                                 {!!activeTrip.userRating && <Text style={styles.ratingText}>⭐ {activeTrip.userRating}</Text>}
                             </View>
                         </View>
-                        <View style={styles.actionBtns}>
-                            <TouchableOpacity style={styles.roundActionBtn} activeOpacity={0.8}>
-                                <MessageSquare size={18} color={colors.primary} />
-                            </TouchableOpacity>
-                            <TouchableOpacity style={styles.roundActionBtn} activeOpacity={0.8}>
-                                <Phone size={18} color={colors.primary} />
-                            </TouchableOpacity>
-                        </View>
                     </View>
 
                     {/* Value + Payment Method Cards (Grid Row) */}
@@ -97,7 +88,7 @@ export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishR
                         {/* Value card */}
                         <View style={styles.gridCard}>
                             <Text style={styles.gridCardLabel}>Valor Estimado</Text>
-                            <Text style={styles.gridCardValue}>{formatCurrency(activeTrip.price || 0)}</Text>
+                            <Text style={styles.gridCardValue}>{fare === null ? 'Indisponível' : formatCurrency(fare)}</Text>
                         </View>
                         {/* Payment card */}
                         <View style={styles.gridCard}>
@@ -116,7 +107,7 @@ export default function OngoingRideView({ user, activeTrip, onOpenMap, onFinishR
                 <View style={styles.actionsContainer}>
                     <TouchableOpacity style={styles.mapBtn} onPress={onOpenMap} activeOpacity={0.8}>
                         <Map size={20} color={colors.text} style={{ marginRight: 8 }} />
-                        <Text style={styles.mapBtnTxt}>ABRIR MAPA</Text>
+                        <Text style={styles.mapBtnTxt}>NAVEGAR ATÉ AO DESTINO</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.finishBtn} onPress={onFinishRide} activeOpacity={0.9}>
@@ -133,7 +124,6 @@ const topBarStyles = StyleSheet.create({
     avatarMiniBorder: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: colors.primary, overflow: 'hidden' },
     avatarMini: { width: '100%', height: '100%', objectFit: 'cover' },
     logoText: { fontSize: 20, fontWeight: '900', color: colors.primary, letterSpacing: -1 },
-    notifyBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
 });
 
 const styles = StyleSheet.create({
@@ -197,8 +187,6 @@ const styles = StyleSheet.create({
     avatarBorder: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: colors.surfaceContainerHighest, justifyContent: 'center', alignItems: 'center' },
     passengerName: { fontSize: 15, fontWeight: '800', color: colors.text },
     ratingText: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-    actionBtns: { flexDirection: 'row', gap: 8 },
-    roundActionBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
 
     gridRow: { flexDirection: 'row', gap: 12 },
     gridCard: {

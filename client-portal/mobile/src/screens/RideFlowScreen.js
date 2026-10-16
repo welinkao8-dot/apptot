@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
+    ActivityIndicator,
     StyleSheet,
     TouchableOpacity,
     StatusBar,
@@ -10,12 +11,15 @@ import {
     Image,
     ScrollView,
     TextInput,
+    Keyboard,
     Platform,
     Alert,
-    BackHandler
+    BackHandler,
+    Linking
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Geolocation from 'react-native-geolocation-service';
+import { getCurrentClientLocation } from '../services/currentLocation';
 import {
     Menu,
     Search,
@@ -40,14 +44,37 @@ import {
 import colors from '../theme/colors';
 import socket, { setSocketToken } from '../services/socket';
 import api from '../services/api';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
 import hereService from '../services/hereService';
 import HereMap from '../components/HereMap';
 import { useAuth } from '../context/AuthContext';
 import Toast from 'react-native-toast-message';
-import { drawSelectedQuoteRoute, isQuoteExpired } from '../utils/quoteSelection';
+import { drawSelectedQuoteRoute, isQuoteExpired, mergeQuotesWithServices } from '../utils/quoteSelection';
 import DriverLocationStatus from '../components/DriverLocationStatus';
+import { formatCoordinateLabel, isValidCoordinate, validateTripLocations } from '../utils/tripLocation';
 
 const { width, height } = Dimensions.get('window');
+
+const SEARCH_FEEDBACK = {
+    no_results: { message: 'Nenhum endereço encontrado. Tenta outro nome ou seleciona no mapa.', retryable: false },
+    timeout: { message: 'A pesquisa demorou demasiado. Verifica a ligação e tenta novamente.', retryable: true },
+    offline: { message: 'Sem ligação à internet. As sugestões anteriores continuam disponíveis.', retryable: true },
+    rate_limited: { message: 'Muitas pesquisas em pouco tempo. Aguarda um pouco e tenta novamente.', retryable: true },
+    server_error: { message: 'A pesquisa está temporariamente indisponível. Tenta novamente.', retryable: true },
+    request_error: { message: 'Não foi possível pesquisar este endereço. Confirma o texto e tenta novamente.', retryable: false },
+};
+
+export function normalizeSuggestionSearchResult(result) {
+    const results = Array.isArray(result) ? result : [];
+    const status = result?.status || (results.length ? 'success' : 'no_results');
+    const feedback = SEARCH_FEEDBACK[status];
+    return {
+        results,
+        status,
+        message: status === 'loading' ? 'A procurar endereços…' : (feedback?.message || ''),
+        retryable: Boolean(result?.retryable ?? feedback?.retryable),
+    };
+}
 
 export default function RideFlowScreen({ navigation, route }) {
     const { user, token } = useAuth();
@@ -61,30 +88,95 @@ export default function RideFlowScreen({ navigation, route }) {
     const [selectedService, setSelectedService] = useState(null);
     const [availableServices, setAvailableServices] = useState([]);
     const [calculatedServices, setCalculatedServices] = useState([]);
+    const [quotesLoading, setQuotesLoading] = useState(false);
+    const [quoteError, setQuoteError] = useState(null);
     const [tripId, setTripId] = useState(null);
+    const [activeRoutePolyline, setActiveRoutePolyline] = useState(null);
     const [acceptedDriver, setAcceptedDriver] = useState(null);
     const [driverLocationUpdatedAt, setDriverLocationUpdatedAt] = useState(null);
     const [currentFare, setCurrentFare] = useState(0);
     const [searchQuery, setSearchQuery] = useState('');
     const [searchResults, setSearchResults] = useState([]);
+    const [searchStatus, setSearchStatus] = useState('idle');
+    const [searchAttempt, setSearchAttempt] = useState(0);
     const [mapReady, setMapReady] = useState(false);
     const [selectingPickup, setSelectingPickup] = useState(false);
+    const [locationLoading, setLocationLoading] = useState(false);
 
     const mapRef = useRef(null);
     const pickupCoordsRef = useRef(pickupCoords);
     const mapReadyRef = useRef(mapReady);
+    const quoteRequestIdRef = useRef(0);
+    const quoteContextRef = useRef(null);
+    const tripSubmissionIdRef = useRef(0);
+    const tripSubmissionInFlightRef = useRef(false);
+    const searchRequestIdRef = useRef(0);
+    const mapTapRequestIdRef = useRef(0);
+    const locationRequestIdRef = useRef(0);
+    const isMountedRef = useRef(false);
     const radarAnim = useRef(new Animated.Value(0)).current;
     const paymentAnim = useRef(new Animated.Value(0)).current;
+
+    const locatePickup = async (fromButton = false) => {
+        const requestId = ++locationRequestIdRef.current;
+        mapTapRequestIdRef.current += 1;
+        setLocationLoading(true);
+        try {
+            const result = await getCurrentClientLocation();
+            if (!isMountedRef.current || requestId !== locationRequestIdRef.current) return;
+            if (result.status === 'granted') {
+                invalidateQuoteSelection();
+                setPickupCoords(result.coords);
+                pickupCoordsRef.current = result.coords;
+                setPickupAddress('A obter endereço…');
+                setSelectingPickup(false);
+                if (mapRef.current) mapRef.current.setUserLocation(result.coords);
+                const address = await hereService.reverseGeocode(result.coords.lat, result.coords.lng);
+                if (isMountedRef.current && requestId === locationRequestIdRef.current) {
+                    setPickupAddress(address || formatCoordinateLabel(result.coords));
+                }
+            } else if (result.status === 'blocked') {
+                Toast.show({ type: 'info', text1: 'Localização bloqueada', text2: 'Pode marcar a recolha no mapa ou ativar a permissão nas definições.' });
+                if (fromButton) Alert.alert('Permissão de localização', 'Ative a localização nas definições do telemóvel ou escolha a recolha no mapa.', [
+                    { text: 'Escolher no mapa', style: 'cancel', onPress: () => setSelectingPickup(true) },
+                    { text: 'Abrir definições', onPress: () => Linking.openSettings() },
+                ]);
+            } else if (result.status === 'denied') {
+                Toast.show({ type: 'info', text1: 'Permissão recusada', text2: 'Pode continuar ao marcar a recolha no mapa.' });
+            } else {
+                setPickupAddress('Localização indisponível — escolha o ponto no mapa.');
+                if (fromButton) Toast.show({ type: 'error', text1: 'Localização indisponível', text2: 'Verifique o GPS ou escolha a recolha no mapa.' });
+            }
+        } finally {
+            if (isMountedRef.current && requestId === locationRequestIdRef.current) setLocationLoading(false);
+        }
+    };
 
     // Keep refs in sync
     useEffect(() => { pickupCoordsRef.current = pickupCoords; }, [pickupCoords]);
     useEffect(() => { mapReadyRef.current = mapReady; }, [mapReady]);
+    useEffect(() => {
+        isMountedRef.current = true;
+        return () => {
+            isMountedRef.current = false;
+            quoteRequestIdRef.current += 1;
+            tripSubmissionIdRef.current += 1;
+            tripSubmissionInFlightRef.current = false;
+            searchRequestIdRef.current += 1;
+            mapTapRequestIdRef.current += 1;
+            locationRequestIdRef.current += 1;
+        };
+    }, []);
 
     // --- Effects ---
 
     // 0. Update pickup from params if provided (e.g. passed from Dashboard)
     useEffect(() => {
         if (route.params?.pickupCoords) {
+            if (route.params.pickupCoords.lat !== pickupCoordsRef.current?.lat
+                || route.params.pickupCoords.lng !== pickupCoordsRef.current?.lng) {
+                invalidateQuoteSelection();
+            }
             setPickupCoords(route.params.pickupCoords);
             if (mapReady && mapRef.current) {
                 mapRef.current.setUserLocation(route.params.pickupCoords);
@@ -97,16 +189,7 @@ export default function RideFlowScreen({ navigation, route }) {
     useEffect(() => {
         loadServices();
         if (!route.params?.pickupCoords) {
-            Geolocation.getCurrentPosition(
-                async (pos) => {
-                    const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                    setPickupCoords(coords);
-                    const addr = await hereService.reverseGeocode(coords.lat, coords.lng);
-                    if (addr) setPickupAddress(addr);
-                },
-                (err) => { console.log('GPS Error:', err); setPickupAddress('Localização indisponível — ative a localização para pedir uma cotação.'); },
-                { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-            );
+            void locatePickup();
         }
 
         // Resume check
@@ -148,6 +231,7 @@ export default function RideFlowScreen({ navigation, route }) {
                 };
 
                 setTripId(trip.id);
+                setActiveRoutePolyline(trip.route_polyline || null);
                 setStep(uiStep);
                 setDestination(dest);
                 // Use current_fare (live value) if available, otherwise fall back to estimated_fare
@@ -177,7 +261,7 @@ export default function RideFlowScreen({ navigation, route }) {
                 console.log('ℹ️ [RideFlow] Nenhuma corrida ativa no servidor.');
             }
         } catch (error) {
-            console.error('❌ [RideFlow] Erro ao verificar corrida ativa:', error);
+            console.error('❌ [RideFlow] Erro ao verificar corrida ativa:', toSafeErrorLog(error));
         }
     };
 
@@ -185,6 +269,7 @@ export default function RideFlowScreen({ navigation, route }) {
     useEffect(() => {
         if (mapReady && destination && step !== 'searching_address') {
             mapRef.current?.setMarkers(pickupCoords, { lat: destination.lat, lng: destination.lng });
+            if (activeRoutePolyline) mapRef.current?.drawRoute(activeRoutePolyline);
             
             if (step === 'service_selection' || step === 'requesting' || step === 'accepted' || step === 'ongoing') {
                 if (acceptedDriver) {
@@ -192,20 +277,40 @@ export default function RideFlowScreen({ navigation, route }) {
                 }
             }
         }
-    }, [mapReady, step, destination]);
+    }, [mapReady, step, destination, pickupCoords, acceptedDriver, activeRoutePolyline]);
 
     // 3. Search Logic
     useEffect(() => {
+        const requestId = ++searchRequestIdRef.current;
         const delay = setTimeout(async () => {
             if (searchQuery.length >= 3) {
-                const results = await hereService.fetchSuggestions(searchQuery, pickupCoords);
-                setSearchResults(results);
+                setSearchStatus('loading');
+                try {
+                    const result = await hereService.fetchSuggestions(searchQuery, pickupCoords);
+                    if (requestId === searchRequestIdRef.current) {
+                        const normalized = normalizeSuggestionSearchResult(result);
+                        setSearchResults(normalized.results);
+                        setSearchStatus(normalized.status);
+                    }
+                } catch (error) {
+                    if (requestId === searchRequestIdRef.current) setSearchStatus('server_error');
+                }
             } else {
                 setSearchResults([]);
+                setSearchStatus('idle');
             }
         }, 500);
-        return () => clearTimeout(delay);
-    }, [searchQuery]);
+        return () => {
+            clearTimeout(delay);
+            searchRequestIdRef.current += 1;
+        };
+    }, [searchQuery, searchAttempt]);
+
+    const handleSearchQueryChange = (query) => {
+        setSearchResults([]);
+        setSearchStatus('idle');
+        setSearchQuery(query);
+    };
 
     // 4. Animation Loops
     useEffect(() => {
@@ -256,6 +361,7 @@ export default function RideFlowScreen({ navigation, route }) {
             }
 
             if (step === 'searching_address' || step === 'service_selection') {
+                if (step === 'service_selection') invalidateTripSubmission();
                 setStep('home');
                 return true;
             }
@@ -374,39 +480,89 @@ export default function RideFlowScreen({ navigation, route }) {
         }
     };
 
+    const invalidateQuoteSelection = () => {
+        quoteRequestIdRef.current += 1;
+        quoteContextRef.current = null;
+        setActiveRoutePolyline(null);
+        setCalculatedServices([]);
+        setSelectedService(null);
+        setQuoteError(null);
+        setQuotesLoading(false);
+        try {
+            mapRef.current?.drawRoute?.(null);
+        } catch (error) {
+            console.warn('Could not clear the previous quote route:', toSafeErrorLog(error));
+        }
+    };
+
+    const invalidateTripSubmission = () => {
+        tripSubmissionIdRef.current += 1;
+        tripSubmissionInFlightRef.current = false;
+        setLoading(false);
+    };
+
+    const leaveQuoteSelection = () => {
+        invalidateTripSubmission();
+        setStep('home');
+    };
+
     const calculateFares = async (destLat, destLng, customOrigin = null, customDestination = destination, customOriginAddress = pickupAddress) => {
+        invalidateQuoteSelection();
         const origin = customOrigin || pickupCoords;
         if (!origin) {
+            setQuoteError('Ative a localização ou escolha o ponto de recolha no mapa.');
             Toast.show({ type: 'error', text1: 'Ponto de recolha necessário', text2: 'Ative a localização ou escolha o ponto de recolha no mapa.' });
             return;
         }
+        const originLabel = customOriginAddress?.trim() && customOriginAddress !== 'A obter localização...'
+            ? customOriginAddress.trim()
+            : `${origin.lat.toFixed(5)}, ${origin.lng.toFixed(5)}`;
+        const destinationLabel = (customDestination?.address || customDestination?.name || '').trim()
+            || `${destLat}, ${destLng}`;
+        const locationValidation = validateTripLocations(origin, { lat: destLat, lng: destLng }, originLabel, destinationLabel);
+        if (!locationValidation.valid) {
+            setQuoteError(locationValidation.reason === 'same_location'
+                ? 'A origem e o destino têm de ser diferentes.'
+                : 'Confirme um ponto de recolha e um destino válidos no mapa.');
+            return;
+        }
+        mapRef.current?.setMarkers(origin, { lat: destLat, lng: destLng });
 
+        const requestId = ++quoteRequestIdRef.current;
+        const quoteContext = { originLat: origin.lat, originLng: origin.lng, destLat, destLng };
+        setQuotesLoading(true);
+        setQuoteError(null);
         try {
-        const services = availableServices.filter(s => s.category === 'ride');
-        const response = await api.post('/quotes', {
+            const response = await api.post('/quotes', {
                 category: 'ride',
-                originAddress: customOriginAddress || 'Localização atual',
-                destAddress: customDestination?.address || customDestination?.name || `${destLat}, ${destLng}`,
+                originAddress: originLabel,
+                destAddress: destinationLabel,
                 originLat: origin.lat,
                 originLng: origin.lng,
                 destLat,
                 destLng,
-        });
-        const quoteByService = new Map(response.data.map(quote => [Number(quote.serviceConfigId), quote]));
-        const quotes = services.flatMap(service => {
-            const quote = quoteByService.get(Number(service.id));
-            return quote ? [{ ...service, quoteId: quote.id, expiresAt: quote.expiresAt, estimatedPrice: Number(quote.estimatedFare), estimatedTime: Math.ceil(quote.durationSeconds / 60), distanceMeters: quote.distanceMeters, routePolyline: quote.routePolyline }] : [];
-        });
-        const firstRoute = quotes.find(service => service.routePolyline)?.routePolyline;
-        if (firstRoute) mapRef.current?.drawRoute(firstRoute);
-        setCalculatedServices(quotes);
-        } catch {
+            });
+            if (requestId !== quoteRequestIdRef.current) return;
+            const quotes = mergeQuotesWithServices(availableServices, response.data, 'ride');
+            const firstRoute = quotes.find(service => service.routePolyline)?.routePolyline;
+            setActiveRoutePolyline(firstRoute || null);
+            if (firstRoute) mapRef.current?.drawRoute(firstRoute);
+            if (quotes.length > 0) quoteContextRef.current = quoteContext;
+            setCalculatedServices(quotes);
+            if (quotes.length === 0) setQuoteError('Não há opções de viagem disponíveis para este percurso.');
+        } catch (error) {
+            if (requestId !== quoteRequestIdRef.current) return;
             setCalculatedServices([]);
-            Toast.show({ type: 'error', text1: 'Cotação indisponível', text2: 'Não foi possível calcular o preço agora.' });
+            setQuoteError('Não foi possível calcular os preços. Verifique a ligação e tente novamente.');
+        } finally {
+            if (requestId === quoteRequestIdRef.current) setQuotesLoading(false);
         }
     };
 
     const handleSelectDestination = (item) => {
+        mapTapRequestIdRef.current += 1;
+        Keyboard.dismiss();
+        invalidateQuoteSelection();
         setDestination(item);
         setSearchQuery(item.address || item.name);
         setStep('home'); // Go back to map view (home state of this screen)
@@ -421,9 +577,17 @@ export default function RideFlowScreen({ navigation, route }) {
 
     const onMapTap = async (coords) => {
         if (step !== 'home' && step !== 'searching_address') return;
-
+        if (!isValidCoordinate(coords)) return;
+        const requestId = ++mapTapRequestIdRef.current;
+        const wasSelectingPickup = selectingPickup;
+        if (wasSelectingPickup) {
+            locationRequestIdRef.current += 1;
+            setLocationLoading(false);
+        }
         const address = await hereService.reverseGeocode(coords.lat, coords.lng);
-        if (selectingPickup) {
+        if (!isMountedRef.current || requestId !== mapTapRequestIdRef.current) return;
+        if (wasSelectingPickup) {
+            invalidateQuoteSelection();
             setPickupCoords(coords);
             pickupCoordsRef.current = coords;
             setPickupAddress(address || `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`);
@@ -432,8 +596,8 @@ export default function RideFlowScreen({ navigation, route }) {
             return;
         }
         const item = {
-            name: address ? address.split(',')[0] : 'Local Selecionado',
-            address: address || 'Coordenadas do mapa',
+            name: address ? address.split(',')[0] : formatCoordinateLabel(coords),
+            address: address || formatCoordinateLabel(coords),
             lat: coords.lat,
             lng: coords.lng
         };
@@ -446,7 +610,7 @@ export default function RideFlowScreen({ navigation, route }) {
             Toast.show({ type: 'error', text1: 'Destino', text2: 'Selecione um destino primeiro.' });
             return;
         }
-        if (calculatedServices.length === 0) {
+        if (calculatedServices.length === 0 && !quotesLoading) {
             // Try calc again
             calculateFares(destination.lat, destination.lng);
         }
@@ -454,18 +618,32 @@ export default function RideFlowScreen({ navigation, route }) {
     };
 
     const handleSelectService = (service) => {
+        if (!quoteContextRef.current) return;
         setSelectedService(service);
+        setActiveRoutePolyline(service?.routePolyline || null);
         drawSelectedQuoteRoute(service, mapRef.current);
     };
 
     const handleRequestTrip = async () => {
-        if (loading) return; // Debounce
+        if (loading || tripSubmissionInFlightRef.current) return;
 
         try {
             console.log('🔵 [RideFlow] Botão CONTINUAR clicado. Iniciando handleRequestTrip...');
 
             if (!selectedService || !destination) {
                 Toast.show({ type: 'error', text1: 'Erro', text2: 'Selecione o destino e o serviço primeiro.' });
+                return;
+            }
+
+            const quoteContext = quoteContextRef.current;
+            if (!quoteContext
+                || quoteContext.originLat !== pickupCoords?.lat
+                || quoteContext.originLng !== pickupCoords?.lng
+                || quoteContext.destLat !== destination.lat
+                || quoteContext.destLng !== destination.lng) {
+                setSelectedService(null);
+                setStep('service_selection');
+                Toast.show({ type: 'info', text1: 'Cotação desatualizada', text2: 'Calcule novamente a rota e selecione um preço atualizado.' });
                 return;
             }
 
@@ -478,7 +656,15 @@ export default function RideFlowScreen({ navigation, route }) {
                 return;
             }
 
-            setLoading(true); // Block further clicks
+            tripSubmissionInFlightRef.current = true;
+            const requestId = ++tripSubmissionIdRef.current;
+            const isCurrentRequest = () => isMountedRef.current && requestId === tripSubmissionIdRef.current;
+            const finishRequest = () => {
+                if (!isCurrentRequest()) return;
+                tripSubmissionInFlightRef.current = false;
+                setLoading(false);
+            };
+            setLoading(true);
 
             // Check Socket Connection
             if (!socket.connected) {
@@ -492,14 +678,16 @@ export default function RideFlowScreen({ navigation, route }) {
             console.log('🔵 [RideFlow] Payload:', JSON.stringify(payload, null, 2));
 
             socket.timeout(10000).emit('request_trip', payload, async (timeoutError, response) => {
+                if (!isCurrentRequest()) return;
                 if (!timeoutError && response?.success && response.tripId) {
                     setTripId(response.tripId);
                     setStep('requesting');
-                    setLoading(false);
+                    finishRequest();
                     return;
                 }
                 try {
                     const active = await api.get(`/trips/active/${user.id}`);
+                    if (!isCurrentRequest()) return;
                     const committed = (Array.isArray(active.data) ? active.data : [active.data]).find((trip) => trip?.quote_id === payload.quoteId || trip?.id === response?.tripId);
                     if (committed) {
                         setTripId(committed.id);
@@ -509,10 +697,11 @@ export default function RideFlowScreen({ navigation, route }) {
                         Toast.show({ type: 'error', text1: 'Pedido não confirmado', text2: response?.error || 'Verifique a ligação e tente novamente.' });
                     }
                 } catch {
+                    if (!isCurrentRequest()) return;
                     setStep('service_selection');
                     Toast.show({ type: 'error', text1: 'Sem confirmação do servidor', text2: 'Verifique as suas viagens antes de tentar novamente.' });
                 } finally {
-                    setLoading(false);
+                    finishRequest();
                 }
             });
             console.log('🚀 [RideFlow] Evento request_trip emitido!');
@@ -520,14 +709,16 @@ export default function RideFlowScreen({ navigation, route }) {
             // Wait for the server ACK or the durable REST reconciliation above.
 
         } catch (error) {
-            console.error('❌ [RideFlow] ERRO FATAL:', error);
+            console.error('❌ [RideFlow] ERRO FATAL:', toSafeErrorLog(error));
             Toast.show({ type: 'error', text1: 'Erro Fatal', text2: error.message });
-            setLoading(false);
+            invalidateTripSubmission();
         }
     };
 
     const resetFlow = async () => {
         console.log('🔄 [RideFlow] Iniciando limpeza profunda do estado...');
+        invalidateTripSubmission();
+        invalidateQuoteSelection();
         setStep('home');
         setTripId(null);
         setAcceptedDriver(null);
@@ -562,6 +753,7 @@ export default function RideFlowScreen({ navigation, route }) {
     // --- Renders ---
 
     const renderOverlay = () => {
+        const addressSearchFeedback = normalizeSuggestionSearchResult(Object.assign([], { status: searchStatus }));
         switch (step) {
             case 'home':
                 // Small bottom sheet to trigger search
@@ -579,6 +771,7 @@ export default function RideFlowScreen({ navigation, route }) {
                                     <View style={styles.destinationDot} />
                                     <Text style={styles.searchTextActive}>{destination.name}</Text>
                                     <TouchableOpacity style={{ marginLeft: 'auto' }} onPress={() => {
+                                        invalidateQuoteSelection();
                                         setDestination(null);
                                         setSearchQuery('');
                                         mapRef.current?.clearMap();
@@ -626,11 +819,11 @@ export default function RideFlowScreen({ navigation, route }) {
                                             placeholder="Para onde vais?"
                                             placeholderTextColor={colors.textSecondary}
                                             value={searchQuery}
-                                            onChangeText={setSearchQuery}
+                                            onChangeText={handleSearchQueryChange}
                                             autoFocus
                                         />
                                         {searchQuery.length > 0 && (
-                                            <TouchableOpacity onPress={() => setSearchQuery('')}>
+                                            <TouchableOpacity onPress={() => handleSearchQueryChange('')}>
                                                 <X size={18} color={colors.primary} />
                                             </TouchableOpacity>
                                         )}
@@ -639,7 +832,22 @@ export default function RideFlowScreen({ navigation, route }) {
                             </View>
                         </SafeAreaView>
 
-                        <ScrollView style={styles.resultsList} showsVerticalScrollIndicator={false}>
+                        <ScrollView keyboardShouldPersistTaps="handled" style={styles.resultsList} showsVerticalScrollIndicator={false}>
+                            {addressSearchFeedback.message ? (
+                                <View style={styles.searchFeedback} accessibilityLiveRegion="polite">
+                                    <Text style={styles.searchFeedbackText}>{addressSearchFeedback.message}</Text>
+                                    {addressSearchFeedback.retryable && (
+                                        <TouchableOpacity
+                                            accessibilityRole="button"
+                                            accessibilityLabel="Tentar novamente a pesquisa de endereços"
+                                            style={styles.searchRetryButton}
+                                            onPress={() => setSearchAttempt(attempt => attempt + 1)}
+                                        >
+                                            <Text style={styles.searchRetryText}>Tentar novamente</Text>
+                                        </TouchableOpacity>
+                                    )}
+                                </View>
+                            ) : null}
                             {searchResults.map((item) => (
                                 <TouchableOpacity key={item.id} style={styles.resultItem} onPress={() => handleSelectDestination(item)}>
                                     <View style={styles.resultIconBox}>
@@ -670,10 +878,30 @@ export default function RideFlowScreen({ navigation, route }) {
                         <View style={styles.handleBar} />
                         <View style={styles.selectionHeader}>
                             <Text style={styles.sheetTitleCallback}>SELECIONE UMA VIAGEM</Text>
-                            <TouchableOpacity onPress={() => setStep('home')} style={styles.backBtn}>
+                            <TouchableOpacity onPress={leaveQuoteSelection} style={styles.backBtn}>
                                 <ArrowLeft size={20} color={colors.primary} />
                             </TouchableOpacity>
                         </View>
+                        {quotesLoading && (
+                            <View style={styles.quoteFeedback}>
+                                <ActivityIndicator color={colors.primary} />
+                                <Text style={styles.quoteFeedbackText}>A calcular rota e preços…</Text>
+                            </View>
+                        )}
+                        {!!quoteError && !quotesLoading && (
+                            <View style={styles.quoteFeedback}>
+                                <Text style={styles.quoteFeedbackText}>{quoteError}</Text>
+                                {!!destination && (
+                                    <TouchableOpacity
+                                        accessibilityRole="button"
+                                        onPress={() => calculateFares(destination.lat, destination.lng)}
+                                        style={styles.quoteRetryButton}
+                                    >
+                                        <Text style={styles.quoteRetryText}>Tentar novamente</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        )}
                         {calculatedServices.map((service) => {
                             const vc = (service.vehicle_category || '').toLowerCase();
                             let ServiceIcon = Car;
@@ -766,22 +994,13 @@ export default function RideFlowScreen({ navigation, route }) {
                             </View>
                             <View style={styles.driverMinimalDetails}>
                                 <Text style={styles.driverNameSmall}>{acceptedDriver?.name}</Text>
-                                <Text style={styles.driverCarSmall}>Toyota Corolla • ABC-123-LD</Text>
+                                <Text style={styles.driverCarSmall}>Veículo não informado</Text>
                             </View>
                             <TouchableOpacity style={styles.chatIconBtn}>
                                 <Smartphone size={20} color={colors.primary} />
                             </TouchableOpacity>
                         </View>
 
-                        <View style={styles.progressPlaceholder}>
-                            <View style={styles.progressBar}>
-                                <Animated.View style={[styles.progressFill, { width: '60%' }]} />
-                            </View>
-                            <View style={styles.etaBox}>
-                                <Clock size={16} color={colors.primary} />
-                                <Text style={styles.etaText}>Chegada prevista em <Text style={{ fontWeight: '900', color: colors.primary }}>8 min</Text></Text>
-                            </View>
-                        </View>
                     </View>
                 );
 
@@ -847,10 +1066,16 @@ export default function RideFlowScreen({ navigation, route }) {
                 />
                 {(step === 'accepted' || step === 'ongoing') && <DriverLocationStatus updatedAt={driverLocationUpdatedAt} mapRef={mapRef} />}
             </View>
-            {!pickupCoords && (step === 'home' || step === 'searching_address') && (
-                <TouchableOpacity style={styles.manualSyncBtn} onPress={() => setSelectingPickup(true)}>
-                    <Text style={styles.primaryBtnText}>{selectingPickup ? 'Toque no mapa para definir recolha' : 'Definir recolha no mapa'}</Text>
-                </TouchableOpacity>
+            {(step === 'home' || step === 'searching_address') && (
+                <View style={styles.locationActions}>
+                    <TouchableOpacity style={styles.locationActionBtn} disabled={locationLoading} onPress={() => locatePickup(true)}>
+                        <Navigation size={16} color="#fff" />
+                        <Text style={styles.primaryBtnText}>{locationLoading ? 'A localizar…' : 'Usar minha localização'}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.locationActionSecondary} onPress={() => { mapTapRequestIdRef.current += 1; invalidateQuoteSelection(); locationRequestIdRef.current += 1; setLocationLoading(false); setSelectingPickup(true); }}>
+                        <Text style={styles.locationActionSecondaryText}>{selectingPickup ? 'Toque no mapa para definir recolha' : 'Definir recolha no mapa'}</Text>
+                    </TouchableOpacity>
+                </View>
             )}
 
             {/* Manual Sync Button - Only for restored sessions - Discreet floating button on the side */}
@@ -990,6 +1215,10 @@ const styles = StyleSheet.create({
     },
     inputTextActive: { fontSize: 16, fontWeight: '700', color: colors.text, flex: 1 },
     resultsList: { flex: 1, backgroundColor: '#FFF', paddingHorizontal: 20, paddingTop: 10 },
+    searchFeedback: { paddingVertical: 12, paddingHorizontal: 14, marginBottom: 8, borderRadius: 12, backgroundColor: '#F8FAFC' },
+    searchFeedbackText: { color: colors.textSecondary, fontSize: 13, lineHeight: 19 },
+    searchRetryButton: { alignSelf: 'flex-start', paddingTop: 10, paddingBottom: 2 },
+    searchRetryText: { color: colors.primary, fontSize: 13, fontWeight: '800' },
     resultItem: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1030,6 +1259,32 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 20,
+    },
+    quoteFeedback: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 18,
+        paddingHorizontal: 16,
+        marginBottom: 10,
+        borderRadius: 16,
+        backgroundColor: '#F8FAFC',
+    },
+    quoteFeedbackText: {
+        marginTop: 8,
+        color: colors.textSecondary,
+        fontSize: 14,
+        fontWeight: '600',
+        textAlign: 'center',
+    },
+    quoteRetryButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 14,
+        marginTop: 6,
+    },
+    quoteRetryText: {
+        color: colors.primary,
+        fontSize: 14,
+        fontWeight: '800',
     },
     serviceItem: {
         flexDirection: 'row',
@@ -1282,4 +1537,8 @@ const styles = StyleSheet.create({
         borderColor: '#F1F5F9',
         zIndex: 10,
     },
+    locationActions: { position: 'absolute', top: 108, alignSelf: 'center', zIndex: 1002, alignItems: 'center', gap: 8 },
+    locationActionBtn: { minHeight: 44, borderRadius: 16, backgroundColor: colors.primary, paddingHorizontal: 16, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, ...colors.shadow },
+    locationActionSecondary: { minHeight: 36, borderRadius: 14, backgroundColor: '#fff', paddingHorizontal: 14, alignItems: 'center', justifyContent: 'center', ...colors.shadow },
+    locationActionSecondaryText: { color: colors.primary, fontSize: 12, fontWeight: '800' },
 });

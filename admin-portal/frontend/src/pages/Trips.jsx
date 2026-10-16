@@ -1,38 +1,32 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
     Search,
-    Calendar,
-    ArrowLeft,
-    MapPin,
     Clock,
+    ArrowLeft,
     Navigation,
     User,
-    Bike,
-    Car,
-    Filter,
+    RefreshCw,
     ChevronRight,
     Download,
     FileText,
-    Activity,
-    CheckCircle2,
-    XCircle,
-    AlertCircle,
-    Loader2,
-    RefreshCw
 } from 'lucide-react'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
 import { hasReceiptFile } from '../services/adminPortalContracts'
+import { buildTripsQuery, normalizeTripsPage } from '../services/adminTripsPagination'
+import { formatKz, formatDateTime } from '../services/format'
+import RubberSegment from '../components/react-bits/RubberSegment'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-
+/* O estado é o único sítio onde a cor significa algo, e o tom vem daqui.
+   Antes cada estado trazia um hex e um fundo próprios, e o "Cancelada" usava
+   a mesma família de cor da marca. */
 const STATUS_META = {
-    requested:  { label: 'Aguardando',  color: '#f59e0b', bg: '#fef3c7', icon: <AlertCircle size={13} />, live: true },
-    accepted:   { label: 'Aceite',      color: '#3b82f6', bg: '#dbeafe', icon: <CheckCircle2 size={13} />, live: true },
-    arrived:    { label: 'Chegou',      color: '#8b5cf6', bg: '#ede9fe', icon: <MapPin size={13} />, live: true },
-    ongoing:    { label: 'Em Curso',    color: '#10b981', bg: '#d1fae5', icon: <Navigation size={13} />, live: true },
-    completed:  { label: 'Concluída',   color: '#64748b', bg: '#f1f5f9', icon: <CheckCircle2 size={13} />, live: false },
-    cancelled:  { label: 'Cancelada',   color: '#ef4444', bg: '#fee2e2', icon: <XCircle size={13} />, live: false },
+    requested: { label: 'A aguardar', tone: 'waiting', live: true },
+    accepted: { label: 'Aceite', tone: 'accepted', live: true },
+    arrived: { label: 'Chegou', tone: 'accepted', live: true },
+    ongoing: { label: 'Em curso', tone: 'live', live: true },
+    completed: { label: 'Concluída', tone: 'done', live: false },
+    cancelled: { label: 'Cancelada', tone: 'cancelled', live: false },
 }
 
 const TABS = [
@@ -42,6 +36,13 @@ const TABS = [
     { key: 'cancelled', label: 'Canceladas' },
 ]
 
+const initialsOf = name => String(name || '?')
+    .trim()
+    .split(/\s+/)
+    .slice(0, 2)
+    .map(part => part[0])
+    .join('')
+
 export default function Trips({ onBack }) {
     const [trips, setTrips] = useState([])
     const [loading, setLoading] = useState(true)
@@ -50,288 +51,255 @@ export default function Trips({ onBack }) {
     const [selectedTrip, setSelectedTrip] = useState(null)
     const [liveCount, setLiveCount] = useState(0)
     const [currentPage, setCurrentPage] = useState(1)
-    const itemsPerPage = 8 // trips cards are large, so 8 is a good size
+    const [totalTrips, setTotalTrips] = useState(0)
+    const [fetchError, setFetchError] = useState('')
+    const itemsPerPage = 20
+    const latestRequest = useRef(0)
 
-    useEffect(() => {
-        setCurrentPage(1)
-    }, [searchTerm, activeTab])
-
-    useEffect(() => {
-        fetchTrips()
-
-        const recovery = setInterval(() => {
-            fetchTrips()
-        }, 30000)
-        return () => {
-            clearInterval(recovery)
-        }
-    }, [])
-
-    const fetchTrips = async () => {
+    const fetchTrips = async (page = currentPage, status = activeTab, search = searchTerm) => {
+        const requestId = ++latestRequest.current
+        setLoading(true)
         try {
-            const res = await axios.get(`${API_URL}/admin/trips`)
-            const data = Array.isArray(res.data) ? res.data : []
-            setTrips(data)
-            setLiveCount(data.filter(t => STATUS_META[t.status]?.live).length)
+            const res = await adminApi.get('/admin/trips', { params: buildTripsQuery({ page, pageSize: itemsPerPage, status, search }) })
+            const data = normalizeTripsPage(res.data)
+            if (requestId !== latestRequest.current) return
+            setTrips(data.items)
+            setTotalTrips(data.total)
+            setCurrentPage(data.page)
+            setLiveCount(data.items.filter(t => STATUS_META[t.status]?.live).length)
+            setFetchError('')
         } catch (error) {
+            if (requestId !== latestRequest.current) return
             console.error('Error fetching trips:', error)
+            setFetchError('Não foi possível atualizar as corridas. Os dados anteriores continuam visíveis, se disponíveis.')
             toast.error('Erro ao carregar corridas')
         } finally {
-            setLoading(false)
+            if (requestId === latestRequest.current) setLoading(false)
         }
     }
 
-    const filteredTrips = trips.filter(t => {
-        const clientName = t.profiles_trips_client_idToprofiles?.full_name?.toLowerCase() || ''
-        const driverName = t.profiles_trips_driver_idToprofiles?.full_name?.toLowerCase() || ''
-        const matchesSearch = clientName.includes(searchTerm.toLowerCase()) ||
-            driverName.includes(searchTerm.toLowerCase()) ||
-            (t.id || '').toLowerCase().includes(searchTerm.toLowerCase())
+    useEffect(() => {
+        setCurrentPage(1)
+    }, [activeTab, searchTerm])
 
-        if (activeTab === 'live') return STATUS_META[t.status]?.live && matchesSearch
-        if (activeTab === 'completed') return t.status === 'completed' && matchesSearch
-        if (activeTab === 'cancelled') return t.status === 'cancelled' && matchesSearch
-        return matchesSearch
-    })
-    const totalPages = Math.ceil(filteredTrips.length / itemsPerPage)
-    const paginatedTrips = filteredTrips.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
-    const statusMeta = (status) => STATUS_META[status] || { label: status, color: '#94a3b8', bg: '#f1f5f9', icon: <Clock size={13} />, live: false }
+    useEffect(() => {
+        const debounce = setTimeout(() => fetchTrips(currentPage, activeTab, searchTerm), 300)
+        const recovery = setInterval(() => fetchTrips(currentPage, activeTab, searchTerm), 30000)
+        return () => { clearTimeout(debounce); clearInterval(recovery) }
+    }, [currentPage, activeTab, searchTerm])
+
+    const totalPages = Math.ceil(totalTrips / itemsPerPage)
+    const statusMeta = status => STATUS_META[status] || { label: status || 'Sem estado', tone: 'neutral', live: false }
+
+    const renderPagination = () => {
+        if (loading || totalTrips === 0) return null
+        const pages = []
+        if (totalPages <= 7) {
+            for (let i = 1; i <= totalPages; i++) pages.push(i)
+        } else {
+            pages.push(1)
+            if (currentPage > 3) pages.push('...')
+            const start = Math.max(2, currentPage - 1)
+            const end = Math.min(totalPages - 1, currentPage + 1)
+            for (let i = start; i <= end; i++) {
+                if (pages[pages.length - 1] !== i) pages.push(i)
+            }
+            if (currentPage < totalPages - 2) pages.push('...')
+            if (pages[pages.length - 1] !== totalPages) pages.push(totalPages)
+        }
+
+        return (
+            <nav className="tot-pagination" aria-label="Paginação das corridas">
+                <button
+                    type="button"
+                    className="tot-pagination-button"
+                    onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
+                    disabled={currentPage === 1}
+                >
+                    Anterior
+                </button>
+                {pages.map((page, index) => page === '...' ? (
+                    <span key={`gap-${index}`} className="tot-pagination-gap">…</span>
+                ) : (
+                    <button
+                        key={page}
+                        type="button"
+                        className={`tot-pagination-button ${currentPage === page ? 'is-current' : ''}`}
+                        aria-current={currentPage === page ? 'page' : undefined}
+                        onClick={() => setCurrentPage(page)}
+                    >
+                        {page}
+                    </button>
+                ))}
+                <button
+                    type="button"
+                    className="tot-pagination-button"
+                    onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
+                    disabled={currentPage >= totalPages}
+                >
+                    Seguinte
+                </button>
+                <span className="tot-pagination-status">
+                    Página {currentPage} de {Math.max(totalPages, 1)} · {totalTrips} resultados
+                </span>
+            </nav>
+        )
+    }
 
     return (
         <div className="trips-module animate-fade-in">
             <div className="module-header-nav">
-                <div className="flex items-center gap-4">
-                    <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
+                <div className="module-header-left">
+                    <button type="button" className="btn-back-square" onClick={onBack} aria-label="Voltar ao painel">
+                        <ArrowLeft size={19} aria-hidden="true" />
+                    </button>
                     <div className="title-area">
-                        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Navigation size={22} style={{ color: '#e91e63' }} /> Corridas
-                            {liveCount > 0 && (
-                                <span style={{
-                                    background: '#10b981', color: '#fff',
-                                    padding: '2px 10px', borderRadius: 20,
-                                    fontSize: 11, fontWeight: 700,
-                                    animation: 'pulse-badge 2s infinite'
-                                }}>
-                                    {liveCount} LIVE
-                                </span>
-                            )}
+                        <h2 className="title-with-icon">
+                            <Navigation size={20} aria-hidden="true" /> Corridas
                         </h2>
-                        <p>{filteredTrips.length} corridas · {liveCount} ativas · atualização automática a cada 30 segundos</p>
+                        <p>
+                            {totalTrips} {totalTrips === 1 ? 'corrida' : 'corridas'} no total
+                            {liveCount > 0 && ` · ${liveCount} ${liveCount === 1 ? 'ativa' : 'ativas'} nesta página`}
+                        </p>
                     </div>
                 </div>
-                <div className="header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                    <div className="search-bar-premium">
-                        <Search size={18} />
+                <div className="header-actions">
+                    <label className="tot-search">
+                        <Search size={17} aria-hidden="true" />
+                        <span className="tot-sr-only">Buscar corridas</span>
                         <input
-                            type="text"
-                            placeholder="Buscar cliente, motorista ou ID..."
+                            type="search"
+                            placeholder="Buscar cliente, motorista ou ID…"
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onChange={e => setSearchTerm(e.target.value)}
                         />
-                    </div>
-                    <button onClick={fetchTrips} style={{
-                        padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0',
-                        background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                        fontSize: 13, color: '#334155'
-                    }}>
-                        <RefreshCw size={14} />
+                    </label>
+                    <button
+                        type="button"
+                        className="tot-btn tot-btn--icon"
+                        onClick={() => fetchTrips()}
+                        disabled={loading}
+                        aria-label="Atualizar corridas"
+                    >
+                        <RefreshCw size={17} className={loading ? 'is-spinning' : ''} aria-hidden="true" />
                     </button>
                 </div>
             </div>
 
-            {/* Tabs */}
-            <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
-                {TABS.map(tab => {
-                    const count = tab.key === 'all' ? trips.length
-                        : tab.key === 'live' ? liveCount
-                        : trips.filter(t => t.status === tab.key).length
-
-                    return (
-                        <button
-                            key={tab.key}
-                            onClick={() => setActiveTab(tab.key)}
-                            style={{
-                                padding: '8px 18px', borderRadius: 50, fontSize: 13, fontWeight: 600,
-                                border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                                background: activeTab === tab.key
-                                    ? (tab.key === 'live' ? '#10b981' : 'linear-gradient(135deg, #e91e63, #c2185b)')
-                                    : '#f1f5f9',
-                                color: activeTab === tab.key ? '#fff' : '#64748b',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            {tab.key === 'live' && activeTab === 'live' && (
-                                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff', display: 'inline-block', animation: 'pulse-dot 2s infinite' }} />
-                            )}
-                            {tab.label}
-                            <span style={{
-                                background: activeTab === tab.key ? 'rgba(255,255,255,0.3)' : '#e2e8f0',
-                                color: activeTab === tab.key ? '#fff' : '#94a3b8',
-                                padding: '1px 7px', borderRadius: 10, fontSize: 11, fontWeight: 700
-                            }}>{count}</span>
-                        </button>
-                    )
-                })}
+            <div className="trip-filter-control">
+                <RubberSegment
+                    items={TABS.map(({ key, label }) => ({ value: key, label }))}
+                    value={activeTab}
+                    onChange={value => { setCurrentPage(1); setActiveTab(value) }}
+                    aria-label="Filtrar corridas por estado"
+                    size="lg"
+                    radius={8}
+                    inset={3}
+                    stretch={110}
+                    squash={0}
+                    draggable={false}
+                    className="trip-filter-segment"
+                />
             </div>
 
-            <div className="drivers-table-grid mt-6">
+            {fetchError && (
+                <div className="tot-alert" role="alert">
+                    <span>{fetchError}</span>
+                    <button type="button" className="tot-btn tot-btn--sm" onClick={() => fetchTrips()} disabled={loading}>
+                        <RefreshCw size={15} aria-hidden="true" /> Tentar novamente
+                    </button>
+                </div>
+            )}
+
+            <div className="admin-record-list trips-record-list">
+                <div className="admin-record-list-head trips-record-head" aria-hidden="true">
+                    <span>Cliente e percurso</span>
+                    <span>Estado</span>
+                    <span>Valor</span>
+                    <span>Ações</span>
+                </div>
+
                 {loading ? (
-                    [1, 2, 3].map(i => <div key={i} className="driver-card-premium horizontal skeleton h-32"></div>)
-                ) : paginatedTrips.length > 0 ? (
-                    paginatedTrips.map(trip => {
+                    [1, 2, 3].map(i => (
+                        <div key={i} className="admin-record-row admin-record-loading trip-record-row" role="status" aria-label="A carregar corridas">
+                            <span /><span /><span /><span />
+                        </div>
+                    ))
+                ) : trips.length > 0 ? (
+                    trips.map(trip => {
                         const meta = statusMeta(trip.status)
-                        const isLive = meta.live
+                        const client = trip.profiles_trips_client_idToprofiles?.full_name || 'Cliente não identificado'
+                        const driver = trip.profiles_trips_driver_idToprofiles?.full_name
+                        const fare = trip.final_fare || trip.estimated_fare || 0
                         return (
-                            <div key={trip.id} className="driver-card-premium horizontal animate-fade-in" style={{
-                                borderLeft: isLive ? `4px solid ${meta.color}` : undefined
-                            }}>
+                            <div key={trip.id} className={`admin-record-row trip-record-row ${meta.live ? 'is-live' : ''}`}>
                                 <div className="card-left-section">
-                                    <div className="avatar-box" style={{ background: meta.bg, color: meta.color }}>
-                                        {isLive ? <Activity size={20} /> : <Clock size={20} />}
-                                    </div>
+                                    <span className="avatar-box" aria-hidden="true">{initialsOf(client)}</span>
                                     <div className="info-group">
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                                            <h3 style={{ color: '#1e293b', margin: 0 }}>
-                                                {trip.profiles_trips_client_idToprofiles?.full_name || 'Cliente Anónimo'}
-                                            </h3>
-                                            {isLive && (
-                                                <span style={{
-                                                    background: meta.color, color: '#fff',
-                                                    padding: '1px 8px', borderRadius: 20,
-                                                    fontSize: 9, fontWeight: 800, letterSpacing: 1,
-                                                    animation: 'pulse-badge 2s infinite'
-                                                }}>LIVE</span>
-                                            )}
-                                        </div>
-                                        <p className="flex items-center gap-1" style={{ margin: '0 0 6px' }}>
-                                            <User size={12} /> {trip.profiles_trips_driver_idToprofiles?.full_name || 'A aguardar motorista'}
+                                        <h3>{client}</h3>
+                                        <p>
+                                            <User size={12} aria-hidden="true" />
+                                            {driver || 'Aguarda motorista'}
                                         </p>
-                                        <div className="flex flex-col gap-1 mt-2 text-[11px] font-semibold text-slate-500">
-                                            <div className="flex items-center gap-1">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-pink-500"></div>
-                                                <span className="truncate max-w-[220px]">{trip.origin_address || '—'}</span>
+                                        <div className="trip-route">
+                                            <div className="trip-route-stop">
+                                                <span className="trip-route-label">Origem</span>
+                                                <span className="trip-route-value">{trip.origin_address || 'Endereço não registado'}</span>
                                             </div>
-                                            <div className="flex items-center gap-1">
-                                                <div className="w-1.5 h-1.5 rounded-full bg-slate-800"></div>
-                                                <span className="truncate max-w-[220px]">{trip.dest_address || '—'}</span>
+                                            <div className="trip-route-stop">
+                                                <span className="trip-route-label">Destino</span>
+                                                <span className="trip-route-value">{trip.dest_address || 'Endereço não registado'}</span>
                                             </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                <div className="card-right-section">
-                                    <div style={{
-                                        display: 'inline-flex', alignItems: 'center', gap: 5,
-                                        background: meta.bg, color: meta.color,
-                                        padding: '4px 12px', borderRadius: 20,
-                                        fontSize: 11, fontWeight: 700
-                                    }}>
-                                        {meta.icon} {meta.label}
-                                    </div>
+                                <span className={`status-pill status-pill--${meta.tone} trip-record-state`}>{meta.label}</span>
 
-                                    <div className="flex items-center gap-10 mt-3">
-                                        <div className="price-tag-modern" style={{ marginRight: '20px' }}>
-                                            Kz {Number(trip.final_fare || trip.estimated_fare || 0).toLocaleString()}
-                                        </div>
-                                        <button className="btn-pill-sm primary h-12 px-6" onClick={() => setSelectedTrip(trip)}>
-                                            <ChevronRight size={18} />
-                                            <span>Detalhes</span>
-                                        </button>
-                                    </div>
+                                <span className="trip-record-fare">{formatKz(fare)}</span>
+
+                                <div className="record-actions">
+                                    <button
+                                        type="button"
+                                        className="record-action"
+                                        onClick={() => setSelectedTrip(trip)}
+                                        aria-label={`Ver detalhes da corrida de ${client}`}
+                                    >
+                                        Detalhes <ChevronRight size={15} aria-hidden="true" />
+                                    </button>
                                 </div>
                             </div>
                         )
                     })
                 ) : (
-                    <div className="empty-state-container py-40">
-                        <Navigation size={64} className="opacity-10 mx-auto mb-4" />
-                        <p>Nenhuma corrida encontrada.</p>
+                    <div className="empty-state-container">
+                        <Clock size={28} aria-hidden="true" />
+                        <strong>{searchTerm ? 'Nenhuma corrida corresponde à busca' : 'Sem corridas neste filtro'}</strong>
+                        <p>
+                            {searchTerm
+                                ? 'Experimente outro nome, ID ou limpe a busca para ver todas as corridas.'
+                                : 'Escolha outro estado no filtro para ver as corridas já registadas.'}
+                        </p>
                     </div>
                 )}
             </div>
 
-            {/* Pagination Controls */}
-            {!loading && totalPages > 1 && (() => {
-                const pages = [];
-                if (totalPages <= 7) {
-                    for (let i = 1; i <= totalPages; i++) pages.push(i);
-                } else {
-                    pages.push(1);
-                    if (currentPage > 3) pages.push('...');
-                    const start = Math.max(2, currentPage - 1);
-                    const end = Math.min(totalPages - 1, currentPage + 1);
-                    for (let i = start; i <= end; i++) {
-                        if (pages[pages.length - 1] !== i) pages.push(i);
-                    }
-                    if (currentPage < totalPages - 2) pages.push('...');
-                    if (pages[pages.length - 1] !== totalPages) pages.push(totalPages);
-                }
-
-                return (
-                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24, marginBottom: 12 }}>
-                        <button
-                            onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                            disabled={currentPage === 1}
-                            style={{
-                                padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-                                background: '#fff', color: currentPage === 1 ? '#cbd5e1' : '#64748b',
-                                fontWeight: 600, fontSize: 13, cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            Anterior
-                        </button>
-                        {pages.map((page, idx) => {
-                            if (page === '...') {
-                                return <span key={`dots-${idx}`} style={{ color: '#94a3b8', padding: '0 4px' }}>...</span>;
-                            }
-                            return (
-                                <button
-                                    key={page}
-                                    onClick={() => setCurrentPage(page)}
-                                    style={{
-                                        width: 36, height: 36, borderRadius: 8, border: 'none',
-                                        background: currentPage === page ? 'linear-gradient(135deg, #e91e63, #c2185b)' : '#f1f5f9',
-                                        color: currentPage === page ? '#fff' : '#64748b',
-                                        fontWeight: 700, fontSize: 13, cursor: 'pointer',
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    {page}
-                                </button>
-                            );
-                        })}
-                        <button
-                            onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                            disabled={currentPage === totalPages}
-                            style={{
-                                padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-                                background: '#fff', color: currentPage === totalPages ? '#cbd5e1' : '#64748b',
-                                fontWeight: 600, fontSize: 13, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            Seguinte
-                        </button>
-                    </div>
-                );
-            })()}
+            {renderPagination()}
 
             {selectedTrip && (
                 <div className="receipt-overlay animate-fade-in" onClick={() => setSelectedTrip(null)}>
-                    <div className="receipt-modal shadow-2xl" onClick={e => e.stopPropagation()}>
+                    <div className="receipt-modal" role="dialog" aria-modal="true" aria-label="Detalhes da corrida" onClick={e => e.stopPropagation()}>
                         <div className="receipt-header">
-                            <FileText size={40} className="mx-auto mb-2 opacity-50" />
-                            <h3>Detalhes da Corrida</h3>
-                            <p className="text-xs opacity-70">TOT PREMIUM ANGOLA</p>
+                            <FileText size={26} aria-hidden="true" />
+                            <h3>Detalhes da corrida</h3>
+                            <p>#{String(selectedTrip.id).slice(0, 8).toUpperCase()}</p>
                         </div>
                         <div className="receipt-body">
                             {[
-                                ['Código', `#${selectedTrip.id.substring(0, 8).toUpperCase()}`],
-                                ['Status', (() => { const m = statusMeta(selectedTrip.status); return <span style={{ color: m.color, fontWeight: 700 }}>{m.label}</span> })()],
-                                ['Data', new Date(selectedTrip.created_at).toLocaleDateString('pt-AO')],
-                                ['Cliente', selectedTrip.profiles_trips_client_idToprofiles?.full_name || 'Anónimo'],
-                                ['Motorista', selectedTrip.profiles_trips_driver_idToprofiles?.full_name || '—'],
+                                ['Cliente', selectedTrip.profiles_trips_client_idToprofiles?.full_name || 'Não identificado'],
+                                ['Motorista', selectedTrip.profiles_trips_driver_idToprofiles?.full_name || 'Sem motorista'],
+                                ['Estado', statusMeta(selectedTrip.status).label],
+                                ['Registada', formatDateTime(selectedTrip.created_at)],
                             ].map(([label, value]) => (
                                 <div key={label} className="receipt-row">
                                     <label>{label}</label>
@@ -341,11 +309,11 @@ export default function Trips({ onBack }) {
                             <div className="receipt-divider" />
                             <div className="receipt-row">
                                 <label>Origem</label>
-                                <span className="text-right max-w-[150px] truncate">{selectedTrip.origin_address}</span>
+                                <span className="receipt-value">{selectedTrip.origin_address || 'Não registada'}</span>
                             </div>
                             <div className="receipt-row">
                                 <label>Destino</label>
-                                <span className="text-right max-w-[150px] truncate">{selectedTrip.dest_address}</span>
+                                <span className="receipt-value">{selectedTrip.dest_address || 'Não registado'}</span>
                             </div>
                             {selectedTrip.payment_method && (
                                 <div className="receipt-row">
@@ -356,20 +324,26 @@ export default function Trips({ onBack }) {
                             <div className="receipt-divider" />
                             <div className="receipt-total">
                                 <span className="total-label">Total</span>
-                                <span className="total-value">Kz {Number(selectedTrip.final_fare || selectedTrip.estimated_fare || 0).toLocaleString()}</span>
+                                <span className="total-value">{formatKz(selectedTrip.final_fare || selectedTrip.estimated_fare || 0)}</span>
                             </div>
                         </div>
                         <div className="receipt-actions">
                             {hasReceiptFile(selectedTrip.invoices?.find(invoice => invoice.pdf_url)?.pdf_url) ? (
-                                <a className="btn-download-receipt" href={selectedTrip.invoices.find(invoice => invoice.pdf_url).pdf_url} target="_blank" rel="noopener noreferrer" download>
-                                    <Download size={18} /> Baixar PDF
+                                <a
+                                    className="tot-btn tot-btn--soft"
+                                    href={selectedTrip.invoices.find(invoice => invoice.pdf_url).pdf_url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    download
+                                >
+                                    <Download size={17} aria-hidden="true" /> Baixar PDF
                                 </a>
                             ) : (
-                                <button className="btn-download-receipt" disabled title="O backend ainda não gera ficheiros PDF">
-                                    <Download size={18} /> PDF indisponível
+                                <button type="button" className="tot-btn" disabled title="O backend ainda não gera ficheiros PDF">
+                                    <Download size={17} aria-hidden="true" /> PDF indisponível
                                 </button>
                             )}
-                            <button className="btn-close-receipt" onClick={() => setSelectedTrip(null)}>Fechar</button>
+                            <button type="button" className="tot-btn tot-btn--primary" onClick={() => setSelectedTrip(null)}>Fechar</button>
                         </div>
                     </div>
                 </div>

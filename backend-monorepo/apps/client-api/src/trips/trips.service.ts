@@ -1,14 +1,16 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@app/database';
 import { Prisma } from '@prisma/client';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { QuotesService } from '../quotes/quotes.service';
+import { findActiveClientTripForCreation, lockClientProfileForTripCreation } from '@app/database';
 
 function sanitizeTrip(trip: any) {
     if (!trip) return trip;
     const {
         profiles_trips_client_idToprofiles,
         profiles_trips_driver_idToprofiles,
+        trip_quotes,
         ...safeTrip
     } = trip;
     const sanitizeProfile = (profile: any) => {
@@ -18,6 +20,9 @@ function sanitizeTrip(trip: any) {
     };
     return {
         ...safeTrip,
+        ...(trip_quotes ? {
+            route_polyline: (trip_quotes.pricing_snapshot as any)?.route?.polyline ?? null,
+        } : {}),
         profiles_trips_client_idToprofiles: sanitizeProfile(profiles_trips_client_idToprofiles),
         profiles_trips_driver_idToprofiles: sanitizeProfile(profiles_trips_driver_idToprofiles),
     };
@@ -35,10 +40,14 @@ export class TripsService {
         }
         try {
             return await this.prisma.$transaction(async (tx) => {
+                await lockClientProfileForTripCreation(tx, userId);
                 const racedExisting = await tx.trips.findUnique({ where: { quote_id: createTripDto.quoteId } });
                 if (racedExisting) {
                     if (racedExisting.client_id !== userId) throw new ForbiddenException('Esta cotação pertence a outro cliente.');
                     return racedExisting;
+                }
+                if (await findActiveClientTripForCreation(tx, userId)) {
+                    throw new ConflictException('Já existe uma viagem ativa para este cliente.');
                 }
                 const quote = await this.quotesService.consume(createTripDto.quoteId, userId, tx);
                 return tx.trips.create({
@@ -69,8 +78,10 @@ export class TripsService {
         }
     }
 
-    async getHistory(userId: string, limit: number = 20, status?: string, month?: number, year?: number, category?: string) {
+    async getHistory(userId: string, limit: number = 20, status?: string, month?: number, year?: number, category?: string, page: number = 1) {
         try {
+            const safeLimit = Number.isInteger(limit) && limit > 0 ? Math.min(limit, 100) : 20;
+            const safePage = Number.isInteger(page) && page > 0 ? Math.min(page, 100_000) : 1;
             let where: any = { client_id: userId };
 
             if (status && status !== 'all') {
@@ -95,10 +106,12 @@ export class TripsService {
             const trips = await this.prisma.trips.findMany({
                 where,
                 orderBy: { created_at: 'desc' },
-                take: limit,
+                take: safeLimit,
+                skip: (safePage - 1) * safeLimit,
                 include: {
                     profiles_trips_driver_idToprofiles: true,
-                    invoices: true
+                    invoices: true,
+                    trip_payment: { select: { status: true, method: true, amount: true, confirmed_at: true } },
                 }
             });
 
@@ -149,6 +162,7 @@ export class TripsService {
                 profiles_trips_driver_idToprofiles: true,
                 invoices: true,
                 trip_payment: true,
+                trip_quotes: { select: { pricing_snapshot: true } },
             }
         });
         return trips.map(sanitizeTrip);
@@ -159,7 +173,8 @@ export class TripsService {
             where: { id },
             include: {
                 profiles_trips_driver_idToprofiles: true,
-                invoices: true
+                invoices: true,
+                trip_quotes: { select: { pricing_snapshot: true } },
             }
         }));
     }

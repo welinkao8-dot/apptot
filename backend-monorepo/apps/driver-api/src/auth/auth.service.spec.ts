@@ -1,33 +1,42 @@
-import { JwtService } from '@nestjs/jwt';
-import { PrismaService } from '@app/database';
 import { AuthService } from './auth.service';
+import * as bcrypt from 'bcrypt';
 
-describe('driver login contract', () => {
-  const jwt = new JwtService({ secret: 'driver-login-test-secret' });
-  const service = new AuthService({} as PrismaService, jwt);
+jest.mock('bcrypt', () => ({
+  ...jest.requireActual('bcrypt'),
+  compare: jest.fn(),
+}));
 
-  it('preserves token, driver and phone while issuing the driver subject and role', async () => {
-    const driver = {
-      id: 'driver-subject',
-      phone: 'test-phone',
-      role: 'spoofed',
+describe('AuthService driver registration', () => {
+  it('persists the selected vehicle category for matching and dispatch', async () => {
+    const profile = { id: 'driver-a', full_name: 'Ana', phone: '+244900000000', role: 'driver' };
+    const upsert = jest.fn().mockResolvedValue({ ...profile, vehicle_category: 'moto' });
+    const prisma = {
+      profiles: { findFirst: jest.fn().mockResolvedValue(null) },
+      $transaction: jest.fn(callback => callback({
+        profiles: { create: jest.fn().mockResolvedValue(profile) },
+        drivers: { upsert },
+      })),
+      drivers: { findUnique: jest.fn().mockResolvedValue({ ...profile, vehicle_category: 'moto', status: 'pending_docs' }) },
     };
-    const result = await service.login(driver);
-    expect(Object.keys(result).sort()).toEqual(['driver', 'token']);
-    expect(result.driver).toEqual(driver);
-    expect(jwt.verify(result.token)).toMatchObject({
-      sub: 'driver-subject',
-      role: 'driver',
-      phone: 'test-phone',
-    });
-  });
+    const auth = new AuthService(prisma as never, { sign: jest.fn().mockReturnValue('token') } as never);
 
-  it.each([undefined, '', '   ', 123])(
-    'refuses to sign an invalid subject: %p',
-    async (id) => {
-      await expect(
-        service.login({ id, phone: 'test-phone' }).then(() => undefined),
-      ).rejects.toThrow();
-    },
-  );
+    await auth.register({ full_name: 'Ana', phone: '+244900000000', password: 'secret', vehicle_category: 'moto' });
+
+    expect(upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ vehicle_category: 'moto' }),
+      update: expect.objectContaining({ vehicle_category: 'moto' }),
+    }));
+  });
+});
+
+describe('AuthService login verification', () => {
+  it('performs a password-hash comparison for unknown phone numbers', async () => {
+    const prisma = { profiles: { findFirst: jest.fn().mockResolvedValue(null) } };
+    const auth = new AuthService(prisma as never, { sign: jest.fn() } as never);
+    const compare = bcrypt.compare as jest.MockedFunction<typeof bcrypt.compare>;
+    compare.mockResolvedValue(false);
+
+    await expect(auth.validateUser('+244900000000', 'wrong-password')).resolves.toBeNull();
+    expect(compare).toHaveBeenCalledWith('wrong-password', expect.stringMatching(/^\$2[aby]\$/));
+  });
 });

@@ -1,6 +1,7 @@
 import React, { createContext, useState, useContext, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api, { API_URL } from '../services/api';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
 
 const AuthContext = createContext({});
 
@@ -25,7 +26,7 @@ export const AuthProvider = ({ children }) => {
                 setUser(_user);
             }
         } catch (e) {
-            console.error('Error loading auth data', e);
+            console.error('Error loading auth data', toSafeErrorLog(e));
         } finally {
             setLoading(false);
         }
@@ -36,7 +37,7 @@ export const AuthProvider = ({ children }) => {
             const response = await api.post('/auth/check-phone', { phone });
             return response.data; // { exists: boolean, name?: string }
         } catch (error) {
-            console.error('Check phone error:', error);
+            console.error('Check phone error:', toSafeErrorLog(error));
             throw error;
         }
     };
@@ -53,7 +54,7 @@ export const AuthProvider = ({ children }) => {
             setUser(_user);
             return response.data;
         } catch (error) {
-            console.error('Registration error:', error);
+            console.error('Registration error:', toSafeErrorLog(error));
             throw error;
         }
     };
@@ -70,7 +71,7 @@ export const AuthProvider = ({ children }) => {
             setUser(_user);
             return response.data;
         } catch (error) {
-            console.error('Login error:', error);
+            console.error('Login error:', toSafeErrorLog(error));
             throw error;
         }
     };

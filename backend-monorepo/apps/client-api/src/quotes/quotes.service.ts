@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
 import { consumeTripQuote, PrismaService } from '@app/database';
-import { Prisma } from '@prisma/client';
+import { Prisma, trip_quotes } from '@prisma/client';
 import { CreateQuoteDto } from './quote.dto';
 import { HereRoutingProvider, HereTransportMode } from './here-routing.provider';
 
@@ -32,13 +32,22 @@ export class QuotesService {
 
     const routingModes = services.map((service) => this.routingModeFor(service.routing_mode, service.vehicle_category));
     const uniqueModes = [...new Set(routingModes)];
-    const routes = await Promise.all(uniqueModes.map(async (mode) => [mode, await this.router.getRoute(dto, mode)] as const));
-    const routeByMode = new Map<HereTransportMode, Awaited<ReturnType<HereRoutingProvider['getRoute']>>>(routes);
+    const routeResults = await Promise.allSettled(uniqueModes.map(async (mode) => ({
+      mode,
+      route: await this.router.getRoute(dto, mode),
+    })));
+    const routeByMode = new Map<HereTransportMode, Awaited<ReturnType<HereRoutingProvider['getRoute']>>>();
+    for (const result of routeResults) {
+      if (result.status === 'fulfilled') routeByMode.set(result.value.mode, result.value.route);
+    }
+    if (routeByMode.size === 0) {
+      throw new ServiceUnavailableException('Não foi possível calcular uma rota para os serviços disponíveis. Tente novamente.');
+    }
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-    const quoteDrafts = services.map((service, index) => {
+    const quoteDrafts = services.flatMap((service, index) => {
       const routingMode = routingModes[index];
       const route = routeByMode.get(routingMode);
-      if (!route) throw new BadRequestException('Não foi possível calcular a rota para este serviço.');
+      if (!route) return [];
       const distanceKm = route.distanceMeters / 1000;
       const durationMinutes = route.durationSeconds / 60;
       const rawFare = Number(service.base_fare)
@@ -47,8 +56,9 @@ export class QuotesService {
       const fare = Math.max(Number(service.min_fare), Math.ceil(rawFare * 100) / 100);
       if (!Number.isFinite(fare) || fare <= 0) throw new BadRequestException('A configuração de preços não produz uma tarifa válida.');
 
-      return {
+      return [{
         service,
+        routingMode,
         data: {
           client_id: clientId,
           service_config_id: service.id,
@@ -71,14 +81,29 @@ export class QuotesService {
             serviceConfigId: service.id,
             serviceName: service.name,
             routingMode,
+            route: { polyline: route.polyline },
           },
           expires_at: expiresAt,
         },
-      };
+      }];
     });
-    const createdQuotes = await this.prisma.$transaction(
-      quoteDrafts.map(({ data }) => this.prisma.trip_quotes.create({ data })),
-    );
+    const createdQuotes = await this.prisma.$transaction(async tx => {
+      const serviceIds = [...new Set(quoteDrafts.map(({ data }) => data.service_config_id))].sort((a, b) => a - b);
+      const lockedServices: Array<{ id: number }> = [];
+      for (const serviceId of serviceIds) {
+        lockedServices.push(...await tx.$queryRaw<Array<{ id: number }>>`
+          SELECT "id" FROM "service_configs" WHERE "id" = ${serviceId} FOR KEY SHARE
+        `);
+      }
+      const lockedIds = new Set(lockedServices.map(({ id }) => id));
+      if (serviceIds.some(serviceId => !lockedIds.has(serviceId))) {
+        throw new NotFoundException('Um dos serviços selecionados já não está disponível.');
+      }
+
+      const created: trip_quotes[] = [];
+      for (const { data } of quoteDrafts) created.push(await tx.trip_quotes.create({ data }));
+      return created;
+    });
 
     return createdQuotes.map((quote, index) => {
       const service = quoteDrafts[index].service;
@@ -91,7 +116,7 @@ export class QuotesService {
         durationSeconds: quote.duration_seconds,
         estimatedFare: quote.estimated_fare.toString(),
         expiresAt: quote.expires_at,
-        routePolyline: routeByMode.get(routingModes[index])?.polyline,
+        routePolyline: routeByMode.get(quoteDrafts[index].routingMode)?.polyline,
       };
     });
   }

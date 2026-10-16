@@ -2,25 +2,21 @@ import { NestFactory } from '@nestjs/core';
 import { DriverApiModule } from './driver-api.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as bodyParser from 'body-parser';
+import { getCorsPolicy } from '@app/auth';
 
 async function bootstrap() {
   // Disable default bodyParser to avoid limit issues
   const app = await NestFactory.create(DriverApiModule, { bodyParser: false });
 
-  // Increase body size limit for document uploads (50mb safe for 3 images)
-  app.use(bodyParser.json({ limit: '50mb' }));
-  app.use(bodyParser.urlencoded({ limit: '50mb', extended: true }));
+  // Document images arrive as base64 JSON and receive a bounded, route-specific limit.
+  app.use('/auth/update-docs', bodyParser.json({ limit: '38mb' }));
+  app.use(bodyParser.json({ limit: '1mb' }));
+  app.use(bodyParser.urlencoded({ limit: '1mb', extended: true }));
 
-  // Enable Global Validation
-  // app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
+  app.useGlobalPipes(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true }));
 
   // Enable CORS for Frontend Access
-  const allowedOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(origin => origin.trim()).filter(Boolean);
-  app.enableCors({
-    origin: allowedOrigins.length ? allowedOrigins : true,
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
-    credentials: true,
-  });
+  app.enableCors(getCorsPolicy());
 
   const port = process.env.PORT || 3004;
   await app.listen(port, '0.0.0.0');

@@ -1,8 +1,8 @@
 import React, { useState, useContext, useEffect } from 'react';
 import {
     View, Text, TextInput, TouchableOpacity, StyleSheet,
-    ActivityIndicator, KeyboardAvoidingView, Platform,
-    Dimensions, ScrollView, Image, StatusBar
+    ActivityIndicator, KeyboardAvoidingView, Platform, Alert,
+    ScrollView, StatusBar
 } from 'react-native';
 import { AuthContext } from '../context/AuthContext';
 import colors from '../theme/colors';
@@ -11,8 +11,33 @@ import {
     CheckCircle, LogOut, ChevronRight, ArrowLeft, ShieldCheck, HelpCircle
 } from 'lucide-react-native';
 import Toast from 'react-native-toast-message';
+import { launchCamera, launchImageLibrary } from 'react-native-image-picker';
+import { createDriverDocumentDataUri, createDriverDocumentPayload } from '../utils/driverDocuments';
+import { DRIVER_VEHICLE_CATEGORIES, isDriverVehicleCategory } from '../utils/driverVehicleCategory';
 
-const { width, height } = Dimensions.get('window');
+function AuthInput({ label, placeholder, value, field, secure = false, keyboard = 'default', icon, form, setForm }) {
+    const [isFocused, setIsFocused] = useState(false);
+    return (
+        <View style={styles.inputGroup}>
+            <Text style={[styles.inputLabel, isFocused && { color: colors.primary }]}>{label}</Text>
+            <View style={[styles.inputContainer, isFocused && styles.inputContainerFocused]}>
+                {icon && <View style={styles.inputIconPrefix}>{icon}</View>}
+                <TextInput
+                    style={styles.inputField}
+                    placeholder={placeholder}
+                    placeholderTextColor={colors.textSecondary}
+                    value={value}
+                    onChangeText={text => setForm(current => ({ ...current, [field]: text }))}
+                    secureTextEntry={secure}
+                    keyboardType={keyboard}
+                    autoCapitalize="none"
+                    onFocus={() => setIsFocused(true)}
+                    onBlur={() => setIsFocused(false)}
+                />
+            </View>
+        </View>
+    );
+}
 
 export default function LoginScreen({ navigation }) {
     const { checkPhone, login, signUp, updateDocs, user, logout } = useContext(AuthContext);
@@ -27,6 +52,7 @@ export default function LoginScreen({ navigation }) {
         full_name: '',
         email: '',
         address: '', // Mapped to Address/City
+        vehicle_category: '',
         bi_frente: '',
         bi_verso: '',
         carta: ''
@@ -68,8 +94,8 @@ export default function LoginScreen({ navigation }) {
     };
 
     const handleRegisterInfo = async () => {
-        if (!form.full_name || !form.email || !form.address || !form.password) {
-            Toast.show({ type: 'error', text1: 'Campos obrigatórios', text2: 'Preencha todos os campos para continuar.' });
+        if (!form.full_name || !form.email || !form.address || !form.password || !isDriverVehicleCategory(form.vehicle_category)) {
+            Toast.show({ type: 'error', text1: 'Campos obrigatórios', text2: 'Preencha os dados e selecione o tipo de veículo.' });
             return;
         }
         setLoading(true);
@@ -78,6 +104,7 @@ export default function LoginScreen({ navigation }) {
             phone: form.phone, 
             email: form.email, 
             address: form.address, 
+            vehicle_category: form.vehicle_category,
             password: form.password 
         });
         setLoading(false);
@@ -90,13 +117,13 @@ export default function LoginScreen({ navigation }) {
     };
 
     const handleUpdateDocs = async () => {
+        const documents = createDriverDocumentPayload(form);
+        if (!documents) {
+            Toast.show({ type: 'error', text1: 'Documentos em falta', text2: 'Selecione uma imagem para cada documento antes de enviar.' });
+            return;
+        }
         setLoading(true);
-        // Upload documents placeholder strings
-        const { success, error } = await updateDocs({ 
-            bi_frente: 'doc_uploaded_placeholder', 
-            bi_verso: 'doc_uploaded_placeholder', 
-            carta: 'doc_uploaded_placeholder' 
-        });
+        const { success, error } = await updateDocs(documents);
         setLoading(false);
         if (success) { 
             Toast.show({ type: 'success', text1: 'Documentos enviados!', text2: 'A sua conta está em análise.' }); 
@@ -106,30 +133,38 @@ export default function LoginScreen({ navigation }) {
         }
     };
 
-    // Form inputs wrapper
-    const renderFormInput = (label, placeholder, value, field, secure = false, keyboard = 'default', icon = null) => {
-        const [isFocused, setIsFocused] = useState(false);
-        return (
-            <View style={styles.inputGroup}>
-                <Text style={[styles.inputLabel, isFocused && { color: colors.primary }]}>{label}</Text>
-                <View style={[styles.inputContainer, isFocused && styles.inputContainerFocused]}>
-                    {icon && <View style={styles.inputIconPrefix}>{icon}</View>}
-                    <TextInput
-                        style={styles.inputField}
-                        placeholder={placeholder}
-                        placeholderTextColor={colors.textSecondary}
-                        value={value}
-                        onChangeText={text => setForm({ ...form, [field]: text })}
-                        secureTextEntry={secure}
-                        keyboardType={keyboard}
-                        autoCapitalize="none"
-                        onFocus={() => setIsFocused(true)}
-                        onBlur={() => setIsFocused(false)}
-                    />
-                </View>
-            </View>
-        );
+    const selectDocument = async (field, source) => {
+        try {
+            const picker = source === 'camera' ? launchCamera : launchImageLibrary;
+            const result = await picker({
+                mediaType: 'photo',
+                includeBase64: true,
+                quality: 0.78,
+                maxWidth: 1600,
+                maxHeight: 1600,
+            });
+            if (result.didCancel) return;
+            if (result.errorCode) {
+                Toast.show({ type: 'error', text1: 'Não foi possível abrir as imagens', text2: result.errorMessage || 'Verifique as permissões e tente novamente.' });
+                return;
+            }
+            const asset = result.assets?.[0];
+            const dataUri = createDriverDocumentDataUri(asset);
+            if (!dataUri) {
+                Toast.show({ type: 'error', text1: 'Imagem inválida', text2: 'Use uma imagem JPEG, PNG ou WebP com até 8 MB.' });
+                return;
+            }
+            setForm(current => ({ ...current, [field]: dataUri }));
+        } catch {
+            Toast.show({ type: 'error', text1: 'Erro ao selecionar imagem', text2: 'Tente novamente.' });
+        }
     };
+
+    const promptForDocument = field => Alert.alert('Adicionar documento', 'Tire uma fotografia ou escolha uma imagem existente.', [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Câmera', onPress: () => selectDocument(field, 'camera') },
+        { text: 'Galeria', onPress: () => selectDocument(field, 'gallery') },
+    ]);
 
     return (
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.container}>
@@ -175,15 +210,7 @@ export default function LoginScreen({ navigation }) {
 
                         {/* Input card */}
                         <View style={styles.authCard}>
-                            {renderFormInput(
-                                "Telefone Celular", 
-                                "9XXXXXXXX", 
-                                form.phone, 
-                                'phone', 
-                                false, 
-                                'phone-pad',
-                                <Phone size={18} color={colors.textSecondary} />
-                            )}
+                            <AuthInput label="Telefone Celular" placeholder="9XXXXXXXX" value={form.phone} field="phone" keyboard="phone-pad" icon={<Phone size={18} color={colors.textSecondary} />} form={form} setForm={setForm} />
 
                             <TouchableOpacity 
                                 style={styles.primaryActionBtn} 
@@ -222,15 +249,7 @@ export default function LoginScreen({ navigation }) {
                                 Telemóvel: <Text style={{ fontWeight: '800', color: colors.primary }}>{form.phone}</Text>
                             </Text>
 
-                            {renderFormInput(
-                                "Senha de Acesso", 
-                                "••••••••", 
-                                form.password, 
-                                'password', 
-                                true, 
-                                'default',
-                                <Lock size={18} color={colors.textSecondary} />
-                            )}
+                            <AuthInput label="Senha de Acesso" placeholder="••••••••" value={form.password} field="password" secure icon={<Lock size={18} color={colors.textSecondary} />} form={form} setForm={setForm} />
 
                             <TouchableOpacity 
                                 style={styles.primaryActionBtn} 
@@ -268,10 +287,26 @@ export default function LoginScreen({ navigation }) {
 
                         {/* Registration fields */}
                         <View style={styles.registerForm}>
-                            {renderFormInput("Nome Completo", "Como no seu documento", form.full_name, 'full_name', false, 'default', <User size={18} color={colors.textSecondary} />)}
-                            {renderFormInput("E-mail", "exemplo@email.com", form.email, 'email', false, 'email-address', <Mail size={18} color={colors.textSecondary} />)}
-                            {renderFormInput("Cidade / Endereço", "Ex: Luanda", form.address, 'address', false, 'default', <MapPin size={18} color={colors.textSecondary} />)}
-                            {renderFormInput("Crie uma Senha", "Mínimo 6 caracteres", form.password, 'password', true, 'default', <Lock size={18} color={colors.textSecondary} />)}
+                            <AuthInput label="Nome Completo" placeholder="Como no seu documento" value={form.full_name} field="full_name" icon={<User size={18} color={colors.textSecondary} />} form={form} setForm={setForm} />
+                            <AuthInput label="E-mail" placeholder="exemplo@email.com" value={form.email} field="email" keyboard="email-address" icon={<Mail size={18} color={colors.textSecondary} />} form={form} setForm={setForm} />
+                            <AuthInput label="Cidade / Endereço" placeholder="Ex: Luanda" value={form.address} field="address" icon={<MapPin size={18} color={colors.textSecondary} />} form={form} setForm={setForm} />
+                            <View style={styles.inputGroup}>
+                                <Text style={styles.inputLabel}>Tipo de veículo</Text>
+                                <View style={{ flexDirection: 'row', gap: 8 }}>
+                                    {DRIVER_VEHICLE_CATEGORIES.map(option => (
+                                        <TouchableOpacity
+                                            key={option.value}
+                                            accessibilityRole="radio"
+                                            accessibilityState={{ selected: form.vehicle_category === option.value }}
+                                            onPress={() => setForm(current => ({ ...current, vehicle_category: option.value }))}
+                                            style={{ flex: 1, minHeight: 44, borderWidth: 1, borderColor: form.vehicle_category === option.value ? colors.primary : '#d1d5db', borderRadius: 12, alignItems: 'center', justifyContent: 'center', backgroundColor: form.vehicle_category === option.value ? `${colors.primary}12` : '#fff' }}
+                                        >
+                                            <Text style={{ color: form.vehicle_category === option.value ? colors.primary : colors.text, fontWeight: '700', fontSize: 12 }}>{option.label}</Text>
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            </View>
+                            <AuthInput label="Crie uma Senha" placeholder="Mínimo 6 caracteres" value={form.password} field="password" secure icon={<Lock size={18} color={colors.textSecondary} />} form={form} setForm={setForm} />
 
                             {/* Safety info bento card */}
                             <View style={styles.safetyCard}>
@@ -333,9 +368,10 @@ export default function LoginScreen({ navigation }) {
                                         <Text style={styles.docBentoSubtitle}>Bilhete de Identidade (Frente)</Text>
                                     </View>
                                 </View>
-                                <TouchableOpacity style={styles.photoBtn} activeOpacity={0.8}>
+                                <TouchableOpacity style={styles.photoBtn} activeOpacity={0.8} onPress={() => promptForDocument('bi_frente')}>
                                     <Camera size={20} color={colors.primary} />
                                 </TouchableOpacity>
+                                {form.bi_frente ? <Text style={styles.docBentoSubtitle}>Imagem selecionada</Text> : null}
                             </View>
 
                             {/* Card 2: BI Verso */}
@@ -347,9 +383,10 @@ export default function LoginScreen({ navigation }) {
                                         <Text style={styles.docBentoSubtitle}>Bilhete de Identidade (Verso)</Text>
                                     </View>
                                 </View>
-                                <TouchableOpacity style={styles.photoBtn} activeOpacity={0.8}>
+                                <TouchableOpacity style={styles.photoBtn} activeOpacity={0.8} onPress={() => promptForDocument('bi_verso')}>
                                     <Camera size={20} color={colors.primary} />
                                 </TouchableOpacity>
+                                {form.bi_verso ? <Text style={styles.docBentoSubtitle}>Imagem selecionada</Text> : null}
                             </View>
 
                             {/* Card 3: Carta */}
@@ -361,9 +398,10 @@ export default function LoginScreen({ navigation }) {
                                         <Text style={styles.docBentoSubtitle}>Habilitação para Motociclos</Text>
                                     </View>
                                 </View>
-                                <TouchableOpacity style={styles.photoBtn} activeOpacity={0.8}>
+                                <TouchableOpacity style={styles.photoBtn} activeOpacity={0.8} onPress={() => promptForDocument('carta')}>
                                     <Camera size={20} color={colors.primary} />
                                 </TouchableOpacity>
+                                {form.carta ? <Text style={styles.docBentoSubtitle}>Imagem selecionada</Text> : null}
                             </View>
                         </View>
 

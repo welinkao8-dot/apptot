@@ -10,6 +10,9 @@ jobs:
   build-client-apk:
     name: Build customer test APK
     runs-on: ubuntu-latest
+    env:
+      TOT_CLIENT_API_URL: ${{ vars.TOT_CLIENT_API_URL }}
+      TOT_CLIENT_SOCKET_URL: ${{ vars.TOT_CLIENT_SOCKET_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -31,6 +34,11 @@ jobs:
         working-directory: client-portal/mobile
         run: npm ci --legacy-peer-deps
 
+      - name: Validate customer test APK endpoints
+        working-directory: client-portal/mobile
+        run: |
+          node -e 'const { validateReleaseUrl } = require("./src/config/mobileUrls"); validateReleaseUrl(process.env.TOT_CLIENT_API_URL, "TOT_CLIENT_API_URL"); validateReleaseUrl(process.env.TOT_CLIENT_SOCKET_URL, "TOT_CLIENT_SOCKET_URL");'
+
       - name: Build customer debug APK
         working-directory: client-portal/mobile/android
         run: |
@@ -48,6 +56,8 @@ jobs:
   build-driver-apk:
     name: Build driver test APK
     runs-on: ubuntu-latest
+    env:
+      TOT_DRIVER_API_URL: ${{ vars.TOT_DRIVER_API_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -69,10 +79,18 @@ jobs:
         working-directory: driver-portal/mobile
         run: npm ci --legacy-peer-deps
 
+      - name: Validate driver test APK configuration
+        working-directory: driver-portal/mobile
+        run: |
+          node -e 'const { validateReleaseUrl } = require("./src/config/mobileUrls"); validateReleaseUrl(process.env.TOT_DRIVER_API_URL, "TOT_DRIVER_API_URL");'
+
       - name: Build driver debug APK
         working-directory: driver-portal/mobile/android
+        env:
+          ORG_GRADLE_PROJECT_MAPBOX_DOWNLOADS_TOKEN: ${{ secrets.MAPBOX_DOWNLOADS_TOKEN }}
         run: |
           chmod +x gradlew
+          test -n "$ORG_GRADLE_PROJECT_MAPBOX_DOWNLOADS_TOKEN"
           ./gradlew assembleDebug --no-daemon
 
       - name: Upload driver test APK

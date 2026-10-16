@@ -1,16 +1,37 @@
-import { Type } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsNumber, IsObject, IsOptional, IsString, Max, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsDefined, IsIn, IsNumber, IsString, Length, Matches, Max, Min, ValidateIf, ValidateNested } from 'class-validator';
+
+const trimString = ({ value }: { value: unknown }) => typeof value === 'string' ? value.trim() : value;
+
+export class DeliveryInfoDto {
+  @Transform(trimString)
+  @IsString()
+  @Length(1, 150)
+  recipientName!: string;
+
+  @Transform(({ value }: { value: unknown }) => typeof value === 'string' ? value.replace(/[\s()-]/g, '') : value)
+  @IsString()
+  @Matches(/^(?:\+244)?9\d{8}$/)
+  recipientPhone!: string;
+
+  @Transform(trimString)
+  @IsString()
+  @Length(1, 500)
+  packageDescription!: string;
+}
 
 export class CreateQuoteDto {
   @IsIn(['ride', 'delivery'])
   category: 'ride' | 'delivery';
 
+  @Transform(trimString)
   @IsString()
-  @IsNotEmpty()
+  @Length(1, 300)
   originAddress: string;
 
+  @Transform(trimString)
   @IsString()
-  @IsNotEmpty()
+  @Length(1, 300)
   destAddress: string;
 
   @Type(() => Number)
@@ -37,7 +58,9 @@ export class CreateQuoteDto {
   @Max(180)
   destLng: number;
 
-  @IsOptional()
-  @IsObject()
-  deliveryInfo?: Record<string, unknown>;
+  @ValidateIf((quote: CreateQuoteDto) => quote.category === 'delivery')
+  @IsDefined()
+  @ValidateNested()
+  @Type(() => DeliveryInfoDto)
+  deliveryInfo?: DeliveryInfoDto;
 }

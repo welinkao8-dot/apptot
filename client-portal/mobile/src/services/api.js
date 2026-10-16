@@ -1,8 +1,9 @@
 import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import mobileUrls from '../config/mobileUrls';
 
-// Configuração padrão para USB (adb reverse tcp:3001 tcp:3001)
-export const API_URL = 'http://localhost:3001';
+// Fallback local apenas para debug com adb reverse; produção recebe URL do workflow.
+export const API_URL = mobileUrls.getMobileUrl(process.env.TOT_CLIENT_API_URL, __DEV__ ? 'http://localhost:3001' : '');
 
 const api = axios.create({
     baseURL: API_URL,

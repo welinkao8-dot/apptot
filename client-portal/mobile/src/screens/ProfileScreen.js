@@ -30,6 +30,7 @@ import {
 import { useAuth } from '../context/AuthContext';
 import colors from '../theme/colors';
 import api from '../services/api';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
 import Toast from 'react-native-toast-message';
 
 const { width } = Dimensions.get('window');
@@ -78,7 +79,6 @@ export default function ProfileScreen({ navigation }) {
         try {
             setLoading(true);
             await api.post('/auth/change-password', {
-                userId: user.id,
                 oldPassword: form.oldPassword,
                 newPassword: form.newPassword
             });
@@ -87,7 +87,7 @@ export default function ProfileScreen({ navigation }) {
             setIsModalVisible(false);
             setForm({ oldPassword: '', newPassword: '', confirmPassword: '' });
         } catch (error) {
-            console.error('Change password error:', error);
+            console.error('Change password error:', toSafeErrorLog(error));
             const msg = error.response?.data?.message || 'Erro ao alterar senha.';
             Toast.show({ type: 'error', text1: 'Erro', text2: msg });
         } finally {
@@ -104,7 +104,6 @@ export default function ProfileScreen({ navigation }) {
         try {
             setEditLoading(true);
             const updatedUser = await api.post('/auth/update-profile', {
-                userId: user.id,
                 fullName: editForm.fullName,
                 email: editForm.email
             });
@@ -117,7 +116,7 @@ export default function ProfileScreen({ navigation }) {
             Toast.show({ type: 'success', text1: 'Sucesso', text2: 'Perfil atualizado!' });
             setIsEditModalVisible(false);
         } catch (error) {
-            console.error('Update profile error:', error);
+            console.error('Update profile error:', toSafeErrorLog(error));
             Toast.show({ type: 'error', text1: 'Erro', text2: 'Falha ao atualizar perfil.' });
         } finally {
             setEditLoading(false);

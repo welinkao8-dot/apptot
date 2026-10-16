@@ -1,35 +1,44 @@
 import { createContext, useContext, useEffect, useState } from 'react'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
+import { ADMIN_AUTH_EXPIRED_EVENT, clearAdminSession, readStoredAdminUser } from '../services/adminAuthSession'
 
 const AuthContext = createContext({})
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null)
     const [loading, setLoading] = useState(true)
 
     useEffect(() => {
-        const storedUser = localStorage.getItem('tot_user')
-        const storedToken = localStorage.getItem('tot_token')
+        const handleAuthExpired = () => setUser(null)
+        window.addEventListener(ADMIN_AUTH_EXPIRED_EVENT, handleAuthExpired)
 
-        if (storedUser && storedToken) {
-            setUser(JSON.parse(storedUser))
-            axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`
+        try {
+            const storage = window.localStorage
+            const storedUser = readStoredAdminUser(storage)
+            const storedToken = storage.getItem('tot_token')
+            if (storedUser && storedToken) {
+                setUser(storedUser)
+            } else {
+                clearAdminSession(storage, null)
+            }
+        } catch {
+            setUser(null)
+        } finally {
+            setLoading(false)
         }
-        setLoading(false)
+
+        return () => window.removeEventListener(ADMIN_AUTH_EXPIRED_EVENT, handleAuthExpired)
     }, [])
 
     const value = {
         signIn: async (email, password) => {
             try {
-                const response = await axios.post(`${API_URL}/admin/auth/login`, { email, password })
+                const response = await adminApi.post('/admin/auth/login', { email, password })
                 const { user, token } = response.data
 
                 setUser(user)
                 localStorage.setItem('tot_user', JSON.stringify(user))
                 localStorage.setItem('tot_token', token)
-                axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
 
                 return { data: { user }, error: null }
             } catch (err) {
@@ -38,9 +47,7 @@ export const AuthProvider = ({ children }) => {
         },
         signOut: () => {
             setUser(null)
-            localStorage.removeItem('tot_user')
-            localStorage.removeItem('tot_token')
-            delete axios.defaults.headers.common['Authorization']
+            clearAdminSession()
         },
         user,
     }

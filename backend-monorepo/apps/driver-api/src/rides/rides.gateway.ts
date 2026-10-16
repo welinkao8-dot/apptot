@@ -8,28 +8,23 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
-import { OnModuleInit } from '@nestjs/common';
+import { Inject, OnModuleInit, Optional } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { TripsService } from '../trips/trips.service';
 import { isImplausibleLocationJump } from './location-validation';
 import { CreateTripDto } from '../trips/dto/create-trip.dto';
 import { PaymentsService } from '../payments/payments.service';
+import { getCorsPolicy } from '@app/auth';
+import { DriverPushService } from '../push/driver-push.service';
 
 type ActorRole = 'client' | 'driver';
 type SocketActor = { id: string; role: ActorRole };
 type ConnectedUser = SocketActor & { socketIds: Set<string>; isOnline: boolean };
-
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+export type DriverLocationFix = { lat: number; lng: number; accuracy?: number; timestamp?: number; heading?: number };
+export class InvalidDriverLocationError extends Error {}
 
 @WebSocketGateway({
-  cors: {
-    origin: process.env.NODE_ENV === 'production'
-      ? allowedOrigins
-      : (allowedOrigins.length ? allowedOrigins : true),
-  },
+  cors: getCorsPolicy(),
 })
 export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   @WebSocketServer()
@@ -43,6 +38,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     private readonly tripsService: TripsService,
     private readonly jwtService: JwtService,
     private readonly paymentsService: PaymentsService,
+    @Optional() @Inject(DriverPushService) private readonly pushService?: DriverPushService,
   ) {}
 
   onModuleInit() {
@@ -68,6 +64,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
       const claims = await this.jwtService.verifyAsync<{ sub?: unknown; role?: unknown }>(token);
       if (
         typeof claims.sub !== 'string'
+        || !claims.sub.trim()
         || (claims.role !== 'client' && claims.role !== 'driver')
       ) {
         throw new Error('Invalid actor');
@@ -145,45 +142,52 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('update_location')
   async handleUpdateLocation(
-    @MessageBody() data: { lat: number; lng: number; accuracy?: number; timestamp?: number; heading?: number },
+    @MessageBody() data: DriverLocationFix,
     @ConnectedSocket() client: Socket,
   ) {
     try {
       const actor = this.requireRole(client, 'driver');
-      if (!Number.isFinite(data?.lat) || !Number.isFinite(data?.lng) || data.lat < -90 || data.lat > 90 || data.lng < -180 || data.lng > 180) {
-        throw new Error('Coordenadas GPS inválidas.');
-      }
-      if (data.accuracy !== undefined && (!Number.isFinite(data.accuracy) || data.accuracy < 0 || data.accuracy > 100)) {
-        throw new Error('Precisão GPS insuficiente.');
-      }
-      if (data.timestamp !== undefined && (!Number.isFinite(data.timestamp) || Math.abs(Date.now() - data.timestamp) > 120_000)) {
-        throw new Error('Localização GPS desatualizada.');
-      }
-      const fix = { lat: data.lat, lng: data.lng, timestamp: data.timestamp ?? Date.now() };
-      const previousFix = this.lastLocationFixes.get(actor.id);
-      if (isImplausibleLocationJump(previousFix, fix)) throw new Error('Salto de localização GPS inválido.');
-      const trip = await this.tripsService.findActiveByDriver(actor.id);
-      if (trip?.client_id) {
-        this.server.to(this.room('client', trip.client_id)).emit('trip_update', {
-          driverId: actor.id,
-          lat: data.lat,
-          lng: data.lng,
-          coords: { lat: data.lat, lng: data.lng },
-          accuracy: data.accuracy ?? null,
-          heading: data.heading ?? null,
-          timestamp: fix.timestamp,
-        });
-      }
-      const now = Date.now();
-      if (now - (this.lastLocationUpdates.get(actor.id) || 0) > 30000) {
-        await this.tripsService.updateDriverLocation(actor.id, data.lat, data.lng);
-        this.lastLocationUpdates.set(actor.id, now);
-      }
-      this.lastLocationFixes.set(actor.id, fix);
-      return { success: true };
+      return await this.processDriverLocation(actor.id, data);
     } catch (error) {
       return this.failure(error);
     }
+  }
+
+  async processDriverLocation(driverId: string, data: DriverLocationFix) {
+    if (!Number.isFinite(data?.lat) || !Number.isFinite(data?.lng) || data.lat < -90 || data.lat > 90 || data.lng < -180 || data.lng > 180) {
+      throw new InvalidDriverLocationError('Coordenadas GPS inválidas.');
+    }
+    if (data.accuracy !== undefined && (!Number.isFinite(data.accuracy) || data.accuracy < 0 || data.accuracy > 100)) {
+      throw new InvalidDriverLocationError('Precisão GPS insuficiente.');
+    }
+    if (data.timestamp !== undefined && (!Number.isFinite(data.timestamp) || Math.abs(Date.now() - data.timestamp) > 120_000)) {
+      throw new InvalidDriverLocationError('Localização GPS desatualizada.');
+    }
+    if (data.heading !== undefined && (!Number.isFinite(data.heading) || data.heading < 0 || data.heading >= 360)) {
+      throw new InvalidDriverLocationError('Direção GPS inválida.');
+    }
+    const fix = { lat: data.lat, lng: data.lng, timestamp: data.timestamp ?? Date.now() };
+    const previousFix = this.lastLocationFixes.get(driverId);
+    if (isImplausibleLocationJump(previousFix, fix)) throw new InvalidDriverLocationError('Salto de localização GPS inválido.');
+    const trip = await this.tripsService.findActiveByDriver(driverId);
+    if (trip?.client_id) {
+      this.server.to(this.room('client', trip.client_id)).emit('trip_update', {
+        driverId,
+        lat: data.lat,
+        lng: data.lng,
+        coords: { lat: data.lat, lng: data.lng },
+        accuracy: data.accuracy ?? null,
+        heading: data.heading ?? null,
+        timestamp: fix.timestamp,
+      });
+    }
+    const now = Date.now();
+    if (now - (this.lastLocationUpdates.get(driverId) || 0) > 30000) {
+      await this.tripsService.updateDriverLocation(driverId, data.lat, data.lng, data.accuracy);
+      this.lastLocationUpdates.set(driverId, now);
+    }
+    this.lastLocationFixes.set(driverId, fix);
+    return { success: true };
   }
 
   notifyDriverAccountStatus(driverId: string, status: 'suspended' | 'active') {
@@ -217,8 +221,13 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   ) {
     try {
       const actor = this.requireRole(client, 'driver');
+      // The service remains authoritative; this read only avoids replaying notifications after a lost ACK.
+      const currentTrip = await this.tripsService.findOne(data.tripId);
+      const isRetryOfCommittedClaim = currentTrip?.driver_id === actor.id
+        && (currentTrip.status === 'accepted' || currentTrip.status === 'ongoing');
       const trip = await this.tripsService.accept(data.tripId, actor.id);
       if (!trip) throw new Error('Trip not found');
+      if (isRetryOfCommittedClaim) return { success: true };
       this.server.to(this.room('client', trip.client_id)).emit('trip_accepted', {
         tripId: trip.id,
         driver: { id: actor.id, name: trip.profiles_trips_driver_idToprofiles?.full_name || 'Motorista' },
@@ -325,16 +334,17 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('trip_progress')
   async handleTripProgress(
-      @MessageBody() data: { tripId: string; coords: { lat: number; lng: number } },
+      @MessageBody() data: { tripId: string; coords?: { lat?: number; lng?: number }; timestamp?: number },
     @ConnectedSocket() client: Socket,
   ) {
     try {
-      const trip = await this.driverTrip(client, data.tripId, 'ongoing');
-      this.server.to(this.room('client', trip.client_id)).emit('trip_update', {
-        currentFare: trip.estimated_fare,
-        coords: data.coords,
+      const actor = this.requireRole(client, 'driver');
+      await this.driverTrip(client, data.tripId, 'ongoing');
+      return await this.processDriverLocation(actor.id, {
+        lat: typeof data?.coords?.lat === 'number' ? data.coords.lat : Number.NaN,
+        lng: typeof data?.coords?.lng === 'number' ? data.coords.lng : Number.NaN,
+        timestamp: data?.timestamp,
       });
-      return { success: true };
     } catch (error) {
       return this.failure(error);
     }
@@ -355,11 +365,13 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   private async dispatchTrip(tripId: string) {
     try {
-      const connectedDrivers = [...this.connectedUsers.values()]
-        .filter((user) => user.role === 'driver' && user.isOnline && user.socketIds.size > 0)
-        .map((user) => user.id);
-      const offers = await this.tripsService.dispatchNextBatch(tripId, connectedDrivers);
+      const offers = await this.tripsService.dispatchNextBatch(tripId, []);
       for (const offer of offers) {
+        const offeredTripId = offer.trip?.id;
+        if (typeof offeredTripId !== 'string' || !offeredTripId) continue;
+        void this.pushService?.sendTripOffer(offer.driverId, offeredTripId).catch((error) => {
+          console.error(`[PUSH] Failed to send trip offer ${offeredTripId} to driver ${offer.driverId}`, error);
+        });
         this.server.to(this.room('driver', offer.driverId)).emit('new_trip_available', {
           ...offer.trip,
           offerExpiresAt: offer.expiresAt,

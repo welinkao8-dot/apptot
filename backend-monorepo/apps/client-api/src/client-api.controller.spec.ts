@@ -8,7 +8,7 @@ describe('ClientApiController', () => {
   beforeEach(async () => {
     const app: TestingModule = await Test.createTestingModule({
       controllers: [ClientApiController],
-      providers: [ClientApiService],
+      providers: [{ provide: ClientApiService, useValue: { getHello: () => 'Hello World!' } }],
     }).compile();
 
     clientApiController = app.get<ClientApiController>(ClientApiController);

@@ -1,13 +1,10 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, StatusBar, Image, Platform } from 'react-native';
 import colors from '../../theme/colors';
-import { User, Bell, MessageSquare, Map, Bolt, Navigation } from 'lucide-react-native';
+import { User, Map, Bolt, Navigation } from 'lucide-react-native';
 
 export default function GoingToClientView({ user, activeTrip, onOpenMap, onStartRide }) {
     if (!activeTrip) return null;
-
-    const distanceKm = Number(activeTrip.distanceToPickupKm);
-    const durationMinutes = Number(activeTrip.etaToPickupMinutes);
 
     return (
         <View style={styles.root}>
@@ -29,9 +26,6 @@ export default function GoingToClientView({ user, activeTrip, onOpenMap, onStart
                     </View>
                     <Text style={styles.logoText}>TOT</Text>
                 </View>
-                <TouchableOpacity style={styles.notifyBtn} activeOpacity={0.8}>
-                    <Bell size={20} color={colors.primary} />
-                </TouchableOpacity>
             </View>
 
             {/* ─── MAIN CONTENT ─── */}
@@ -39,31 +33,15 @@ export default function GoingToClientView({ user, activeTrip, onOpenMap, onStart
                 {/* Status Indicator */}
                 <View style={styles.statusRow}>
                     <View style={styles.pulseDot} />
-                    <Text style={styles.statusText}>Aguardando Passageiro</Text>
+                    <Text style={styles.statusText}>A caminho do cliente</Text>
                 </View>
 
-                {/* Trip Metrics Card */}
-                <View style={styles.metricsCard}>
-                    <View style={styles.metricsGrid}>
-                        <View style={styles.metricItem}>
-                            <Text style={styles.metricLabel}>Tempo Est.</Text>
-                            <View style={styles.metricValRow}>
-                                <Text style={styles.metricValuePrimary}>{Number.isFinite(durationMinutes) ? Math.ceil(durationMinutes) : '—'}</Text>
-                                <Text style={styles.metricValueUnit}>{Number.isFinite(durationMinutes) ? 'min' : ''}</Text>
-                            </View>
-                        </View>
-                        <View style={styles.metricItem}>
-                            <Text style={styles.metricLabel}>Distância</Text>
-                            <View style={styles.metricValRow}>
-                                <Text style={styles.metricValuePrimary}>{Number.isFinite(distanceKm) ? distanceKm.toFixed(1) : '—'}</Text>
-                                <Text style={styles.metricValueUnit}>{Number.isFinite(distanceKm) ? 'km' : ''}</Text>
-                            </View>
-                        </View>
-                    </View>
+                <View style={styles.navigationNotice}>
                     <View style={styles.trafficBadge}>
                         <Navigation size={14} color={colors.primary} style={{ marginRight: 6 }} />
-                        <Text style={styles.trafficText}>Use o mapa escolhido para ver trânsito e percurso</Text>
+                        <Text style={styles.trafficText}>Use a navegação externa para chegar ao cliente</Text>
                     </View>
+                    <Text style={styles.navigationHint}>Ao chegar, volte ao TOT e toque em “Iniciar corrida”.</Text>
                 </View>
 
                 {/* Passenger Card */}
@@ -78,9 +56,6 @@ export default function GoingToClientView({ user, activeTrip, onOpenMap, onStart
                                 {!!activeTrip.userRating && <Text style={styles.ratingText}>⭐ {activeTrip.userRating}</Text>}
                             </View>
                         </View>
-                        <TouchableOpacity style={styles.chatBtn} activeOpacity={0.8}>
-                            <MessageSquare size={20} color={colors.primary} />
-                        </TouchableOpacity>
                     </View>
 
                     <View style={styles.cardDivider} />
@@ -111,7 +86,7 @@ export default function GoingToClientView({ user, activeTrip, onOpenMap, onStart
                 <View style={styles.actionsContainer}>
                     <TouchableOpacity style={styles.mapBtn} onPress={onOpenMap} activeOpacity={0.8}>
                         <Map size={20} color={colors.text} style={{ marginRight: 8 }} />
-                        <Text style={styles.mapBtnTxt}>ABRIR MAPA</Text>
+                        <Text style={styles.mapBtnTxt}>NAVEGAR ATÉ AO CLIENTE</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity style={styles.startRideBtn} onPress={onStartRide} activeOpacity={0.9}>
@@ -143,7 +118,6 @@ const styles = StyleSheet.create({
     avatarMiniBorder: { width: 34, height: 34, borderRadius: 17, borderWidth: 1.5, borderColor: colors.primary, overflow: 'hidden' },
     avatarMini: { width: '100%', height: '100%', objectFit: 'cover' },
     logoText: { fontSize: 20, fontWeight: '900', color: colors.primary, letterSpacing: -1 },
-    notifyBtn: { width: 38, height: 38, borderRadius: 19, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
 
     // Main Canvas
     mainCanvas: { flex: 1, paddingHorizontal: 20, paddingTop: 16, pb: 40 },
@@ -154,14 +128,12 @@ const styles = StyleSheet.create({
     statusText: { fontSize: 13, fontWeight: '900', color: colors.primaryContainer, textTransform: 'uppercase', letterSpacing: 0.5 },
 
     // Metrics Card
-    metricsCard: {
+    navigationNotice: {
         backgroundColor: '#fff',
         borderRadius: 16,
-        padding: 20,
+        padding: 16,
         borderWidth: 1,
         borderColor: colors.outlineVariant,
-        alignItems: 'center',
-        justifyContent: 'center',
         shadowColor: '#1a1c1f',
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.05,
@@ -169,12 +141,6 @@ const styles = StyleSheet.create({
         elevation: 2,
         marginBottom: 20,
     },
-    metricsGrid: { flexDirection: 'row', width: '100%', divideStyle: 'solid' },
-    metricItem: { flex: 1, alignItems: 'center', gap: 4 },
-    metricLabel: { fontSize: 11, color: colors.textSecondary, textTransform: 'uppercase', letterSpacing: 0.5 },
-    metricValRow: { flexDirection: 'row', alignItems: 'baseline', gap: 2 },
-    metricValuePrimary: { fontSize: 32, fontWeight: '800', color: colors.primary },
-    metricValueUnit: { fontSize: 14, color: colors.text, fontWeight: '600' },
     trafficBadge: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -182,9 +148,9 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         paddingVertical: 6,
         borderRadius: 20,
-        marginTop: 16
     },
     trafficText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+    navigationHint: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginTop: 10 },
 
     // Passenger Card
     passengerCard: {
@@ -208,7 +174,6 @@ const styles = StyleSheet.create({
     avatarLargeBorder: { width: 56, height: 56, borderRadius: 28, borderWidth: 1.5, borderColor: colors.surfaceContainerHighest, justifyContent: 'center', alignItems: 'center' },
     passengerName: { fontSize: 16, fontWeight: '800', color: colors.text },
     ratingText: { fontSize: 12, color: colors.textSecondary, marginTop: 2 },
-    chatBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: colors.surfaceContainerLow, justifyContent: 'center', alignItems: 'center' },
     cardDivider: { height: 1, backgroundColor: colors.surfaceContainer, marginVertical: 14 },
 
     // Route Info

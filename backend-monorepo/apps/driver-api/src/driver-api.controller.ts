@@ -2,6 +2,7 @@ import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
 import { DriverApiService } from './driver-api.service';
 import { RidesGateway } from './rides/rides.gateway';
 import { InternalServiceTokenGuard } from '@app/auth';
+import { NotifyDriverStatusDto } from './driver-api.dto';
 
 @Controller()
 export class DriverApiController {
@@ -17,7 +18,7 @@ export class DriverApiController {
 
   @Post('notify-driver-status')
   @UseGuards(InternalServiceTokenGuard)
-  notifyDriverStatus(@Body() body: { driverId: string, status: 'suspended' | 'active' }) {
+  notifyDriverStatus(@Body() body: NotifyDriverStatusDto) {
     this.ridesGateway.notifyDriverAccountStatus(body.driverId, body.status);
     return { success: true };
   }

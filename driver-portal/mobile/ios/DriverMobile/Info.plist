@@ -35,7 +35,15 @@
 		<true/>
 	</dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string></string>
+	<string>A localização atualiza a posição do motorista enquanto está disponível e conduz uma viagem, inclusive ao usar navegação externa.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Precisamos atualizar a posição durante uma viagem, mesmo quando você usa um app de navegação ou o TOT fica em segundo plano.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>Precisamos atualizar a posição durante uma viagem, mesmo quando você usa um app de navegação ou o TOT fica em segundo plano.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>A câmera é usada para fotografar os documentos necessários à verificação da conta.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>A galeria é usada para selecionar os documentos necessários à verificação da conta.</string>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIRequiredDeviceCapabilities</key>
@@ -47,6 +55,10 @@
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>location</string>
 	</array>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<false/>

@@ -43,3 +43,8 @@ yarn-debug.log*
 yarn-error.log*
 .expo/
 .next/
+
+# Local crash dumps and exported trip data (may contain paths, memory or personal data)
+hs_err_pid*.log
+replay_pid*.log
+trips_last_*.csv

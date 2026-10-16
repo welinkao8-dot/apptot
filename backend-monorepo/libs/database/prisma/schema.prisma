@@ -26,17 +26,32 @@ model drivers {
   address            String?
   password           String?   @db.VarChar(255)
   status             String?   @default("pending") @db.VarChar(50)
+  vehicle_category   String?   @db.VarChar(20)
   doc_bi_frente      String?
   doc_bi_verso       String?
   doc_carta_conducao String?
   is_online          Boolean?  @default(false)
   current_lat        Float?
   current_lng        Float?
+  current_accuracy   Float?
   last_location_update DateTime? @db.Timestamptz(6)
   rating             Decimal?  @default(5.00) @db.Decimal(3, 2)
   created_at         DateTime? @default(now()) @db.Timestamp(6)
   updated_at         DateTime? @default(now()) @db.Timestamp(6)
   trip_offers        trip_driver_offers[]
+  fcm_tokens         driver_fcm_tokens[]
+}
+
+model driver_fcm_tokens {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driver_id  String   @db.Uuid
+  token      String   @unique
+  platform   String   @db.VarChar(10)
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  drivers    drivers  @relation(fields: [driver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([driver_id])
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -101,6 +116,7 @@ model service_configs {
   platform_fee_value Decimal   @db.Decimal(10, 2)
   updated_at         DateTime? @default(now()) @db.Timestamptz(6)
   trips              trips[]
+  trip_quotes        trip_quotes[]
 }
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
@@ -154,7 +170,7 @@ model trip_payments {
 model trip_quotes {
   id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   client_id          String    @db.Uuid
-  service_config_id  Int
+  service_config_id  Int?
   category           String    @db.VarChar(50)
   origin_address     String
   origin_lat         Float
@@ -171,6 +187,7 @@ model trip_quotes {
   consumed_at        DateTime? @db.Timestamptz(6)
   created_at         DateTime  @default(now()) @db.Timestamptz(6)
   trip               trips?
+  service_configs    service_configs? @relation(fields: [service_config_id], references: [id], onDelete: SetNull, onUpdate: NoAction)
 
   @@index([client_id, expires_at])
 }

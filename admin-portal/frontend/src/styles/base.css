@@ -1,0 +1,193 @@
+/* ============================================================================
+   TOT Admin — base
+   Reset, foco visível, escala tipográfica e as animações por nome.
+   Substitui o antigo index.css (que declarava 'Inter', nunca carregada, e por
+   isso fazia o login renderizar numa família diferente do resto do painel).
+   ========================================================================== */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+    min-height: 100%;
+}
+
+body {
+    margin: 0;
+    color: var(--tot-ink);
+    background: var(--tot-canvas);
+    font-family: var(--tot-font);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-regular);
+    line-height: var(--tot-leading-normal);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+}
+
+h1,
+h2,
+h3,
+h4,
+p,
+figure {
+    margin: 0;
+}
+
+h1,
+h2,
+h3,
+h4 {
+    font-weight: var(--tot-weight-bold);
+    line-height: var(--tot-leading-tight);
+    letter-spacing: -0.01em;
+}
+
+ul,
+ol {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+button,
+input,
+select,
+textarea {
+    color: inherit;
+    font: inherit;
+}
+
+button {
+    -webkit-tap-highlight-color: transparent;
+}
+
+a {
+    color: var(--tot-brand-ink);
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+img,
+svg {
+    display: block;
+    max-width: 100%;
+}
+
+/* Foco visível e consistente em todo o painel. */
+:where(button, a, input, select, textarea, [tabindex]):focus-visible {
+    outline: 3px solid var(--tot-focus-ring);
+    outline-offset: 2px;
+    border-radius: var(--tot-radius-sm);
+}
+
+/* Números sempre tabulares: as colunas de valores alinham,
+   o que é a diferença entre ler e descodificar. */
+.tot-num,
+.record-primary-value,
+.record-secondary-label,
+.total-value,
+.tot-dashboard-kpi-copy strong,
+.tot-dashboard-fare,
+.tot-dashboard-trips-table td:last-child,
+.status-pill,
+.status-pill-mini {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum' 1;
+}
+
+/* Rótulo de secção: a única caixa alta do painel, e só quatro por ecrã. */
+.tot-eyebrow,
+.dashboard-kicker,
+.dashboard-panel-eyebrow,
+.admin-nav-section,
+.tot-dashboard-trips-table th {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-semibold);
+    letter-spacing: .06em;
+    text-transform: uppercase;
+}
+
+/* Animações. Faltavam todas: `.animate-fade-in` era usada 20 vezes sem
+   existir, e o ponto "live" do LiveOps pedia `pulse-dot` a um keyframe
+   inexistente — o indicador de operação em tempo real estava estático. */
+.animate-fade-in {
+    animation: tot-fade-in .28s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.animate-pop-in {
+    animation: tot-pop-in .22s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.animate-slide-up {
+    animation: tot-slide-up .5s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.is-spinning {
+    animation: tot-spin .9s linear infinite;
+}
+
+.tot-pulse {
+    animation: tot-pulse-dot 1.8s ease-in-out infinite;
+}
+
+@keyframes tot-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes tot-pop-in {
+    from { opacity: 0; transform: scale(.97); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes tot-slide-up {
+    from { opacity: 0; transform: translateY(18px); }
+    to { opacity: 1; transform: none; }
+}
+
+@keyframes tot-spin {
+    to { transform: rotate(360deg); }
+}
+
+@keyframes tot-pulse-dot {
+    0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgba(0, 119, 89, .35); }
+    50% { opacity: .75; box-shadow: 0 0 0 5px rgba(0, 119, 89, 0); }
+}
+
+@keyframes tot-skeleton {
+    0% { background-position: 100% 0; }
+    100% { background-position: -100% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: .01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: .01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* Acessibilidade: utilidades legítimas, usadas com parcimónia. */
+.tot-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px
+    ;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+    border: 0;
+}

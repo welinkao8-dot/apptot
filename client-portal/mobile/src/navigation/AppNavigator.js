@@ -7,6 +7,7 @@ import { ActivityIndicator, View } from 'react-native';
 import colors from '../theme/colors';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import api from '../services/api';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
 
 // Import Components
 import Sidebar from '../components/Sidebar';
@@ -69,7 +70,7 @@ export default function AppNavigator() {
                         }
                     }
                 } catch (e) {
-                    console.error('Boot Check Error:', e);
+                    console.error('Boot Check Error:', toSafeErrorLog(e));
                 }
             }
             setIsCheckingRide(false);

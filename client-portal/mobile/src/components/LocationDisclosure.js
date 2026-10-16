@@ -16,15 +16,15 @@ const LocationDisclosure = ({ visible, onAccept }) => {
                         </View>
 
                         <Text style={styles.description}>
-                            O **TOT MOTO TÁXI** recolhe dados de localização para permitir as seguintes funcionalidades:
+                            O TOT pede a localização do seu telemóvel quando usa o serviço, para preencher o ponto de recolha. Também pode indicar esse ponto diretamente no mapa.
                         </Text>
 
                         <View style={styles.featureItem}>
                             <ShieldCheck size={24} color="#e91e63" />
                             <View style={styles.featureText}>
-                                <Text style={styles.featureTitle}>Segurança em Tempo Real</Text>
+                            <Text style={styles.featureTitle}>Ponto de recolha</Text>
                                 <Text style={styles.featureDesc}>
-                                    Permite que a sua posição seja monitorizada durante a viagem para garantir o seu bem-estar.
+                                    A localização é usada para posicionar a origem da corrida ou entrega. Se não autorizar, continua a poder marcar a origem no mapa.
                                 </Text>
                             </View>
                         </View>
@@ -32,9 +32,9 @@ const LocationDisclosure = ({ visible, onAccept }) => {
                         <View style={styles.featureItem}>
                             <MapPin size={24} color="#e91e63" />
                             <View style={styles.featureText}>
-                                <Text style={styles.featureTitle}>Rastreamento em Segundo Plano</Text>
+                            <Text style={styles.featureTitle}>Acompanhamento da viagem</Text>
                                 <Text style={styles.featureDesc}>
-                                    Mesmo com o ecrã desligado ou noutra app, continuamos a atualizar a sua posição para que o cálculo da tarifa e o rastreio da viagem não sejam interrompidos.
+                                    Durante uma viagem ativa, o mapa mostra a localização enviada pelo motorista. O TOT não acompanha a localização do cliente em segundo plano.
                                 </Text>
                             </View>
                         </View>

@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { TripsModule } from './trips/trips.module';
 import { DatabaseModule } from '@app/database';
 import { QuotesModule } from './quotes/quotes.module';
+import { LocationsModule } from './locations/locations.module';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { QuotesModule } from './quotes/quotes.module';
     AuthModule,
     TripsModule,
     QuotesModule,
+    LocationsModule,
   ],
   controllers: [ClientApiController],
   providers: [ClientApiService],

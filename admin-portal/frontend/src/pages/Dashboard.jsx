@@ -1,24 +1,28 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '../context/AuthContext'
-
-import toast from 'react-hot-toast'
-import './Dashboard.css'
 import {
     LayoutDashboard,
     Users,
     Bike,
-    Car,
     Settings,
     LogOut,
-    TrendingUp,
     Navigation,
     ShieldCheck,
-    DollarSign,
-    Activity,
-
     Wallet,
     History,
-    FileText
+    FileText,
+    CreditCard,
+    Menu,
+    RefreshCw,
+    ArrowUpRight,
+    Activity,
+    CarFront,
+    CircleAlert,
+    Clock3,
+    MapPin,
+    Route,
+    ReceiptText,
+    TrendingUp,
 } from 'lucide-react'
 import {
     AreaChart,
@@ -31,9 +35,8 @@ import {
     PieChart,
     Pie,
     Cell,
-    Legend
 } from 'recharts'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
 import { io } from 'socket.io-client'
 import Drivers from './Drivers'
 import Clients from './Clients'
@@ -44,18 +47,41 @@ import Invoices from './Invoices'
 import Configs from './Configs'
 import LiveOps from './LiveOps'
 import Payments from './Payments'
-import { bindAdminDashboardEvents, getAdminSocketOptions } from '../services/adminPortalContracts'
+import { bindAdminDashboardEvents, bindAdminSocketAuth, getAdminSocketOptions } from '../services/adminPortalContracts'
+import { formatKz, formatNumber, formatCompactNumber, formatDayShort, formatDateTime } from '../services/format'
+import { describeAuditAction } from '../services/auditAction'
 
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
+const TRIP_STATUS = {
+    requested: { label: 'A aguardar', tone: 'waiting' },
+    accepted: { label: 'Aceite', tone: 'accepted' },
+    arrived: { label: 'Chegou', tone: 'accepted' },
+    ongoing: { label: 'Em curso', tone: 'live' },
+    completed: { label: 'Concluída', tone: 'done' },
+    cancelled: { label: 'Cancelada', tone: 'cancelled' },
+}
 
+const CATEGORY_COLORS = ['#c2185b', '#1d5bcf', '#007759', '#a35e00']
 
-const COLORS = ['#e91e63', '#3b82f6', '#10b981', '#f59e0b', '#8b5cf6']
+const NAV_ITEMS = [
+    { key: 'overview', label: 'Visão geral', icon: LayoutDashboard },
+    { key: 'liveops', label: 'Operação em curso', icon: Navigation, badge: 'Mapa' },
+    { key: 'drivers', label: 'Motoristas', icon: Bike },
+    { key: 'clients', label: 'Clientes', icon: Users },
+    { key: 'pricing', label: 'Tarifas', icon: Wallet },
+    { key: 'trips', label: 'Corridas', icon: History },
+]
+
+const SYSTEM_ITEMS = [
+    { key: 'invoices', label: 'Faturas', icon: FileText },
+    { key: 'payments', label: 'Pagamentos', icon: CreditCard },
+    { key: 'auditlogs', label: 'Registo de auditoria', icon: ShieldCheck },
+    { key: 'configs', label: 'Configurações', icon: Settings },
+]
 
 export default function Dashboard() {
-    const { user, signOut } = useAuth()
+    const { signOut } = useAuth()
     const [view, setView] = useState('overview')
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
     const [stats, setStats] = useState({
@@ -69,25 +95,21 @@ export default function Dashboard() {
         totalRevenue: 0,
         todayRevenue: 0,
         monthlyRevenue: 0,
-        todayTrips: 0
+        todayTrips: 0,
     })
     const [pendingDrivers, setPendingDrivers] = useState([])
-
-    const [analytics, setAnalytics] = useState({
-        dailyRevenue: [],
-        categoryStats: []
-    })
+    const [analytics, setAnalytics] = useState({ dailyRevenue: [], categoryStats: [] })
     const [auditLogs, setAuditLogs] = useState([])
+    const [recentTrips, setRecentTrips] = useState([])
     const [loading, setLoading] = useState(true)
-
-
+    const [isRefreshing, setIsRefreshing] = useState(false)
+    const [lastUpdatedAt, setLastUpdatedAt] = useState(null)
 
     useEffect(() => {
         fetchDashboardData()
 
         const socket = io(`${SOCKET_URL}/admin`, getAdminSocketOptions(localStorage.getItem('tot_token')))
-
-        socket.on('connect', () => console.log('Connected to Admin Real-time'))
+        const unbindAdminSocketAuth = bindAdminSocketAuth(socket)
         const unbindAdminEvents = bindAdminDashboardEvents(socket, {
             onDriverStatusUpdated: fetchDashboardData,
             onPricingUpdated: fetchDashboardData,
@@ -100,247 +122,408 @@ export default function Dashboard() {
         return () => {
             socket.disconnect()
             unbindAdminEvents()
+            unbindAdminSocketAuth()
             clearInterval(interval)
         }
     }, [])
 
-
-
-
-
     const fetchDashboardData = async () => {
-        console.log('📡 Fetching Dashboard Data from:', API_URL)
+        setIsRefreshing(true)
         try {
             const results = await Promise.allSettled([
-                axios.get(`${API_URL}/admin/stats`),
-                axios.get(`${API_URL}/admin/drivers/pending`),
-                axios.get(`${API_URL}/admin/analytics`),
-                axios.get(`${API_URL}/admin/logs`)
+                adminApi.get('/admin/stats'),
+                adminApi.get('/admin/drivers/pending'),
+                adminApi.get('/admin/analytics'),
+                adminApi.get('/admin/logs', { params: { page: 1, limit: 4 } }),
+                adminApi.get('/admin/trips', { params: { page: 1, limit: 5, status: 'all' } }),
             ])
 
-            // Helper to get data or empty default
             const getData = (result, defaultVal) => (result.status === 'fulfilled' && result.value && result.value.data) ? result.value.data : defaultVal
 
-            if (results[0].status === 'fulfilled' && results[0].value && typeof results[0].value.data === 'object' && results[0].value.data !== null) {
-                console.log('✅ Stats Data Received:', results[0].value.data)
-                setStats(prev => ({ ...prev, ...results[0].value.data }))
+            const statsPayload = getData(results[0], null)
+            if (statsPayload && typeof statsPayload === 'object') {
+                setStats(prev => ({ ...prev, ...statsPayload }))
             } else {
-                console.error('❌ Invalid Stats response or failure:', results[0].status === 'fulfilled' ? 'HTML/String received instead of Object' : results[0].reason)
+                console.error('Resposta inválida de /admin/stats')
             }
 
             setPendingDrivers(getData(results[1], []))
             setAnalytics(getData(results[2], { dailyRevenue: [], categoryStats: [] }))
-            setAuditLogs(getData(results[3], []))
-
+            const logsPayload = getData(results[3], { items: [] })
+            const tripsPayload = getData(results[4], { items: [] })
+            setAuditLogs(Array.isArray(logsPayload) ? logsPayload : (logsPayload?.items || []))
+            setRecentTrips(Array.isArray(tripsPayload) ? tripsPayload : (tripsPayload?.items || []))
         } catch (error) {
-            console.error('Critical Error fetching admin data:', error)
+            console.error('Falha ao carregar os dados do painel:', error)
         } finally {
             setLoading(false)
+            setIsRefreshing(false)
+            setLastUpdatedAt(new Date())
         }
     }
 
+    const goTo = nextView => {
+        setView(nextView)
+        setIsMobileMenuOpen(false)
+    }
+
+    const dailyRevenue = Array.isArray(analytics?.dailyRevenue) ? analytics.dailyRevenue : []
+    const categoryStats = Array.isArray(analytics?.categoryStats) ? analytics.categoryStats : []
+    const hasRevenue = dailyRevenue.some(item => Number(item?.revenue) > 0)
+    const paidActivityTotal = categoryStats.reduce((total, item) => total + (Number(item?.value) || 0), 0)
+    const pendingDriverCount = Array.isArray(pendingDrivers) ? pendingDrivers.length : 0
+    const activeTrips = Number(stats?.activeTrips) || 0
+    const onlineDrivers = Number(stats?.onlineDrivers) || 0
+    const totalDeliveries = Number(stats?.totalDeliveries) || 0
+
+    const headlineIndicators = [
+        { key: 'today-revenue', label: 'Receita hoje', value: formatKz(stats?.todayRevenue) },
+        { key: 'monthly-revenue', label: 'Receita este mês', value: formatKz(stats?.monthlyRevenue) },
+        { key: 'today-trips', label: 'Corridas hoje', value: formatNumber(stats?.todayTrips), action: () => goTo('trips') },
+    ]
+
+    const renderNavButton = ({ key, label, icon: Icon, badge }) => (
+        <button
+            key={key}
+            type="button"
+            className={`nav-link ${view === key ? 'active' : ''}`}
+            aria-current={view === key ? 'page' : undefined}
+            onClick={() => goTo(key)}
+        >
+            <Icon size={19} aria-hidden="true" />
+            <span>{label}</span>
+            {badge && <small className="nav-live-badge">{badge}</small>}
+        </button>
+    )
 
     return (
-        <div className={`admin-layout ${isMobileMenuOpen ? 'mobile-menu-active' : ''}`}>
-            {/* Mobile Overlay */}
-            <div
+        <div className="admin-layout">
+            <button
+                type="button"
                 className={`sidebar-overlay ${isMobileMenuOpen ? 'visible' : ''}`}
+                aria-label="Fechar navegação"
                 onClick={() => setIsMobileMenuOpen(false)}
-            ></div>
+            />
 
             <aside className={`admin-sidebar ${isMobileMenuOpen ? 'open' : ''}`}>
-                <div className="admin-logo">TOT <span>ADMIN</span></div>
+                <div className="admin-logo">
+                    <span className="admin-logo-mark" aria-hidden="true">TOT</span>
+                    <span className="admin-logo-copy">
+                        <strong>TOT <em>Admin</em></strong>
+                        <small>Operações urbanas</small>
+                    </span>
+                </div>
 
-                <nav className="admin-nav">
-                    <button className={`nav-link ${view === 'overview' ? 'active' : ''}`} onClick={() => { setView('overview'); setIsMobileMenuOpen(false); }}>
-                        <LayoutDashboard size={20} /> <span className="ml-4">Visão Geral</span>
-                    </button>
-                    <button className={`nav-link ${view === 'liveops' ? 'active' : ''}`} onClick={() => { setView('liveops'); setIsMobileMenuOpen(false); }}>
-                        <Navigation size={20} /> <span className="ml-4">Operação Live</span>
-                    </button>
-                    <button className={`nav-link ${view === 'drivers' ? 'active' : ''}`} onClick={() => { setView('drivers'); setIsMobileMenuOpen(false); }}>
-                        <Bike size={20} /> <span className="ml-4">Motoristas</span>
-                    </button>
-                    <button className={`nav-link ${view === 'clients' ? 'active' : ''}`} onClick={() => { setView('clients'); setIsMobileMenuOpen(false); }}>
-                        <Users size={20} /> <span className="ml-4">Clientes</span>
-                    </button>
-                    <button className={`nav-link ${view === 'pricing' ? 'active' : ''}`} onClick={() => { setView('pricing'); setIsMobileMenuOpen(false); }}>
-                        <Wallet size={20} /> <span className="ml-4">Tarifas</span>
-                    </button>
-                    <button className={`nav-link ${view === 'trips' ? 'active' : ''}`} onClick={() => { setView('trips'); setIsMobileMenuOpen(false); }}>
-                        <History size={20} /> <span className="ml-4">Corridas</span>
-                    </button>
-                    <button className={`nav-link ${view === 'invoices' ? 'active' : ''}`} onClick={() => { setView('invoices'); setIsMobileMenuOpen(false); }}>
-                        <FileText size={20} /> <span className="ml-4">Faturas</span>
-                    </button>
-                    <button className={`nav-link ${view === 'payments' ? 'active' : ''}`} onClick={() => { setView('payments'); setIsMobileMenuOpen(false); }}>
-                        <Wallet size={20} /> <span className="ml-4">Pagamentos</span>
-                    </button>
-                    <button className={`nav-link ${view === 'auditlogs' ? 'active' : ''}`} onClick={() => { setView('auditlogs'); setIsMobileMenuOpen(false); }}>
-                        <ShieldCheck size={20} /> <span className="ml-4">Audit Logs</span>
-                    </button>
-                    <button className={`nav-link ${view === 'configs' ? 'active' : ''}`} onClick={() => { setView('configs'); setIsMobileMenuOpen(false); }}>
-                        <Settings size={20} /> <span className="ml-4">Configurações</span>
-                    </button>
+                <nav className="admin-nav" aria-label="Navegação principal">
+                    <span className="admin-nav-section">Operação</span>
+                    {NAV_ITEMS.map(renderNavButton)}
+
+                    <span className="admin-nav-section">Gestão</span>
+                    {SYSTEM_ITEMS.map(renderNavButton)}
                 </nav>
 
                 <div className="admin-footer">
-                    <button className="nav-link btn-logout" onClick={signOut}>
-                        <LogOut size={20} /> <span className="ml-4">Sair</span>
+                    <button type="button" className="nav-link btn-logout" onClick={signOut}>
+                        <LogOut size={19} aria-hidden="true" />
+                        <span>Terminar sessão</span>
                     </button>
                 </div>
             </aside>
 
             <main className="admin-main">
+                <div className="tot-admin-topbar">
+                    <div className="tot-admin-topbar-context">
+                        <strong>Consola de administração</strong>
+                        <span aria-live="polite">
+                            {lastUpdatedAt
+                                ? `Dados atualizados às ${lastUpdatedAt.toLocaleTimeString('pt-AO', { hour: '2-digit', minute: '2-digit' })}`
+                                : 'A carregar dados…'}
+                        </span>
+                    </div>
+                    <div className="tot-admin-topbar-right">
+                        <span className="tot-admin-period">Turno atual</span>
+                        <button
+                            type="button"
+                            className="mobile-toggle"
+                            onClick={() => setIsMobileMenuOpen(open => !open)}
+                            aria-label={isMobileMenuOpen ? 'Fechar navegação' : 'Abrir navegação'}
+                            aria-expanded={isMobileMenuOpen}
+                        >
+                            <Menu size={20} aria-hidden="true" />
+                        </button>
+                    </div>
+                </div>
+
                 {loading ? (
-                    <div className="admin-stats-grid">
-                        {[1, 2, 3, 4].map(i => (
-                            <div key={i} className="admin-stat-card skeleton-card">
-                                <div className="skeleton-icon"></div>
-                                <div className="skeleton-info">
-                                    <div className="skeleton-line sm"></div>
-                                    <div className="skeleton-line lg"></div>
-                                </div>
-                            </div>
-                        ))}
+                    <div className="dashboard-loading" role="status" aria-label="A carregar dados do painel">
+                        <div className="dashboard-loading-title" />
+                        <div className="dashboard-loading-operations"><span /><span /><span /></div>
+                        <div className="dashboard-loading-finance"><span /><span /></div>
                     </div>
                 ) : (
                     view === 'overview' && (
                         <div className="dashboard-content animate-fade-in">
-                            <header className="page-header">
+                            <header className="page-header dashboard-overview-header">
                                 <div className="page-title">
-                                    <h1>Paineis de Controle</h1>
-                                    <p>Bem-vindo ao TOT Command Center.</p>
+                                    <span className="tot-eyebrow">Painel de gestão</span>
+                                    <h1>O que está a acontecer agora</h1>
+                                    <p>Estado da operação, corridas de hoje e receita confirmada da plataforma.</p>
                                 </div>
-                                <button className="mobile-toggle" onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}>
-                                    <LayoutDashboard size={24} />
-                                </button>
+                                <div className="dashboard-header-actions">
+                                    <button
+                                        type="button"
+                                        className="tot-btn tot-btn--ghost tot-btn--sm dashboard-refresh-button"
+                                        onClick={fetchDashboardData}
+                                        disabled={isRefreshing}
+                                    >
+                                        <RefreshCw size={15} className={isRefreshing ? 'is-spinning' : ''} aria-hidden="true" />
+                                        <span>{isRefreshing ? 'A atualizar…' : 'Atualizar'}</span>
+                                    </button>
+                                </div>
                             </header>
 
-                            <div className="admin-stats-grid">
-                                <div className="admin-stat-card">
-                                    <div className="stat-icon pink"><DollarSign size={24} /></div>
-                                    <div className="stat-info">
-                                        <span className="label">Receita recebida este mês</span>
-                                        <span className="value truncate">Kz {(stats?.monthlyRevenue || 0).toLocaleString()}</span>
-                                    </div>
+                            <section className="tot-now" aria-label="Operação em curso">
+                                <div className="tot-now-lead">
+                                    <span className="tot-now-lamp" aria-hidden="true" />
+                                    <span>
+                                        <strong>Operação em curso</strong>
+                                        <span>Agora mesmo</span>
+                                    </span>
                                 </div>
-                                <div className="admin-stat-card">
-                                    <div className="stat-icon blue"><Activity size={24} /></div>
-                                    <div className="stat-info">
-                                        <span className="label">Corridas Ativas</span>
-                                        <span className="value">{stats?.activeTrips || 0}</span>
-                                    </div>
-                                </div>
-                                <div className="admin-stat-card">
-                                    <div className="stat-icon emerald"><ShieldCheck size={24} /></div>
-                                    <div className="stat-info">
-                                        <span className="label">Motoristas Ativos</span>
-                                        <span className="value">{stats?.onlineDrivers || 0}</span>
-                                    </div>
-                                </div>
-                                <div className="admin-stat-card">
-                                    <div className="stat-icon amber"><Wallet size={24} /></div>
-                                    <div className="stat-info">
-                                        <span className="label">Receita Hoje</span>
-                                        <span className="value">Kz {(stats.todayRevenue || 0).toLocaleString()}</span>
-                                    </div>
-                                </div>
-                                <div className="admin-stat-card">
-                                    <div className="stat-icon pink"><Navigation size={24} /></div>
-                                    <div className="stat-info">
-                                        <span className="label">Corridas Hoje</span>
-                                        <span className="value">{stats?.todayTrips || 0}</span>
-                                    </div>
-                                </div>
-                                <div className="admin-stat-card">
-                                    <div className="stat-icon blue"><Bike size={24} /></div>
-                                    <div className="stat-info">
-                                        <span className="label">Total Entregas</span>
-                                        <span className="value">{stats.totalDeliveries || 0}</span>
-                                    </div>
-                                </div>
-                            </div>
+                                <button type="button" className="tot-now-item" onClick={() => goTo('liveops')}>
+                                    <strong>{formatNumber(activeTrips)}</strong>
+                                    <span>{activeTrips === 1 ? 'corrida ativa' : 'corridas ativas'}</span>
+                                </button>
+                                <button type="button" className="tot-now-item" onClick={() => goTo('drivers')}>
+                                    <strong>{formatNumber(onlineDrivers)}</strong>
+                                    <span>{onlineDrivers === 1 ? 'motorista online' : 'motoristas online'}</span>
+                                </button>
+                                {pendingDriverCount > 0 && (
+                                    <button type="button" className="tot-now-alert" onClick={() => goTo('drivers')}>
+                                        <CircleAlert size={16} aria-hidden="true" />
+                                        <span>
+                                            {pendingDriverCount === 1
+                                                ? '1 motorista aguarda aprovação'
+                                                : `${pendingDriverCount} motoristas aguardam aprovação`}
+                                        </span>
+                                    </button>
+                                )}
+                            </section>
 
+                            <section className="tot-indicators" aria-label="Indicadores do período">
+                                {headlineIndicators.map(({ key, label, value, action }) => (
+                                    <article className="tot-indicator" key={key}>
+                                        <span className="tot-indicator-label">{label}</span>
+                                        <strong className="tot-indicator-value">{value}</strong>
+                                        {action && (
+                                            <button type="button" className="tot-indicator-link" onClick={action}>
+                                                Ver corridas
+                                            </button>
+                                        )}
+                                    </article>
+                                ))}
+                            </section>
 
+                            {totalDeliveries > 0 && (
+                                <p className="tot-indicators-note">
+                                    {formatNumber(totalDeliveries)} entregas acumuladas na plataforma.
+                                </p>
+                            )}
 
-                            <div className="dashboard-grid">
-                                <div className="admin-chart-card glass">
-                                    <div className="card-header">
-                                        <h3><TrendingUp size={20} className="text-pink-500" /> Tendência de Receita (7 Dias)</h3>
+                            <section className="tot-dashboard-analytics" aria-label="Receita">
+                                <article className="tot-dashboard-card tot-dashboard-revenue-card">
+                                    <div className="tot-dashboard-card-heading">
+                                        <div>
+                                            <span className="tot-eyebrow">Últimos 7 dias</span>
+                                            <h2><TrendingUp size={18} aria-hidden="true" /> Receita confirmada</h2>
+                                            <p>Valores recebidos e confirmados por dia.</p>
+                                        </div>
+                                        <span className="tot-dashboard-heading-icon" aria-hidden="true"><ReceiptText size={18} /></span>
                                     </div>
-                                    <div className="chart-container" style={{ height: 300 }}>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={analytics.dailyRevenue}>
-                                                <defs>
-                                                    <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="5%" stopColor="#e91e63" stopOpacity={0.1} />
-                                                        <stop offset="95%" stopColor="#e91e63" stopOpacity={0} />
-                                                    </linearGradient>
-                                                </defs>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                                <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
-                                                <YAxis
-                                                    axisLine={false}
-                                                    tickLine={false}
-                                                    tick={{ fontSize: 10, fill: '#94a3b8' }}
-                                                    domain={[0, 1000000]}
-                                                    ticks={[0, 250000, 500000, 750000, 1000000]}
-                                                />
-                                                <Tooltip />
-                                                <Area type="monotone" dataKey="revenue" stroke="#e91e63" fillOpacity={1} fill="url(#colorRev)" strokeWidth={3} />
-                                            </AreaChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
+                                    {hasRevenue ? (
+                                        <div className="tot-dashboard-chart">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <AreaChart data={dailyRevenue} margin={{ top: 12, right: 8, bottom: 0, left: 0 }}>
+                                                    <defs>
+                                                        <linearGradient id="dashboardRevenueFill" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="0%" stopColor="#c2185b" stopOpacity={0.22} />
+                                                            <stop offset="95%" stopColor="#c2185b" stopOpacity={0.01} />
+                                                        </linearGradient>
+                                                    </defs>
+                                                    <CartesianGrid vertical={false} stroke="#e4e7ec" />
+                                                    <XAxis dataKey="date" tickFormatter={formatDayShort} axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5b6675' }} tickMargin={10} />
+                                                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#5b6675' }} tickFormatter={formatCompactNumber} domain={[0, 'auto']} width={54} />
+                                                    <Tooltip
+                                                        labelFormatter={formatDayShort}
+                                                        formatter={value => [formatKz(value), 'Receita confirmada']}
+                                                        contentStyle={{ borderRadius: 8, border: '1px solid #e4e7ec', fontSize: 13 }}
+                                                    />
+                                                    <Area type="monotone" dataKey="revenue" stroke="#c2185b" fill="url(#dashboardRevenueFill)" strokeWidth={2} activeDot={{ r: 4, strokeWidth: 2, stroke: '#fff' }} />
+                                                </AreaChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    ) : (
+                                        <div className="tot-dashboard-empty-chart">
+                                            <ReceiptText size={22} aria-hidden="true" />
+                                            <div>
+                                                <strong>Ainda sem pagamentos confirmados</strong>
+                                                <span>Assim que o primeiro pagamento for confirmado, a receita diária aparece aqui.</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </article>
 
-                                <div className="admin-chart-card glass">
-                                    <div className="card-header">
-                                        <h3><PieChart size={20} className="text-pink-500" /> Distribuição por Categoria</h3>
+                                <article className="tot-dashboard-card tot-dashboard-category-card">
+                                    <div className="tot-dashboard-card-heading">
+                                        <div>
+                                            <span className="tot-eyebrow">Atividade paga</span>
+                                            <h2><CarFront size={18} aria-hidden="true" /> Por tipo de serviço</h2>
+                                            <p>Pagamentos confirmados por categoria.</p>
+                                        </div>
+                                        <span className="tot-dashboard-heading-icon" aria-hidden="true"><Activity size={18} /></span>
                                     </div>
-                                    <div className="chart-container" style={{ height: 300 }}>
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <PieChart>
-                                                <Pie
-                                                    data={analytics.categoryStats}
-                                                    innerRadius={60}
-                                                    outerRadius={100}
-                                                    paddingAngle={5}
-                                                    dataKey="value"
-                                                >
-                                                    {analytics.categoryStats.map((entry, index) => (
-                                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                    ))}
-                                                </Pie>
-                                                <Tooltip />
-                                                <Legend verticalAlign="bottom" height={36} />
-                                            </PieChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                </div>
-                            </div>
+                                    {paidActivityTotal > 0 ? (
+                                        <div className="tot-dashboard-category-body">
+                                            <div className="tot-dashboard-donut">
+                                                <ResponsiveContainer width="100%" height="100%">
+                                                    <PieChart>
+                                                        <Pie data={categoryStats} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius="62%" outerRadius="88%" paddingAngle={3} stroke="none">
+                                                            {categoryStats.map((item, index) => (
+                                                                <Cell key={item.name} fill={CATEGORY_COLORS[index % CATEGORY_COLORS.length]} />
+                                                            ))}
+                                                        </Pie>
+                                                    </PieChart>
+                                                </ResponsiveContainer>
+                                                <span><strong>{formatNumber(paidActivityTotal)}</strong><small>pagamentos</small></span>
+                                            </div>
+                                            <div className="tot-dashboard-category-legend">
+                                                {categoryStats.map((item, index) => (
+                                                    <div key={item.name}>
+                                                        <span>
+                                                            <i style={{ backgroundColor: CATEGORY_COLORS[index % CATEGORY_COLORS.length] }} aria-hidden="true" />
+                                                            {item.name}
+                                                        </span>
+                                                        <strong>{formatNumber(item?.value)}</strong>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="tot-dashboard-empty-chart">
+                                            <Activity size={22} aria-hidden="true" />
+                                            <div>
+                                                <strong>Ainda sem atividade paga</strong>
+                                                <span>A distribuição por serviço aparece após o primeiro pagamento confirmado.</span>
+                                            </div>
+                                        </div>
+                                    )}
+                                </article>
+                            </section>
 
+                            <section className="tot-dashboard-lower-grid" aria-label="Atividade recente">
+                                <article className="tot-dashboard-card tot-dashboard-trips-card">
+                                    <div className="tot-dashboard-card-heading">
+                                        <div>
+                                            <span className="tot-eyebrow">Operação recente</span>
+                                            <h2><History size={18} aria-hidden="true" /> Últimas corridas</h2>
+                                            <p>Pedidos registados mais recentemente.</p>
+                                        </div>
+                                        <button type="button" className="tot-dashboard-text-link" onClick={() => goTo('trips')}>
+                                            Ver corridas <ArrowUpRight size={15} aria-hidden="true" />
+                                        </button>
+                                    </div>
+                                    {recentTrips.length > 0 ? (
+                                        <div className="tot-dashboard-table-wrap">
+                                            <table className="tot-dashboard-trips-table">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Cliente e percurso</th>
+                                                        <th>Motorista</th>
+                                                        <th>Estado</th>
+                                                        <th>Valor</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {recentTrips.map(trip => {
+                                                        const status = TRIP_STATUS[trip.status] || { label: trip.status || 'Sem estado', tone: 'waiting' }
+                                                        const client = trip.profiles_trips_client_idToprofiles?.full_name || 'Cliente não identificado'
+                                                        const driver = trip.profiles_trips_driver_idToprofiles?.full_name || 'Aguarda motorista'
+                                                        const fare = trip.final_fare ?? trip.estimated_fare ?? 0
+                                                        return (
+                                                            <tr key={trip.id}>
+                                                                <td>
+                                                                    <strong>{client}</strong>
+                                                                    <span title={trip.origin_address || ''}>
+                                                                        <MapPin size={13} aria-hidden="true" />
+                                                                        {trip.origin_address || 'Origem não registada'}
+                                                                    </span>
+                                                                    <span title={trip.dest_address || ''}>
+                                                                        <Route size={13} aria-hidden="true" />
+                                                                        {trip.dest_address || 'Destino não registado'}
+                                                                    </span>
+                                                                </td>
+                                                                <td><span className="tot-dashboard-driver-name">{driver}</span></td>
+                                                                <td><span className={`status-pill status-pill--${status.tone}`}>{status.label}</span></td>
+                                                                <td><strong className="tot-dashboard-fare">{formatKz(fare)}</strong></td>
+                                                            </tr>
+                                                        )
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <div className="tot-dashboard-empty-list">
+                                            <Route size={20} aria-hidden="true" />
+                                            <span>Ainda sem corridas registadas.</span>
+                                        </div>
+                                    )}
+                                </article>
+
+                                <aside className="tot-dashboard-card tot-dashboard-activity-card">
+                                    <div className="tot-dashboard-card-heading">
+                                        <div>
+                                            <span className="tot-eyebrow">Administração</span>
+                                            <h2><Clock3 size={18} aria-hidden="true" /> Atividade recente</h2>
+                                            <p>Últimas ações registadas no painel.</p>
+                                        </div>
+                                    </div>
+                                    <div className="tot-dashboard-activity-list">
+                                        {auditLogs.length > 0 ? auditLogs.map(log => {
+                                            const { label, tone } = describeAuditAction(log.action)
+                                            return (
+                                                <div className="tot-dashboard-activity-row" key={log.id || `${log.created_at}-${log.action}`}>
+                                                    <span className={`tot-dashboard-activity-mark tot-dashboard-activity-mark--${tone}`} aria-hidden="true" />
+                                                    <div>
+                                                        <strong>{label}</strong>
+                                                        <span>{log.profiles?.full_name || 'Administrador'} · {formatDateTime(log.created_at)}</span>
+                                                    </div>
+                                                </div>
+                                            )
+                                        }) : (
+                                            <div className="tot-dashboard-empty-list">
+                                                <Clock3 size={20} aria-hidden="true" />
+                                                <span>Sem ações administrativas recentes.</span>
+                                            </div>
+                                        )}
+                                    </div>
+                                    <button type="button" className="tot-dashboard-text-link tot-dashboard-audit-link" onClick={() => goTo('auditlogs')}>
+                                        Abrir registo de auditoria <ArrowUpRight size={15} aria-hidden="true" />
+                                    </button>
+                                </aside>
+                            </section>
                         </div>
                     )
                 )}
 
-                {view === 'drivers' && <Drivers onBack={() => setView('overview')} />}
-                {view === 'clients' && <Clients onBack={() => setView('overview')} />}
-                {view === 'pricing' && <Pricing onBack={() => setView('overview')} />}
-                {view === 'trips' && <Trips onBack={() => setView('overview')} />}
-                {view === 'liveops' && <LiveOps onBack={() => setView('overview')} />}
-                {view === 'invoices' && <Invoices onBack={() => setView('overview')} />}
-                {view === 'payments' && <Payments onBack={() => setView('overview')} />}
-                {view === 'auditlogs' && <AuditLogs onBack={() => setView('overview')} />}
-                {view === 'configs' && <Configs onBack={() => setView('overview')} />}
-
-                {view !== 'overview' && !['drivers', 'clients', 'pricing', 'trips', 'liveops', 'invoices', 'payments', 'auditlogs', 'configs'].includes(view) && (
-                    <div className="under-construction py-20 text-center text-slate-400">
-                        <Settings size={48} className="mx-auto mb-4 animate-spin-slow" />
-                        <h2>Módulo {view} em desenvolvimento...</h2>
-                        <button className="btn-primary mt-4" onClick={() => setView('overview')}>Voltar para Dashboard</button>
-                    </div>
-                )}
+                {view === 'drivers' && <Drivers onBack={() => goTo('overview')} />}
+                {view === 'clients' && <Clients onBack={() => goTo('overview')} />}
+                {view === 'pricing' && <Pricing onBack={() => goTo('overview')} />}
+                {view === 'trips' && <Trips onBack={() => goTo('overview')} />}
+                {view === 'liveops' && <LiveOps onBack={() => goTo('overview')} />}
+                {view === 'invoices' && <Invoices onBack={() => goTo('overview')} />}
+                {view === 'payments' && <Payments onBack={() => goTo('overview')} />}
+                {view === 'auditlogs' && <AuditLogs onBack={() => goTo('overview')} />}
+                {view === 'configs' && <Configs onBack={() => goTo('overview')} />}
             </main>
         </div>
     )

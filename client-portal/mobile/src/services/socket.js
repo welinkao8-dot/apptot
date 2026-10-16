@@ -1,7 +1,8 @@
 import { io } from 'socket.io-client';
+import mobileUrls from '../config/mobileUrls';
 
-// Configuração padrão para USB (adb reverse tcp:3004 tcp:3004)
-export const SOCKET_URL = 'http://localhost:3004';
+// Fallback local apenas para debug com adb reverse; produção recebe URL do workflow.
+export const SOCKET_URL = mobileUrls.getMobileUrl(process.env.TOT_CLIENT_SOCKET_URL, __DEV__ ? 'http://localhost:3004' : '');
 
 const socket = io(SOCKET_URL, {
     autoConnect: false,

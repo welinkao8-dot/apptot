@@ -70,6 +70,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required and must use host db}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       HERE_ROUTING_API_KEY: ${HERE_ROUTING_API_KEY:?HERE_ROUTING_API_KEY is required for quotes}
+      HERE_MAP_API_KEY: ${HERE_MAP_API_KEY:?HERE_MAP_API_KEY is required for browser maps}
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?ALLOWED_ORIGINS is required}
     ports:
       - "${CLIENT_API_HOST_PORT:-3001}:3001"
@@ -126,7 +127,7 @@ services:
         PORTAL_PATH: client-portal/frontend
         VITE_API_URL: ${CLIENT_API_URL}
         VITE_SOCKET_URL: ${DRIVER_API_SOCKET_URL}
-        VITE_HERE_API_KEY: ${HERE_API_KEY}
+        VITE_HERE_API_KEY: ${HERE_MAP_API_KEY:?HERE_MAP_API_KEY is required for browser maps}
 
   driver-portal:
     build:
@@ -136,7 +137,7 @@ services:
         PORTAL_PATH: driver-portal/frontend
         VITE_API_URL: ${DRIVER_API_URL}
         VITE_SOCKET_URL: ${DRIVER_API_SOCKET_URL}
-        VITE_HERE_API_KEY: ${HERE_API_KEY}
+        VITE_HERE_API_KEY: ${HERE_MAP_API_KEY:?HERE_MAP_API_KEY is required for browser maps}
 
   # --- INSTITUTIONAL ---
   landing-page:

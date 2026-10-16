@@ -20,10 +20,10 @@ import {
     Image as ImageIcon,
     X
 } from 'lucide-react'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
+import { isPricingServiceDirty, normalizePricingService } from '../services/pricingForm.js'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 export default function Pricing({ onBack }) {
     const [services, setServices] = useState([])
@@ -32,6 +32,9 @@ export default function Pricing({ onBack }) {
     const [showModal, setShowModal] = useState(false)
     const [editingService, setEditingService] = useState(null)
     const [uploading, setUploading] = useState(false)
+    const [formError, setFormError] = useState('')
+    const [servicesError, setServicesError] = useState('')
+    const [originalService, setOriginalService] = useState(null)
 
     const initialServiceState = {
         name: '',
@@ -56,12 +59,13 @@ export default function Pricing({ onBack }) {
     const fetchServices = async () => {
         try {
             setLoading(true)
-            const res = await axios.get(`${API_URL}/admin/configs`)
-            setServices(Array.isArray(res.data) ? res.data : [])
+            const res = await adminApi.get('/admin/configs')
+            if (!Array.isArray(res.data)) throw new Error('Resposta inválida ao carregar serviços')
+            setServices(res.data.map(normalizePricingService))
+            setServicesError('')
         } catch (error) {
             console.error('Error fetching services:', error)
-            toast.error('Erro ao carregar serviços')
-            setServices([])
+            setServicesError('Erro ao carregar serviços. Verifique a ligação e tente novamente.')
         } finally {
             setLoading(false)
         }
@@ -69,18 +73,29 @@ export default function Pricing({ onBack }) {
 
     const handleSave = async (e) => {
         e.preventDefault()
+        let payload
+        try {
+            payload = normalizePricingService(editingService)
+            setFormError('')
+        } catch (error) {
+            setFormError(error.message)
+            return
+        }
+
         try {
             setSaving(true)
             if (editingService.id) {
-                await axios.post(`${API_URL}/admin/services/${editingService.id}`, editingService)
+                await adminApi.post(`/admin/services/${editingService.id}`, payload)
                 toast.success('Serviço atualizado com sucesso!')
             } else {
-                await axios.post(`${API_URL}/admin/services`, editingService)
+                await adminApi.post('/admin/services', payload)
                 toast.success('Serviço criado com sucesso!')
             }
             setShowModal(false)
             fetchServices()
         } catch (error) {
+            const message = error.response?.data?.message || 'Erro ao salvar serviço. Corrija o problema e tente novamente.'
+            setFormError(Array.isArray(message) ? message.join(', ') : message)
             toast.error('Erro ao salvar serviço')
         } finally {
             setSaving(false)
@@ -91,7 +106,7 @@ export default function Pricing({ onBack }) {
         if (!window.confirm('Tem certeza que deseja excluir este serviço?')) return
         try {
             setSaving(true)
-            await axios.post(`${API_URL}/admin/services/${id}/delete`)
+            await adminApi.post(`/admin/services/${id}/delete`)
             toast.success('Serviço excluído com sucesso!')
             fetchServices()
         } catch (error) {
@@ -102,13 +117,22 @@ export default function Pricing({ onBack }) {
     }
 
     const openCreateModal = () => {
-        setEditingService(initialServiceState)
+        setFormError('')
+        setOriginalService({ ...initialServiceState })
+        setEditingService({ ...initialServiceState })
         setShowModal(true)
     }
 
     const openEditModal = (service) => {
+        setFormError('')
+        setOriginalService({ ...service })
         setEditingService({ ...service })
         setShowModal(true)
+    }
+
+    const closeModal = () => {
+        if (isPricingServiceDirty(originalService, editingService) && !window.confirm('Descartar as alterações não guardadas?')) return
+        setShowModal(false)
     }
 
     const handleFileUpload = async (e) => {
@@ -120,7 +144,7 @@ export default function Pricing({ onBack }) {
 
         try {
             setUploading(true)
-            const res = await axios.post(`${API_URL}/admin/upload`, formData, {
+            const res = await adminApi.post('/admin/upload', formData, {
                 headers: {
                     'Content-Type': 'multipart/form-data'
                 }
@@ -160,6 +184,12 @@ export default function Pricing({ onBack }) {
                 </div>
             </div>
 
+            {servicesError && !loading && (
+                <div role="alert" className="pricing-info-alert glass mt-6">
+                    <p>{servicesError}</p>
+                    <button className="btn-text" onClick={fetchServices}>TENTAR NOVAMENTE</button>
+                </div>
+            )}
             {loading ? (
                 <div className="pricing-grid">
                     {[1, 2, 3].map(i => <div key={i} className="pricing-group-card skeleton h-96"></div>)}
@@ -216,17 +246,17 @@ export default function Pricing({ onBack }) {
             )}
 
             {showModal && (
-                <div className="modal-overlay" onClick={() => setShowModal(false)}>
+                <div className="modal-overlay" onClick={closeModal}>
                     <div className="modal-content glass-modal wide-modal animate-pop-in" onClick={e => e.stopPropagation()}>
                         <div className="modal-header">
                             <div className="title-with-icon">
                                 <div className="icon-badge pink-gradient"><Settings size={20} /></div>
                                 <div>
                                     <h3>{editingService.id ? 'Editar Serviço' : 'Novo Serviço'}</h3>
-                                    <p>Configure as especificações e regras de preço</p>
+                                    <p>{isPricingServiceDirty(originalService, editingService) ? 'Alterações por guardar' : 'Defina o serviço e os valores cobrados'}</p>
                                 </div>
                             </div>
-                            <button className="btn-close-circle" onClick={() => setShowModal(false)}>
+                            <button className="btn-close-circle" onClick={closeModal}>
                                 <X size={20} />
                             </button>
                         </div>
@@ -264,7 +294,7 @@ export default function Pricing({ onBack }) {
                                                     const vehicle_category = e.target.value;
                                                     const routing_mode = /moto|motorcycle|scooter|bike/i.test(vehicle_category)
                                                         ? 'scooter'
-                                                        : /truck|caminh|van/i.test(vehicle_category)
+                                                        : /truck|caminh|camião|camiao|van/i.test(vehicle_category)
                                                             ? 'truck'
                                                             : /car|automovel|automóvel/i.test(vehicle_category)
                                                                 ? 'car'
@@ -332,16 +362,24 @@ export default function Pricing({ onBack }) {
                                             <label>Base (Kz)</label>
                                             <input
                                                 type="number"
+                                                min="0"
+                                                max="99999999.99"
+                                                step="0.01"
                                                 value={editingService.base_fare}
                                                 onChange={e => setEditingService({ ...editingService, base_fare: e.target.value })}
+                                                required
                                             />
                                         </div>
                                         <div className="input-field-premium">
                                             <label>Mínimo (Kz)</label>
                                             <input
                                                 type="number"
+                                                min="0"
+                                                max="99999999.99"
+                                                step="0.01"
                                                 value={editingService.min_fare}
                                                 onChange={e => setEditingService({ ...editingService, min_fare: e.target.value })}
+                                                required
                                             />
                                         </div>
                                     </div>
@@ -350,16 +388,24 @@ export default function Pricing({ onBack }) {
                                             <label>P/ Km (Kz)</label>
                                             <input
                                                 type="number"
+                                                min="0"
+                                                max="99999999.99"
+                                                step="0.01"
                                                 value={editingService.price_per_km}
                                                 onChange={e => setEditingService({ ...editingService, price_per_km: e.target.value })}
+                                                required
                                             />
                                         </div>
                                         <div className="input-field-premium">
                                             <label>P/ Min (Kz)</label>
                                             <input
                                                 type="number"
+                                                min="0"
+                                                max="99999999.99"
+                                                step="0.01"
                                                 value={editingService.price_per_min}
                                                 onChange={e => setEditingService({ ...editingService, price_per_min: e.target.value })}
+                                                required
                                             />
                                         </div>
                                     </div>
@@ -378,16 +424,22 @@ export default function Pricing({ onBack }) {
                                             <label>Valor da Taxa</label>
                                             <input
                                                 type="number"
+                                                min="0"
+                                                max={editingService.platform_fee_type === 'percentage' ? '100' : '99999999.99'}
+                                                step="0.01"
                                                 value={editingService.platform_fee_value}
                                                 onChange={e => setEditingService({ ...editingService, platform_fee_value: e.target.value })}
+                                                required
                                             />
                                         </div>
                                     </div>
                                 </section>
                             </div>
 
+                            {formError && <p role="alert" className="text-red-500 mt-4">{formError}</p>}
+
                             <div className="modal-footer mt-6">
-                                <button type="button" className="btn-text" onClick={() => setShowModal(false)}>CANCELAR</button>
+                                <button type="button" className="btn-text" onClick={closeModal}>Cancelar</button>
                                 <button type="submit" className="btn-approve-big" disabled={saving}>
                                     <Save size={20} /> {saving ? 'A SALVAR...' : editingService.id ? 'ATUALIZAR SERVIÇO' : 'CRIAR SERVIÇO'}
                                 </button>

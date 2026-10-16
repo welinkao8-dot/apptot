@@ -1,0 +1,294 @@
+/* ============================================================================
+   TOT Admin — ponte de compatibilidade
+
+   TEMPORÁRIO. As páginas que ainda não passaram pela migração continuam a
+   usar nomes de utilidade (estilo Tailwind) e alguns nomes antigos de
+   componente. Sem esta folha, essas páginas perderiam a disposição — por
+   exemplo, `flex items-center gap-4` deixaria de alinhar o cabeçalho de
+   módulo e os elementos empilhavam-se.
+
+   Cada regra aqui mapeia um nome antigo num token. Nenhuma introduz uma cor,
+   um tamanho ou um raio novos, e todas usam o piso de 12px para texto.
+
+   Ao terminar a migração de cada página, apague a linha correspondente.
+   Ver o inventário no fim do ficheiro.
+   ========================================================================== */
+
+/* --- Disposição ---------------------------------------------------------- */
+.flex { display: flex; }
+.flex-col { flex-direction: column; }
+.items-center { align-items: center; }
+.gap-1 { gap: var(--tot-space-1); }
+.gap-2 { gap: var(--tot-space-2); }
+.gap-4 { gap: var(--tot-space-4); }
+.gap-10 { gap: var(--tot-space-10); }
+.ml-auto { margin-left: auto; }
+.mx-auto { margin-left: auto; margin-right: auto; }
+.mb-2 { margin-bottom: var(--tot-space-2); }
+.mb-4 { margin-bottom: var(--tot-space-4); }
+.mt-2 { margin-top: var(--tot-space-2); }
+.mt-3 { margin-top: var(--tot-space-3); }
+.mt-4 { margin-top: var(--tot-space-4); }
+.mt-6 { margin-top: var(--tot-space-6); }
+.mt-10 { margin-top: var(--tot-space-10); }
+.px-6 { padding-inline: var(--tot-space-6); }
+.py-40 { padding-block: var(--tot-space-10); }
+.w-full { width: 100%; }
+.w-1\.5 { width: 6px; }
+.h-1\.5 { height: 6px; }
+.h-12 { height: 48px; }
+.h-32 { height: 128px; }
+.h-96 { height: 384px; }
+.max-w-\[150px\] { max-width: 150px; }
+.max-w-\[300px\] { max-width: 300px; }
+.text-right { text-align: right; }
+.text-center { text-align: center; }
+.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rounded-full { border-radius: var(--tot-radius-full); }
+.shadow-2xl { box-shadow: var(--tot-shadow-overlay); }
+.font-semibold { font-weight: var(--tot-weight-semibold); }
+.opacity-10 { opacity: .1; }
+.opacity-50 { opacity: .5; }
+.opacity-70 { opacity: .7; }
+
+/* --- Texto --------------------------------------------------------------- */
+/* Os dois passos abaixo do piso foram elevados para 12px: o painel não tinha
+   texto com menos de 12px e não passa a ter. */
+.text-xs,
+.text-\[10px\],
+.text-\[11px\] { font-size: var(--tot-text-xs); }
+
+.text-slate-400,
+.text-slate-500 { color: var(--tot-muted); }
+.text-pink-500 { color: var(--tot-brand-ink); }
+.text-emerald-500 { color: var(--tot-active); }
+.text-red-400,
+.text-red-500 { color: var(--tot-cancelled); }
+.bg-slate-800 { color: #fff; background: var(--tot-ink); }
+.bg-pink-500 { color: #fff; background: var(--tot-brand-ink); }
+.hover\:bg-red-500\/10:hover { background: var(--tot-cancelled-bg); }
+
+/* Tons usados como etiqueta em várias páginas. */
+.pink { color: var(--tot-brand-ink-soft); background: var(--tot-brand-soft); }
+.emerald { color: var(--tot-active); background: var(--tot-active-bg); }
+.amber { color: var(--tot-pending); background: var(--tot-pending-bg); }
+.pink-gradient { background: var(--tot-brand-deep); }
+.blue-gradient { background: var(--tot-accepted-bg); }
+
+.animate-spin-slow { animation: tot-spin 1.6s linear infinite; }
+.glass { background: var(--tot-surface); }
+.horizontal { min-width: 0; }
+.hover\:bg-red-500\/10:hover { background: var(--tot-cancelled-bg); }
+
+/* --- Nomes antigos de componente ----------------------------------------- */
+.search-bar-premium {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 240px;
+    min-height: 40px;
+    align-items: center;
+    gap: var(--tot-space-2);
+    padding: 0 var(--tot-space-3);
+    color: var(--tot-muted);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-md);
+}
+
+.search-bar-premium input {
+    width: 100%;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-size: var(--tot-text-md);
+}
+
+.filter-select-premium {
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    gap: var(--tot-space-2);
+    padding: 0 var(--tot-space-3);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-md);
+}
+
+.filter-select-premium select {
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-size: var(--tot-text-md);
+}
+
+.actions-inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--tot-space-2);
+}
+
+.btn-pill-sm {
+    display: inline-flex;
+    min-height: 34px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tot-space-1);
+    padding: 0 var(--tot-space-3);
+    color: var(--tot-ink);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-semibold);
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.btn-pill-sm.primary {
+    color: #fff;
+    background: var(--tot-brand-ink);
+    border-color: var(--tot-brand-ink);
+}
+
+.btn-pill-sm.outline {
+    color: var(--tot-brand-ink);
+    background: transparent;
+    border-color: var(--tot-brand-ink);
+}
+
+.btn-pill-sm.soft {
+    color: var(--tot-brand-ink-soft);
+    background: var(--tot-brand-soft);
+    border-color: var(--tot-brand-soft);
+}
+
+.btn-pill-sm.primary:hover { background: var(--tot-brand-deep); }
+.btn-pill-sm.outline:hover { background: var(--tot-brand-soft); }
+.btn-pill-sm.soft:hover { color: #fff; background: var(--tot-brand-ink); }
+
+.record-action-button { min-width: 104px; justify-content: center; }
+
+.btn-text {
+    padding: 0;
+    color: var(--tot-brand-ink);
+    background: none;
+    border: 0;
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-semibold);
+    cursor: pointer;
+}
+
+.btn-text:hover { text-decoration: underline; }
+
+.btn-approve-big,
+.btn-save-pricing {
+    display: inline-flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tot-space-2);
+    padding: 0 var(--tot-space-5);
+    color: #fff;
+    background: var(--tot-active);
+    border: 1px solid var(--tot-active);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-semibold);
+    cursor: pointer;
+}
+
+.btn-approve-big:hover,
+.btn-save-pricing:hover { background: #06613a; border-color: #06613a; }
+
+.btn-download-receipt {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tot-space-2);
+    padding: 0 var(--tot-space-4);
+    color: var(--tot-brand-ink);
+    background: var(--tot-brand-soft);
+    border: 1px solid var(--tot-brand-soft);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-semibold);
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.btn-download-receipt:hover { color: #fff; background: var(--tot-brand-ink); border-color: var(--tot-brand-ink); }
+
+/* Marcação antiga de percurso, ainda usada por Clientes e Motoristas até
+   essas páginas passarem para `.trip-route`. */
+.trip-route-stops {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    gap: var(--tot-space-1);
+    margin-top: var(--tot-space-2);
+}
+
+.trip-address-row {
+    display: flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: var(--tot-space-2);
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+}
+
+.trip-address-row strong {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-xs);
+    font-weight: var(--tot-weight-medium);
+}
+
+.trip-address {
+    min-width: 0;
+    color: var(--tot-ink-2);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+    overflow-wrap: anywhere;
+}
+
+/* Cartão horizontal antigo (perfil e listas de motoristas/clientes). */
+.driver-card-premium {
+    display: grid;
+    min-width: 0;
+    align-items: center;
+    gap: var(--tot-space-4);
+    padding: var(--tot-space-3) var(--tot-space-4);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-md);
+}
+
+.driver-card-premium.horizontal {
+    grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.card-right-section {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--tot-space-3);
+}
+
+/* --------------------------------------------------------------------------
+   Inventário do que ainda usa esta folha (nomes de utilidade):
+     Clients.jsx     actions-inline, card-right-section, flex, text-pink-500
+     Drivers.jsx     actions-inline, card-right-section, flex, driver-card-premium
+     Invoices.jsx    flex, text-*
+     LiveOps.jsx     flex, h-96, opacity-*
+     Payments.jsx    flex, text-*
+     Pricing.jsx     flex, shadow-2xl, btn-*
+     AuditLogs.jsx   flex, text-*
+     Configs.jsx     flex, text-*
+   Páginas já migradas, que não precisam desta folha:
+     Dashboard.jsx, Trips.jsx, Login.jsx
+   -------------------------------------------------------------------------- */

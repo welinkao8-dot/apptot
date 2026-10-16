@@ -75,10 +75,32 @@ def requiredReleaseSigningVariables = [
     'ANDROID_KEY_ALIAS',
     'ANDROID_KEY_PASSWORD',
 ]
-def releaseSigningRequested = gradle.startParameter.taskNames.any { taskName ->
-    taskName.toLowerCase().contains('release')
+def validateReleaseHttpsUrl = { variableName ->
+    def configuredUrl = System.getenv(variableName)?.trim()
+    try {
+        def url = new URI(configuredUrl)
+        def host = url.host?.toLowerCase()
+        def authority = configuredUrl =~ /^[a-z][a-z\d+.-]*:\/\/([^\/?#]*)/i
+        def rawAuthority = authority.matches() ? authority[0][1] : ''
+        def localHost = host == 'localhost' || host?.endsWith('.localhost') || host?.endsWith('.local')
+        def ipAddress = host ==~ /(?:\d{1,3}\.){3}\d{1,3}/ || host?.startsWith('[')
+        def trailingDot = host?.endsWith('.')
+        def encodedAuthority = rawAuthority.contains('%')
+        if (url.scheme?.toLowerCase() != 'https' || !host || !host.contains('.') || trailingDot || encodedAuthority || localHost || ipAddress || url.userInfo) {
+            throw new IllegalArgumentException('URL is not HTTPS with a public domain')
+        }
+    } catch (Exception ignored) {
+        throw new GradleException("${variableName} must be a valid HTTPS URL with a public domain")
+    }
 }
-if (releaseSigningRequested) {
+gradle.taskGraph.whenReady { taskGraph ->
+    // Aggregate tasks such as `assemble` can include release variants without naming one directly.
+    def releaseBuildRequested = taskGraph.allTasks.any { task ->
+        task.name.toLowerCase().contains('release')
+    }
+    if (!releaseBuildRequested) return
+
+    validateReleaseHttpsUrl('TOT_DRIVER_API_URL')
     def missingSigningVariables = requiredReleaseSigningVariables.findAll { variable ->
         !System.getenv(variable)?.trim()
     }
@@ -142,11 +164,13 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            manifestPlaceholders = [usesCleartextTraffic: "true"]
         }
         release {
             // Caution! In production, you need to generate your own keystore file.
             // see https://reactnative.dev/docs/signed-apk-android.
             signingConfig signingConfigs.release
+            manifestPlaceholders = [usesCleartextTraffic: "false"]
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
@@ -172,3 +196,5 @@ dependencies {
         implementation jscFlavor
     }
 }
+
+apply plugin: "com.google.gms.google-services"

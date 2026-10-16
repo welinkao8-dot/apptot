@@ -1,44 +1,108 @@
-import React, { useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
-import { StyleSheet, View } from 'react-native';
+import React, { useRef, useImperativeHandle, forwardRef, useEffect, useState, useCallback } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
-
-const HERE_API_KEY = 'UN2gxhPRLhPhUiKVSUTeegOmmDuDwsFcPsQZhX8V040';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
+import api from '../services/api';
+import { createMapCommandQueue } from '../utils/mapCommandQueue';
+import { shouldAllowHereMapNavigation } from '../utils/mapNavigation';
 
 const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
     const webViewRef = useRef(null);
+    const mapCommandQueueRef = useRef(null);
+    const [mapApiKey, setMapApiKey] = useState(null);
+    const [mapConfigStatus, setMapConfigStatus] = useState('loading');
+    const [webViewStatus, setWebViewStatus] = useState('loading');
+    const [webViewAttempt, setWebViewAttempt] = useState(0);
+    const isMountedRef = useRef(true);
+    const webViewReadyTimerRef = useRef(null);
 
-    const injectJS = (code) => {
-        webViewRef.current?.injectJavaScript(code);
+    if (!mapCommandQueueRef.current) {
+        mapCommandQueueRef.current = createMapCommandQueue((code) => {
+            webViewRef.current?.injectJavaScript(code);
+        });
+    }
+
+    const loadMapConfiguration = useCallback(async () => {
+        setMapConfigStatus('loading');
+        try {
+            const { data } = await api.get('/locations/map-config');
+            if (typeof data?.apiKey !== 'string' || data.apiKey.length === 0) {
+                throw new Error('Map API key is missing');
+            }
+            if (isMountedRef.current) {
+                setMapApiKey(data.apiKey);
+                setMapConfigStatus('ready');
+            }
+        } catch (error) {
+            console.info('Map configuration unavailable:', toSafeErrorLog(error));
+            if (isMountedRef.current) setMapConfigStatus('error');
+        }
+    }, []);
+
+    useEffect(() => {
+        isMountedRef.current = true;
+        loadMapConfiguration();
+        return () => {
+            isMountedRef.current = false;
+            clearTimeout(webViewReadyTimerRef.current);
+        };
+    }, [loadMapConfiguration]);
+
+    const markWebViewFailed = (reason) => {
+        clearTimeout(webViewReadyTimerRef.current);
+        mapCommandQueueRef.current.onLoadStart();
+        if (isMountedRef.current) setWebViewStatus('error');
+        console.info('Map WebView unavailable:', reason);
+    };
+
+    const handleWebViewLoadStart = () => {
+        mapCommandQueueRef.current.onLoadStart();
+        setWebViewStatus('loading');
+        clearTimeout(webViewReadyTimerRef.current);
+        webViewReadyTimerRef.current = setTimeout(() => {
+            markWebViewFailed('ready_timeout');
+        }, 20000);
+    };
+
+    const retryWebView = () => {
+        clearTimeout(webViewReadyTimerRef.current);
+        mapCommandQueueRef.current.onLoadStart();
+        setWebViewStatus('loading');
+        setWebViewAttempt((attempt) => attempt + 1);
+    };
+
+    const injectJS = (code, key) => {
+        mapCommandQueueRef.current.enqueue(code, key);
     };
 
     useImperativeHandle(ref, () => ({
         setUserLocation: (coords) => {
-            injectJS(`window.setUserLocation(${JSON.stringify(coords)});`);
+            injectJS(`window.setUserLocation(${JSON.stringify(coords)});`, 'userLocation');
         },
         setMarkers: (origin, destination) => {
-            injectJS(`window.setMarkers(${JSON.stringify(origin)}, ${JSON.stringify(destination)});`);
+            injectJS(`window.setMarkers(${JSON.stringify(origin)}, ${JSON.stringify(destination)});`, 'markers');
         },
-        drawRoute: (geometry) => {
-            injectJS(`window.drawRoute(${JSON.stringify(geometry)});`);
+        drawRoute: (geometry, padding) => {
+            injectJS(`window.drawRoute(${JSON.stringify(geometry)}, ${JSON.stringify(padding || null)});`, 'route');
         },
         setDriverPosition: (position, isArriving = false) => {
-            injectJS(`window.updateDriverMarker(${JSON.stringify(position)}, ${isArriving});`);
+            injectJS(`window.updateDriverMarker(${JSON.stringify(position)}, ${isArriving});`, 'driver');
         },
         clearDriverPosition: () => {
-            injectJS('window.clearDriverMarker();');
+            injectJS('window.clearDriverMarker();', 'driver');
         },
         clearMap: () => {
-            injectJS(`window.clearMap();`);
+            injectJS('window.clearMap();', 'clearMap');
         },
         centerOn: (coords, zoom = 15) => {
-            injectJS(`window.centerOn(${JSON.stringify(coords)}, ${zoom});`);
+            injectJS(`window.centerOn(${JSON.stringify(coords)}, ${zoom});`, 'center');
         }
     }));
 
 
     const initialCenterJson = JSON.stringify(initialCenter || { lat: -8.839, lng: 13.289 });
 
-    const htmlContent = `
+    const htmlContent = mapApiKey ? `
     <!DOCTYPE html>
     <html lang="pt">
     <head>
@@ -59,7 +123,6 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                 position: absolute; top: 0; left: 0; bottom: 0; right: 0;
                 width: 100%; height: 100%; background: #f1f5f9;
             }
-            .H_copyright { display: none !important; }
         </style>
     </head>
     <body onload="init()">
@@ -91,7 +154,7 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
             function init() {
                 try {
                     platform = new H.service.Platform({ 
-                        apikey: '${HERE_API_KEY}',
+                        apikey: '${mapApiKey.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}',
                         useHTTPS: true 
                     });
                     layers = platform.createDefaultLayers();
@@ -108,6 +171,9 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                             pixelRatio: window.devicePixelRatio || 1
                         }
                     );
+
+                    // Keep HERE's required map attribution and give users basic map controls.
+                    H.ui.UI.createDefault(map, layers, 'pt-PT');
 
                     behavior = new H.mapevents.Behavior(new H.mapevents.MapEvents(map));
                     
@@ -130,7 +196,7 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
 
                     window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'READY' }));
                 } catch (e) {
-                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LOG', msg: 'Init Error: ' + e.message }));
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'INIT_ERROR' }));
                 }
             }
 
@@ -150,32 +216,31 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                 markersGroup = new H.map.Group();
 
                 if (o) {
-                    const icon = new H.map.Icon(makePinSvg('#E91E63', false), { anchor: { x: 30, y: 55 } });
+                    const icon = new H.map.Icon(makePinSvg('#3B82F6', false), { anchor: { x: 30, y: 55 } });
                     activeMarkers.origin = new H.map.Marker(o, { icon });
                     markersGroup.addObject(activeMarkers.origin);
                 }
                 if (d) {
-                    const icon = new H.map.Icon(makePinSvg('#10b981', false), { anchor: { x: 30, y: 55 } });
+                    const icon = new H.map.Icon(makePinSvg('#E91E63', false), { anchor: { x: 30, y: 55 } });
                     activeMarkers.dest = new H.map.Marker(d, { icon });
                     markersGroup.addObject(activeMarkers.dest);
                 }
                 
                 map.addObject(markersGroup);
+                window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LOG', msg: 'Markers rendered: origin=' + Boolean(o) + ', destination=' + Boolean(d) }));
 
                 if (o && d) {
                     const bounds = markersGroup.getBoundingBox();
                     if (bounds) {
-                        map.getViewModel().setLookAtData({ 
-                            bounds: bounds,
-                            padding: { top: 140, bottom: 140, left: 80, right: 80 }
-                        }, true);
+                        map.getViewPort().setPadding(80, 48, 80, 48);
+                        map.getViewModel().setLookAtData({ bounds: bounds }, true);
                     }
                 } else if (o) {
                     map.setCenter(o, true);
                 }
             };
 
-            window.drawRoute = (data) => {
+            window.drawRoute = (data, padding) => {
                 try {
                     if (routeGroup) map.removeObject(routeGroup);
                     if (!data) return;
@@ -189,6 +254,7 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                     }
 
                     if (!lineString || lineString.getPointCount() === 0) return;
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LOG', msg: 'Route decoded: ' + lineString.getPointCount() + ' points' }));
 
                     const routeLine = new H.map.Polyline(lineString, {
                         style: { strokeColor: '#E91E63', lineWidth: 6, lineCap: 'round', lineJoin: 'round' }
@@ -200,13 +266,17 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                     
                     const bounds = routeGroup.getBoundingBox();
                     if (bounds) {
-                        map.getViewModel().setLookAtData({ 
-                            bounds: bounds,
-                            padding: { top: 140, bottom: 140, left: 80, right: 80 }
-                        }, true);
+                        const viewportPadding = padding || { top: 80, right: 48, bottom: 80, left: 48 };
+                        map.getViewPort().setPadding(
+                            viewportPadding.top,
+                            viewportPadding.right,
+                            viewportPadding.bottom,
+                            viewportPadding.left,
+                        );
+                        map.getViewModel().setLookAtData({ bounds: bounds }, true);
                     }
                 } catch (e) {
-                    console.error('drawRoute Error:', e.message);
+                    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'LOG', msg: 'drawRoute Error: ' + (e?.message || 'unknown error') }));
                 }
             };
 
@@ -245,19 +315,36 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
         </script>
     </body>
     </html>
-    `;
+    ` : null;
 
     return (
         <View style={styles.container}>
-            <WebView
+            {htmlContent && webViewStatus === 'error' ? <View style={styles.loadingContainer}>
+                <Text style={styles.errorTitle}>Não foi possível carregar o mapa</Text>
+                <Text style={styles.loadingText}>Verifique a ligação à internet e tente novamente.</Text>
+                <Pressable accessibilityRole="button" onPress={retryWebView} style={styles.retryButton}>
+                    <Text style={styles.retryButtonText}>Tentar novamente</Text>
+                </Pressable>
+            </View> : htmlContent ? <WebView
+                key={webViewAttempt}
                 ref={webViewRef}
-                originWhitelist={['*']}
+                originWhitelist={['https://www.here.com', 'https://*.here.com', 'https://*.hereapi.com']}
                 source={{ html: htmlContent, baseUrl: 'https://www.here.com' }}
                 style={styles.webview}
+                onLoadStart={handleWebViewLoadStart}
+                onError={(event) => markWebViewFailed(`load_error_${event.nativeEvent?.code ?? 'unknown'}`)}
+                onHttpError={(event) => markWebViewFailed(`http_${event.nativeEvent?.statusCode ?? 'unknown'}`)}
+                onShouldStartLoadWithRequest={(request) => shouldAllowHereMapNavigation(request.url)}
                 onMessage={(e) => {
                     try {
                         const d = JSON.parse(e.nativeEvent.data);
-                        if (d.type === 'READY' && onMapReady) onMapReady();
+                        if (d.type === 'READY') {
+                            clearTimeout(webViewReadyTimerRef.current);
+                            mapCommandQueueRef.current.onReady();
+                            setWebViewStatus('ready');
+                            onMapReady?.();
+                        }
+                        if (d.type === 'INIT_ERROR') markWebViewFailed('init_error');
                         if (d.type === 'MAP_TAP' && onMapTap) {
                             onMapTap({ lat: d.lat, lng: d.lng }); // Correctly propagating tap
                         }
@@ -266,16 +353,30 @@ const HereMap = forwardRef(({ initialCenter, onMapReady, onMapTap }, ref) => {
                 }}
                 javaScriptEnabled={true}
                 domStorageEnabled={true}
-                mixedContentMode="always"
-                allowFileAccess={true}
-            />
+                mixedContentMode="never"
+                allowFileAccess={false}
+            /> : mapConfigStatus === 'error' ? <View style={styles.loadingContainer}>
+                <Text style={styles.errorTitle}>Não foi possível carregar o mapa</Text>
+                <Text style={styles.loadingText}>Verifique a ligação à internet e tente novamente.</Text>
+                <Pressable accessibilityRole="button" onPress={loadMapConfiguration} style={styles.retryButton}>
+                    <Text style={styles.retryButtonText}>Tentar novamente</Text>
+                </Pressable>
+            </View> : <View style={styles.loadingContainer}>
+                <ActivityIndicator color="#E91E63" />
+                <Text style={styles.loadingText}>A carregar o mapa…</Text>
+            </View>}
         </View>
     );
 });
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f1f5f9' },
-    webview: { flex: 1, backgroundColor: 'transparent' }
+    webview: { flex: 1, backgroundColor: 'transparent' },
+    loadingContainer: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 },
+    loadingText: { color: '#64748B', fontSize: 14, textAlign: 'center', paddingHorizontal: 24 },
+    errorTitle: { color: '#0F172A', fontSize: 16, fontWeight: '600', textAlign: 'center' },
+    retryButton: { backgroundColor: '#E91E63', borderRadius: 10, paddingHorizontal: 18, paddingVertical: 11 },
+    retryButtonText: { color: '#FFFFFF', fontWeight: '600' },
 });
 
 export default HereMap;

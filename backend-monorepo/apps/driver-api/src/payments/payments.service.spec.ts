@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 
 describe('PaymentsService cash settlement', () => {
@@ -15,6 +15,29 @@ describe('PaymentsService cash settlement', () => {
 
     await expect(service.confirmCashPayment('trip-a', 'driver-a', '950.00')).rejects.toBeInstanceOf(ForbiddenException);
     expect(tx.trip_payments.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('rejects cash confirmation when the client already cancelled the trip', async () => {
+    const tx = {
+      trips: { findUnique: jest.fn().mockResolvedValue({ ...trip, status: 'cancelled' }) },
+      trip_payments: { findUnique: jest.fn(), updateMany: jest.fn() },
+    };
+    const service = new PaymentsService({ $transaction: jest.fn(callback => callback(tx)) } as never);
+
+    await expect(service.confirmCashPayment('trip-a', 'driver-a', '950.00')).rejects.toBeInstanceOf(BadRequestException);
+    expect(tx.trip_payments.findUnique).not.toHaveBeenCalled();
+    expect(tx.trip_payments.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('rejects confirmation when the completed trip has no payment record', async () => {
+    const tx = {
+      trips: { findUnique: jest.fn().mockResolvedValue(trip) },
+      trip_payments: { findUnique: jest.fn().mockResolvedValue(null), updateMany: jest.fn() },
+    };
+    const service = new PaymentsService({ $transaction: jest.fn(callback => callback(tx)) } as never);
+
+    await expect(service.confirmCashPayment('trip-a', 'driver-a', '950.00')).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.trip_payments.updateMany).not.toHaveBeenCalled();
   });
 
   it('rejects a collected amount that differs from the server amount', async () => {
@@ -63,6 +86,18 @@ describe('PaymentsService cash settlement', () => {
     };
     const service = new PaymentsService({ $transaction: jest.fn(callback => callback(tx)) } as never);
     await expect(service.confirmCashPayment('trip-a', 'driver-a', '950.00')).resolves.toEqual(confirmed);
+    expect(tx.trip_payments.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('does not treat a retry with a conflicting amount as idempotent', async () => {
+    const confirmed = { ...pending, status: 'confirmed', confirmed_by: 'driver-a' };
+    const tx = {
+      trips: { findUnique: jest.fn().mockResolvedValue(trip) },
+      trip_payments: { findUnique: jest.fn().mockResolvedValue(confirmed), updateMany: jest.fn() },
+    };
+    const service = new PaymentsService({ $transaction: jest.fn(callback => callback(tx)) } as never);
+
+    await expect(service.confirmCashPayment('trip-a', 'driver-a', '949.99')).rejects.toBeInstanceOf(BadRequestException);
     expect(tx.trip_payments.updateMany).not.toHaveBeenCalled();
   });
 

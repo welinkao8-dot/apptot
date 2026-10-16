@@ -65,10 +65,37 @@ def requiredReleaseSigningVariables = [
     'ANDROID_KEY_ALIAS',
     'ANDROID_KEY_PASSWORD',
 ]
-def releaseSigningRequested = gradle.startParameter.taskNames.any { taskName ->
-    taskName.toLowerCase().contains('release')
+def validateReleaseUrl = { variableName ->
+    def configuredUrl = System.getenv(variableName)?.trim()
+    try {
+        def url = new URI(configuredUrl)
+        def host = url.host?.toLowerCase()
+        def authority = configuredUrl =~ /^[a-z][a-z\d+.-]*:\/\/([^\/?#]*)/i
+        def rawAuthority = authority.matches() ? authority[0][1] : ''
+        def allowedSchemes = variableName == 'TOT_CLIENT_SOCKET_URL' ? ['https', 'wss'] : ['https']
+        def localHost = host == 'localhost' || host?.endsWith('.localhost') || host?.endsWith('.local')
+        def ipAddress = host ==~ /(?:\d{1,3}\.){3}\d{1,3}/ || host?.startsWith('[')
+        def trailingDot = host?.endsWith('.')
+        def encodedAuthority = rawAuthority.contains('%')
+        if (!allowedSchemes.contains(url.scheme?.toLowerCase()) || !host || !host.contains('.') || trailingDot || encodedAuthority || localHost || ipAddress || url.userInfo) {
+            throw new IllegalArgumentException('URL is not secure with a public domain')
+        }
+    } catch (Exception ignored) {
+        def allowedSchemes = variableName == 'TOT_CLIENT_SOCKET_URL' ? 'HTTPS or WSS' : 'HTTPS'
+        throw new GradleException("${variableName} must be a valid ${allowedSchemes} URL with a public domain")
+    }
 }
-if (releaseSigningRequested) {
+gradle.taskGraph.whenReady { taskGraph ->
+    // Android aggregate tasks such as `assemble` do not contain “release” themselves.
+    // Inspect the resolved graph so every task that builds a release variant is guarded.
+    def releaseBuildRequested = taskGraph.allTasks.any { task ->
+        task.name.toLowerCase().contains('release')
+    }
+    if (!releaseBuildRequested) return
+
+    validateReleaseUrl('TOT_CLIENT_API_URL')
+    validateReleaseUrl('TOT_CLIENT_SOCKET_URL')
+
     def missingSigningVariables = requiredReleaseSigningVariables.findAll { variable ->
         !System.getenv(variable)?.trim()
     }

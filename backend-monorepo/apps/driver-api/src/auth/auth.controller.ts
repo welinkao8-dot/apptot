@@ -1,8 +1,10 @@
-import { BadRequestException, Body, Controller, Get, Post, UseGuards, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Post, UseGuards, UnauthorizedException, ValidationPipe, ForbiddenException } from '@nestjs/common';
 import { AuthService } from './auth.service';
 import { PrismaService } from '@app/database';
 import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
 import type { AuthUser } from '@app/auth';
+import { DriverChangePasswordDto, DriverCheckPhoneDto, DriverLoginDto, DriverRegisterDto, DriverUpdateDocsDto, DriverUpdateProfileDto } from './auth.dto';
+import { validateDriverDocumentImage } from './driver-document-validation';
 
 @Controller('auth')
 export class AuthController {
@@ -12,7 +14,7 @@ export class AuthController {
     ) { }
 
     @Post('login')
-    async login(@Body() body) {
+    async login(@Body() body: DriverLoginDto) {
         const user = await this.authService.validateUser(body.phone, body.password);
         if (!user) {
             throw new UnauthorizedException('Credenciais inválidas');
@@ -21,7 +23,7 @@ export class AuthController {
     }
 
     @Post('register')
-    async register(@Body() body) {
+    async register(@Body() body: DriverRegisterDto) {
         try {
             return await this.authService.register(body);
         } catch {
@@ -30,41 +32,33 @@ export class AuthController {
     }
 
     @Post('check-phone')
-    async checkPhone(@Body() body) {
-        try {
-            const profile = await this.prisma.profiles.findFirst({
-                where: {
-                    phone: String(body.phone).trim()
-                }
-            });
-
-            return { exists: !!profile };
-        } catch {
-            return { exists: false };
-        }
+    async checkPhone(@Body() body: DriverCheckPhoneDto) {
+        const profile = await this.prisma.profiles.findFirst({
+            where: { phone: body.phone }
+        });
+        return { exists: !!profile };
     }
 
     @Post('update-docs')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('driver')
-    async updateDocs(@Body() body, @CurrentUser() user: AuthUser) {
-        try {
-            const { bi_frente, bi_verso, carta } = body;
-
-            await this.prisma.drivers.update({
-                where: { id: user.sub },
-                data: {
-                    doc_bi_frente: bi_frente,
-                    doc_bi_verso: bi_verso,
-                    doc_carta_conducao: carta,
-                    status: 'pending' // Change from pending_docs to pending (awaiting admin approval)
-                }
-            });
-
-            return { success: true };
-        } catch {
-            throw new BadRequestException('Não foi possível atualizar os documentos.');
+    async updateDocs(@Body(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true })) body: DriverUpdateDocsDto, @CurrentUser() user: AuthUser) {
+        if (![body.bi_frente, body.bi_verso, body.carta].every(validateDriverDocumentImage)) {
+            throw new BadRequestException('Cada documento deve ser uma imagem JPEG, PNG ou WebP válida com até 8 MB.');
         }
+        const result = await this.prisma.drivers.updateMany({
+            where: { id: user.sub, status: { in: ['pending_docs', 'pending'] } },
+            data: {
+                doc_bi_frente: body.bi_frente,
+                doc_bi_verso: body.bi_verso,
+                doc_carta_conducao: body.carta,
+                status: 'pending',
+            },
+        });
+        if (result.count !== 1) {
+            throw new ForbiddenException('A conta já não está à espera de documentos.');
+        }
+        return { success: true };
     }
 
     @Get('me')
@@ -89,7 +83,7 @@ export class AuthController {
     @Post('update-profile')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('driver')
-    async updateProfile(@Body() body, @CurrentUser() user: AuthUser) {
+    async updateProfile(@Body() body: DriverUpdateProfileDto, @CurrentUser() user: AuthUser) {
         try {
             const { full_name, email, address } = body;
             const updatedUser = await this.authService.updateProfile(user.sub, { full_name, email, address });
@@ -102,7 +96,7 @@ export class AuthController {
     @Post('change-password')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('driver')
-    async changePassword(@Body() body, @CurrentUser() user: AuthUser) {
+    async changePassword(@Body() body: DriverChangePasswordDto, @CurrentUser() user: AuthUser) {
         try {
             const { currentPassword, newPassword } = body;
             return await this.authService.changePassword(user.sub, { currentPassword, newPassword });

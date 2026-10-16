@@ -2,14 +2,33 @@ import React, { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
 import Toast from 'react-native-toast-message';
+import { NativeModules, Platform } from 'react-native';
+import messaging from '@react-native-firebase/messaging';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
+import { clearNativeLocationSession, syncNativeLocationSession } from '../services/nativeLocationSession';
+import mobileUrls from '../config/mobileUrls';
+import { registerDriverPushToken, removeDriverPushToken } from '../services/driverPushNotifications';
 
 export const AuthContext = createContext();
 
 // CONFIGURAÇÃO DA API
-// IMPORTANTE: Emulador usa 10.0.2.2 para acessar localhost do PC
+// Fallback local apenas para debug; produção recebe URL pública do workflow.
 // Dispositivo físico Wi-Fi precisa do IP da LAN (ex: 10.140.244.1)
 // Para testar via cabo USB use 'adb reverse tcp:3004 tcp:3004'
-export const API_URL = 'http://localhost:3004';
+export const API_URL = mobileUrls.getMobileUrl(process.env.TOT_DRIVER_API_URL, __DEV__ ? 'http://localhost:3004' : '');
+const { LocationModule } = NativeModules;
+
+const syncNativeLocationUpload = async (driver, sessionToken) => {
+    const result = await syncNativeLocationSession({
+        locationModule: LocationModule,
+        user: driver,
+        token: sessionToken,
+        apiUrl: API_URL,
+    });
+    result.errors.forEach((error) => {
+        console.error('Could not synchronize native location session', toSafeErrorLog(error));
+    });
+};
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
@@ -21,6 +40,31 @@ export const AuthProvider = ({ children }) => {
         loadStorageData();
     }, []);
 
+    useEffect(() => {
+        if (!token || Platform.OS !== 'android') return undefined;
+
+        let active = true;
+        const pushApi = axios.create({ baseURL: API_URL, headers: { Authorization: `Bearer ${token}` } });
+        const saveToken = async (fcmToken) => {
+            try {
+                if (active) await registerDriverPushToken({ token: fcmToken, platform: 'android', api: pushApi });
+            } catch {
+                console.warn('Push notification registration could not be synchronized.');
+            }
+        };
+
+        const instance = messaging();
+        instance.getToken().then(saveToken).catch(() => {
+            console.warn('Firebase could not provide a push token.');
+        });
+        const unsubscribe = instance.onTokenRefresh(saveToken);
+
+        return () => {
+            active = false;
+            unsubscribe();
+        };
+    }, [token]);
+
     const loadStorageData = async () => {
         try {
             const storedToken = await AsyncStorage.getItem('@tot_token');
@@ -28,12 +72,17 @@ export const AuthProvider = ({ children }) => {
 
             if (storedToken && storedUser) {
                 setToken(storedToken);
-                setUser(JSON.parse(storedUser));
+                const parsedUser = JSON.parse(storedUser);
+                setUser(parsedUser);
                 // Configurar header padrão para o axios
                 axios.defaults.headers.common['Authorization'] = `Bearer ${storedToken}`;
+                await syncNativeLocationUpload(parsedUser, storedToken);
+            } else {
+                await clearNativeLocationSession(LocationModule);
             }
         } catch (e) {
-            console.error('Failed to load auth data', e);
+            console.error('Failed to load auth data', toSafeErrorLog(e));
+            await clearNativeLocationSession(LocationModule);
         } finally {
             setLoading(false);
         }
@@ -44,7 +93,7 @@ export const AuthProvider = ({ children }) => {
             const response = await axios.post(`${API_URL}/auth/check-phone`, { phone });
             return { exists: response.data.exists, error: null };
         } catch (err) {
-            console.error('Check phone error', err);
+            console.error('Check phone error', toSafeErrorLog(err));
             return { exists: false, error: err.response?.data?.message || 'Erro ao conectar com servidor' };
         }
     };
@@ -65,6 +114,7 @@ export const AuthProvider = ({ children }) => {
             setToken(token);
             setUser(driver);
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            await syncNativeLocationUpload(driver, token);
 
             Toast.show({
                 type: 'success',
@@ -73,7 +123,7 @@ export const AuthProvider = ({ children }) => {
             });
             return { success: true };
         } catch (error) {
-            console.error('Login error:', error);
+            console.error('Login error:', toSafeErrorLog(error));
             const msg = error.response?.data?.message || 'Erro ao conectar com servidor';
             Toast.show({
                 type: 'error',
@@ -95,25 +145,25 @@ export const AuthProvider = ({ children }) => {
             setToken(token);
             setUser(driver);
             axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+            await syncNativeLocationUpload(driver, token);
 
             return { success: true, driver };
         } catch (err) {
-            console.error('Sign up error', err);
+            console.error('Sign up error', toSafeErrorLog(err));
             return { success: false, error: err.response?.data?.message || 'Erro ao realizar cadastro' };
         }
     };
 
     const updateDocs = async (docData) => {
         try {
-            // Include driverId from current user context if not passed, but usually purely doc data implies current user
-            // Web implementation sends { ...docData, driverId: user.id }
-            const payload = { ...docData, driverId: user.id };
+            // The authenticated JWT identifies the driver; never send a client-controlled owner ID.
+            const payload = { ...docData };
             console.log('Sending docs:', Object.keys(payload));
 
             const response = await axios.post(`${API_URL}/auth/update-docs`, payload);
 
             // Merge updates into local user state
-            const updatedUser = { ...user, status: 'pending', ...docData };
+            const updatedUser = { ...user, status: 'pending' };
             // Note: documents are large base64 strings, maybe don't store them all in AsyncStorage user object if not needed?
             // Web stores them. driver details.
 
@@ -122,21 +172,33 @@ export const AuthProvider = ({ children }) => {
 
             return { success: true };
         } catch (err) {
-            console.error('Update docs error', err);
+            console.error('Update docs error', toSafeErrorLog(err));
             return { success: false, error: err.response?.data?.message || 'Erro ao enviar documentos' };
         }
     };
 
     const logout = async () => {
-        try {
-            await AsyncStorage.removeItem('@tot_token');
-            await AsyncStorage.removeItem('@tot_user');
-            setToken(null);
-            setUser(null);
-            delete axios.defaults.headers.common['Authorization'];
-        } catch (e) {
-            console.error('Logout error', e);
+        if (Platform.OS === 'android') {
+            try {
+                const instance = messaging();
+                const pushApi = axios.create({ baseURL: API_URL, headers: { Authorization: `Bearer ${token}` } });
+                await removeDriverPushToken({ token: await instance.getToken(), api: pushApi, messaging: instance });
+            } catch {
+                console.warn('Push notification token cleanup could not be synchronized.');
+            }
         }
+        const cleanupErrors = await clearNativeLocationSession(LocationModule);
+        const storageResults = await Promise.allSettled([
+            AsyncStorage.removeItem('@tot_token'),
+            AsyncStorage.removeItem('@tot_user'),
+        ]);
+        cleanupErrors.forEach((error) => console.error('Native location cleanup error', toSafeErrorLog(error)));
+        storageResults.filter((result) => result.status === 'rejected').forEach((result) => {
+            console.error('Auth storage cleanup error', toSafeErrorLog(result.reason));
+        });
+        setToken(null);
+        setUser(null);
+        delete axios.defaults.headers.common['Authorization'];
     };
 
     return (

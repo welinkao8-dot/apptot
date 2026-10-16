@@ -23,13 +23,15 @@ import {
     XCircle,
     Truck,
     Calendar,
-    CreditCard,
+    Banknote,
     X
 } from 'lucide-react-native';
 import colors from '../theme/colors';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 import Toast from 'react-native-toast-message';
+import { toSafeErrorLog } from '../utils/safeErrorLog';
+import { getReceiptPaymentSummary } from '../utils/receiptSummary';
 
 export default function DeliveriesScreen({ navigation }) {
     const { user } = useAuth();
@@ -37,6 +39,7 @@ export default function DeliveriesScreen({ navigation }) {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [receiptDelivery, setReceiptDelivery] = useState(null);
+    const receiptSummary = getReceiptPaymentSummary(receiptDelivery);
     const [filter, setFilter] = useState('all');
 
     useEffect(() => {
@@ -55,7 +58,7 @@ export default function DeliveriesScreen({ navigation }) {
             });
             setDeliveries(response.data);
         } catch (error) {
-            console.error('Error loading deliveries:', error);
+            console.error('Error loading deliveries:', toSafeErrorLog(error));
             Toast.show({ type: 'error', text1: 'Erro', text2: 'Não foi possível carregar as entregas' });
         } finally {
             setLoading(false);
@@ -134,7 +137,7 @@ export default function DeliveriesScreen({ navigation }) {
                         style={styles.receiptBtn}
                         onPress={() => setReceiptDelivery(item)}
                     >
-                        <Text style={styles.receiptBtnText}>Recibo</Text>
+                        <Text style={styles.receiptBtnText}>Resumo</Text>
                         <ChevronRight size={14} color={colors.primary} />
                     </TouchableOpacity>
                 </View>
@@ -216,7 +219,7 @@ export default function DeliveriesScreen({ navigation }) {
                 <View style={styles.modalOverlay}>
                     <View style={styles.receiptCard}>
                         <View style={styles.receiptPinkHeader}>
-                            <Text style={styles.receiptHeaderText}>DETALHES DA ENTREGA</Text>
+                            <Text style={styles.receiptHeaderText}>RESUMO DA ENTREGA</Text>
                             <TouchableOpacity style={styles.closeReceipt} onPress={() => setReceiptDelivery(null)}>
                                 <X size={24} color="#FFF" />
                             </TouchableOpacity>
@@ -266,17 +269,9 @@ export default function DeliveriesScreen({ navigation }) {
 
                             <View style={styles.receiptSection}>
                                 <Text style={styles.receiptLabel}>PAGAMENTO</Text>
-                                <View style={styles.fareRow}>
-                                    <Text style={styles.fareLabel}>Preço Base</Text>
-                                    <Text style={styles.fareVal}>Kz {(Number(receiptDelivery?.final_fare || receiptDelivery?.estimated_fare) * 0.8).toLocaleString()}</Text>
-                                </View>
-                                <View style={styles.fareRow}>
-                                    <Text style={styles.fareLabel}>Taxas TOT</Text>
-                                    <Text style={styles.fareVal}>Kz {(Number(receiptDelivery?.final_fare || receiptDelivery?.estimated_fare) * 0.2).toLocaleString()}</Text>
-                                </View>
                                 <View style={[styles.fareRow, { marginTop: 10 }]}>
-                                    <Text style={styles.totalLabel}>Total Pago</Text>
-                                    <Text style={styles.totalVal}>Kz {Number(receiptDelivery?.final_fare || receiptDelivery?.estimated_fare).toLocaleString()}</Text>
+                                    <Text style={styles.totalLabel}>{receiptSummary.amountLabel}</Text>
+                                    <Text style={styles.totalVal}>Kz {receiptSummary.amount.toLocaleString()}</Text>
                                 </View>
                             </View>
 
@@ -285,8 +280,8 @@ export default function DeliveriesScreen({ navigation }) {
                             <View style={styles.receiptSection}>
                                 <Text style={styles.receiptLabel}>MÉTODO DE PAGAMENTO</Text>
                                 <View style={styles.paymentMethodRow}>
-                                    <CreditCard size={18} color={colors.primary} />
-                                    <Text style={styles.paymentMethodText}>Carteira TOT / Dinheiro</Text>
+                                    <Banknote size={18} color={colors.primary} />
+                                    <Text style={styles.paymentMethodText}>{receiptSummary.paymentLabel}</Text>
                                 </View>
                             </View>
 

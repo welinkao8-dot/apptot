@@ -1,0 +1,312 @@
+/* ============================================================================
+   TOT Admin — controlos
+   Botões, busca, filtros, separadores e avisos.
+   Uma só ação primária por ecrã. A superfície preenchida usa --tot-brand-ink
+   (5,87:1 com branco); --tot-brand fica reservada para marcas, rails e
+   decoração, onde não contém texto.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Botões
+   -------------------------------------------------------------------------- */
+.tot-btn {
+    display: inline-flex;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tot-space-2);
+    padding: 0 var(--tot-space-4);
+    color: var(--tot-ink);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-semibold);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: background-color .14s ease, border-color .14s ease, color .14s ease;
+}
+
+.tot-btn:hover {
+    border-color: var(--tot-muted-2);
+}
+
+.tot-btn:disabled,
+.tot-btn[aria-disabled='true'] {
+    opacity: .55;
+    cursor: not-allowed;
+}
+
+.tot-btn--primary {
+    color: #fff;
+    background: var(--tot-brand-ink);
+    border-color: var(--tot-brand-ink);
+}
+
+.tot-btn--primary:hover {
+    background: var(--tot-brand-deep);
+    border-color: var(--tot-brand-deep);
+}
+
+.tot-btn--soft {
+    color: var(--tot-brand-ink-soft);
+    background: var(--tot-brand-soft);
+    border-color: var(--tot-brand-soft);
+}
+
+.tot-btn--soft:hover {
+    color: #fff;
+    background: var(--tot-brand-ink);
+    border-color: var(--tot-brand-ink);
+}
+
+.tot-btn--ghost {
+    color: var(--tot-ink-2);
+    background: transparent;
+    border-color: transparent;
+}
+
+.tot-btn--ghost:hover {
+    color: var(--tot-ink);
+    background: var(--tot-surface-2);
+    border-color: var(--tot-line);
+}
+
+.tot-btn--success {
+    color: #fff;
+    background: var(--tot-active);
+    border-color: var(--tot-active);
+}
+
+.tot-btn--success:hover {
+    background: #06613a;
+    border-color: #06613a;
+}
+
+.tot-btn--danger {
+    color: var(--tot-cancelled);
+    background: var(--tot-cancelled-bg);
+    border-color: var(--tot-cancelled-bg);
+}
+
+.tot-btn--danger:hover {
+    color: #fff;
+    background: var(--tot-cancelled);
+    border-color: var(--tot-cancelled);
+}
+
+.tot-btn--sm {
+    min-height: 34px;
+    padding: 0 var(--tot-space-3);
+    font-size: var(--tot-text-sm);
+}
+
+.tot-btn--lg {
+    min-height: 48px;
+    padding: 0 var(--tot-space-5);
+    font-size: var(--tot-text-xl);
+}
+
+.tot-btn--block {
+    width: 100%;
+}
+
+.tot-btn--icon {
+    width: 40px;
+    min-height: 40px;
+    padding: 0;
+}
+
+.tot-btn--icon.tot-btn--sm {
+    width: 34px;
+    min-height: 34px;
+}
+
+/* --------------------------------------------------------------------------
+   Busca e filtros
+   -------------------------------------------------------------------------- */
+.tot-search {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 240px;
+    min-height: 40px;
+    align-items: center;
+    gap: var(--tot-space-2);
+    padding: 0 var(--tot-space-3);
+    color: var(--tot-muted);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-md);
+}
+
+.tot-search svg {
+    flex: 0 0 auto;
+}
+
+.tot-search input {
+    width: 100%;
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-size: var(--tot-text-md);
+}
+
+.tot-search input::placeholder {
+    color: var(--tot-muted-2);
+}
+
+.tot-search:focus-within {
+    border-color: var(--tot-brand-ink);
+    box-shadow: 0 0 0 3px var(--tot-focus-ring);
+}
+
+.filter-group {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--tot-space-2);
+}
+
+.tot-select {
+    display: flex;
+    min-height: 40px;
+    align-items: center;
+    gap: var(--tot-space-2);
+    padding: 0 var(--tot-space-3);
+    color: var(--tot-ink);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-md);
+}
+
+.tot-select select {
+    min-width: 0;
+    background: transparent;
+    border: 0;
+    outline: none;
+    font-size: var(--tot-text-md);
+    font-weight: var(--tot-weight-medium);
+}
+
+/* --------------------------------------------------------------------------
+   Separadores de estado (Rubber Segment, tema claro)
+   O componente trazia um tema escuro (track #27272a, tinta #fafafa) e recebia
+   as cores por estilo inline no JSX. Passa a ser tematizado aqui.
+   -------------------------------------------------------------------------- */
+.trip-filter-control {
+    margin: 0 0 var(--tot-space-4);
+}
+
+/* O componente traz os valores por omissão já ligados aos tokens
+   (RubberSegment.jsx), por isso aqui só se ajusta o enquadramento. */
+.trip-filter-segment {
+    --rs-min: 88px;
+}
+
+/* --------------------------------------------------------------------------
+   Aviso de falha de carregamento: diz o que aconteceu e dá a saída.
+   -------------------------------------------------------------------------- */
+.tot-alert {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--tot-space-3);
+    margin-bottom: var(--tot-space-4);
+    padding: var(--tot-space-3) var(--tot-space-4);
+    color: var(--tot-pending);
+    background: var(--tot-pending-bg);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-sm);
+    line-height: var(--tot-leading-snug);
+}
+
+/* --------------------------------------------------------------------------
+   Paginação
+   -------------------------------------------------------------------------- */
+.tot-pagination {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--tot-space-2);
+    margin-top: var(--tot-space-5);
+}
+
+.tot-pagination-button {
+    display: inline-flex;
+    min-width: 34px;
+    min-height: 34px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 var(--tot-space-2);
+    color: var(--tot-ink-2);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-md);
+    font-size: var(--tot-text-sm);
+    font-weight: var(--tot-weight-semibold);
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+
+.tot-pagination-button:hover:not(:disabled) {
+    color: var(--tot-brand-ink);
+    border-color: var(--tot-brand-ink);
+}
+
+.tot-pagination-button:disabled {
+    color: var(--tot-faint);
+    cursor: not-allowed;
+}
+
+.tot-pagination-button.is-current {
+    color: #fff;
+    background: var(--tot-brand-ink);
+    border-color: var(--tot-brand-ink);
+}
+
+.tot-pagination-gap {
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+}
+
+.tot-pagination-status {
+    flex: 1 1 100%;
+    color: var(--tot-muted);
+    font-size: var(--tot-text-sm);
+    text-align: center;
+}
+
+/* --------------------------------------------------------------------------
+   Avisos
+   -------------------------------------------------------------------------- */
+.tot-toast {
+    max-width: 380px;
+    padding: var(--tot-space-3) var(--tot-space-4);
+    color: var(--tot-ink);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-md);
+    box-shadow: var(--tot-shadow-overlay);
+    font-family: var(--tot-font);
+    font-size: var(--tot-text-md);
+}
+
+@media (max-width: 900px) {
+    .header-actions .tot-search {
+        flex: 1 1 100%;
+    }
+
+    .filter-group {
+        width: 100%;
+    }
+
+    .tot-select {
+        width: 100%;
+        justify-content: space-between;
+    }
+}

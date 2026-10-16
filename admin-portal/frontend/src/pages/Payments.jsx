@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { ArrowLeft, RefreshCw, Wallet, CheckCircle2, Clock3, Search } from 'lucide-react'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
+import { buildPaymentsQuery, createRequestSequence, formatSummaryValue, loadFinancePage, normalizePaymentsPage } from '../services/adminFinancePagination'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const STATUS = {
     pending: { label: 'Pendente', color: '#b45309', background: '#fef3c7' },
@@ -12,33 +12,49 @@ const STATUS = {
 
 export default function Payments({ onBack }) {
     const [payments, setPayments] = useState([])
+    const [totalPayments, setTotalPayments] = useState(0)
+    const [summary, setSummary] = useState(null)
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState(null)
     const [search, setSearch] = useState('')
+    const [statusFilter, setStatusFilter] = useState('all')
+    const [currentPage, setCurrentPage] = useState(1)
+    const itemsPerPage = 20
+    const requests = useRef(createRequestSequence())
 
     const fetchPayments = useCallback(async () => {
+        const requestId = requests.current.begin()
         try {
-            const response = await axios.get(`${API_URL}/admin/payments`)
-            setPayments(Array.isArray(response.data) ? response.data : [])
-        } catch {
+            setLoading(true)
+            const query = buildPaymentsQuery({ page: currentPage, pageSize: itemsPerPage, status: statusFilter, search })
+            const page = await loadFinancePage(adminApi, '/admin/payments', query, normalizePaymentsPage)
+            if (!requests.current.isCurrent(requestId)) return
+            setPayments(page.items)
+            setTotalPayments(page.total)
+            setSummary(page.summary)
+            setLoadError(null)
+        } catch (error) {
+            if (!requests.current.isCurrent(requestId)) return
+            setLoadError(error)
             toast.error('Não foi possível carregar a conciliação de pagamentos.')
-        } finally { setLoading(false) }
-    }, [])
+        } finally { if (requests.current.isCurrent(requestId)) setLoading(false) }
+    }, [currentPage, search, statusFilter])
 
     useEffect(() => {
         fetchPayments()
         const interval = setInterval(fetchPayments, 30000)
-        return () => clearInterval(interval)
+        return () => {
+            clearInterval(interval)
+            requests.current.invalidate()
+        }
     }, [fetchPayments])
 
-    const pendingCount = payments.filter(payment => payment.status === 'pending').length
-    const confirmedTotal = payments.filter(payment => payment.status === 'confirmed')
-        .reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
-    const filtered = payments.filter(payment => {
-        const tripId = payment.trip_id || payment.trips?.id || ''
-        const names = [payment.trips?.profiles_trips_client_idToprofiles?.full_name, payment.trips?.profiles_trips_driver_idToprofiles?.full_name, payment.profiles?.full_name]
-            .filter(Boolean).join(' ').toLocaleLowerCase()
-        return tripId.toLocaleLowerCase().includes(search.toLocaleLowerCase()) || names.includes(search.toLocaleLowerCase())
-    })
+    useEffect(() => setCurrentPage(1), [search, statusFilter])
+    const totalPages = Math.ceil(totalPayments / itemsPerPage)
+    useEffect(() => {
+        if (currentPage > Math.max(totalPages, 1)) setCurrentPage(Math.max(totalPages, 1))
+    }, [currentPage, totalPages])
+    const filtered = payments
 
     return (
         <div className="trips-module animate-fade-in">
@@ -51,12 +67,20 @@ export default function Payments({ onBack }) {
             </div>
 
             <div className="admin-stats-grid" style={{ marginTop: 24 }}>
-                <div className="admin-stat-card"><div className="stat-icon amber"><Clock3 size={22} /></div><div className="stat-info"><span className="label">Pendentes</span><span className="value">{pendingCount}</span></div></div>
-                <div className="admin-stat-card"><div className="stat-icon emerald"><CheckCircle2 size={22} /></div><div className="stat-info"><span className="label">Confirmados</span><span className="value">{payments.length - pendingCount}</span></div></div>
-                <div className="admin-stat-card"><div className="stat-icon pink"><Wallet size={22} /></div><div className="stat-info"><span className="label">Cash confirmado</span><span className="value">Kz {confirmedTotal.toLocaleString('pt-AO')}</span></div></div>
+                <div className="admin-stat-card"><div className="stat-icon amber"><Clock3 size={22} /></div><div className="stat-info"><span className="label">Pendentes</span><span className="value">{formatSummaryValue(summary, 'pendingCount', loading)}</span></div></div>
+                <div className="admin-stat-card"><div className="stat-icon emerald"><CheckCircle2 size={22} /></div><div className="stat-info"><span className="label">Confirmados</span><span className="value">{formatSummaryValue(summary, 'confirmedCount', loading)}</span></div></div>
+                <div className="admin-stat-card"><div className="stat-icon pink"><Wallet size={22} /></div><div className="stat-info"><span className="label">Cash confirmado</span><span className="value">{formatSummaryValue(summary, 'confirmedCashTotal', loading, value => `Kz ${value.toLocaleString('pt-AO')}`)}</span></div></div>
             </div>
 
-            <div className="search-bar-premium" style={{ margin: '20px 0', maxWidth: 460 }}><Search size={18} /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar por viagem, cliente ou motorista" /></div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', margin: '20px 0' }}>
+                <div className="search-bar-premium" style={{ maxWidth: 460 }}><Search size={18} /><input maxLength={120} value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar por viagem, cliente ou motorista" /></div>
+                <select className="filter-select-premium" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
+                    <option value="all">Todos os estados</option>
+                    <option value="pending">Pendentes</option>
+                    <option value="confirmed">Confirmados</option>
+                </select>
+                <span style={{ color: '#64748b', fontSize: 13 }}>{totalPayments} pagamentos encontrados</span>
+            </div>
 
             <div style={{ overflowX: 'auto', background: '#fff', border: '1px solid #e2e8f0', borderRadius: 16 }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
@@ -68,18 +92,29 @@ export default function Payments({ onBack }) {
                                 <td style={{ padding: 14 }}>#{(payment.trips?.id || payment.trip_id).slice(0, 8).toUpperCase()}</td>
                                 <td style={{ padding: 14 }}>{payment.trips?.profiles_trips_client_idToprofiles?.full_name || '—'}</td>
                                 <td style={{ padding: 14 }}>{payment.trips?.profiles_trips_driver_idToprofiles?.full_name || '—'}</td>
-                                <td style={{ padding: 14, fontWeight: 700 }}>Kz {Number(payment.amount).toLocaleString('pt-AO')}</td>
+                                <td style={{ padding: 14, fontWeight: 700 }}>Kz {Number.isFinite(Number(payment.amount)) ? Number(payment.amount).toLocaleString('pt-AO') : '—'}</td>
                                 <td style={{ padding: 14 }}>{payment.method === 'cash' ? 'Numerário' : payment.method}</td>
                                 <td style={{ padding: 14 }}><span style={{ color: status.color, background: status.background, padding: '5px 9px', borderRadius: 20 }}>{status.label}</span></td>
                                 <td style={{ padding: 14 }}>{payment.profiles?.full_name || '—'}</td>
                                 <td style={{ padding: 14 }}>{payment.confirmed_at ? new Date(payment.confirmed_at).toLocaleString('pt-AO') : '—'}</td>
                             </tr>
                         })}
-                        {!loading && filtered.length === 0 && <tr><td colSpan="8" style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>Nenhum registo de pagamento encontrado.</td></tr>}
+                        {!loading && loadError && <tr><td colSpan="8" style={{ padding: 28, textAlign: 'center', color: '#b91c1c' }}>
+                            Não foi possível atualizar. {payments.length ? 'A mostrar os últimos dados carregados.' : 'Não há dados anteriores para mostrar.'}
+                            <button type="button" onClick={fetchPayments} style={{ marginLeft: 12 }}>Tentar novamente</button>
+                        </td></tr>}
+                        {!loading && !loadError && filtered.length === 0 && <tr><td colSpan="8" style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>Nenhum registo de pagamento encontrado.</td></tr>}
                         {loading && <tr><td colSpan="8" style={{ padding: 28, textAlign: 'center', color: '#64748b' }}>A carregar pagamentos…</td></tr>}
                     </tbody>
                 </table>
             </div>
+            {!loading && totalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, margin: '24px 0 12px' }}>
+                    <button type="button" onClick={() => setCurrentPage(page => Math.max(1, page - 1))} disabled={currentPage === 1}>Anterior</button>
+                    <span style={{ color: '#64748b', fontSize: 13 }}>Página {currentPage} de {totalPages}</span>
+                    <button type="button" onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))} disabled={currentPage === totalPages}>Seguinte</button>
+                </div>
+            )}
         </div>
     )
 }

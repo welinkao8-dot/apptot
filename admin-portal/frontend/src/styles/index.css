@@ -1,0 +1,19 @@
+/* ============================================================================
+   TOT Admin — ponto de entrada único da camada visual.
+   Importado uma só vez, em src/main.jsx.
+   Substitui os quatro vocabulários que coexistiam antes: Dashboard.css
+   (1 606 linhas de .dashboard-*), AdminSurface.css (1 310 linhas de .tot-*),
+   as ~30 utilidades tipo Tailwind escritas à mão e os 350 estilos inline.
+
+   Ordem obrigatória: tokens primeiro, e nenhum ficheiro posterior pode
+   re-declarar uma regra que um ficheiro anterior tenha ajustado dentro de um
+   media query. As media queries vivem sempre no fim do respetivo ficheiro.
+   ========================================================================== */
+
+@import './tokens.css';
+@import './base.css';
+@import './chrome.css';
+@import './controls.css';
+@import './data.css';
+@import './overlays.css';
+@import './login.css';

@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, UseGuards, ValidationPipe } from '@nestjs/common';
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
-import { RidesGateway } from '../rides/rides.gateway';
+import { InvalidDriverLocationError, RidesGateway } from '../rides/rides.gateway';
 import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
 import type { AuthUser } from '@app/auth';
 import { PaymentsService } from '../payments/payments.service';
+import { UpdateDriverLocationDto } from './dto/update-driver-location.dto';
 
 @Controller('trips')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -19,6 +20,20 @@ export class TripsController {
     @Roles('client')
     create(@Body() createTripDto: CreateTripDto, @CurrentUser() user: AuthUser) {
         return this.tripsService.create(createTripDto, user.sub);
+    }
+
+    @Post('location')
+    @Roles('driver')
+    async updateLocation(
+        @Body(new ValidationPipe({ transform: true, whitelist: true, forbidNonWhitelisted: true })) fix: UpdateDriverLocationDto,
+        @CurrentUser() user: AuthUser,
+    ) {
+        try {
+            return await this.ridesGateway.processDriverLocation(user.sub, fix);
+        } catch (error) {
+            if (error instanceof InvalidDriverLocationError) throw new BadRequestException(error.message);
+            throw error;
+        }
     }
 
     @Get('pending')

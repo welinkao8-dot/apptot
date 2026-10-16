@@ -2,14 +2,17 @@ import axios from 'axios';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { HereRoutingProvider } from './here-routing.provider';
 
-jest.mock('axios', () => ({ get: jest.fn() }));
+jest.mock('axios', () => ({
+  get: jest.fn(),
+  isAxiosError: (error: unknown) => Boolean((error as { isAxiosError?: boolean })?.isAxiosError),
+}));
 
 describe('HereRoutingProvider', () => {
   const originalKey = process.env.HERE_ROUTING_API_KEY;
   const provider = new HereRoutingProvider();
 
   afterEach(() => {
-    jest.clearAllMocks();
+    jest.resetAllMocks();
     if (originalKey === undefined) delete process.env.HERE_ROUTING_API_KEY;
     else process.env.HERE_ROUTING_API_KEY = originalKey;
   });
@@ -43,6 +46,17 @@ describe('HereRoutingProvider', () => {
     expect(axios.get).toHaveBeenCalledWith('https://router.hereapi.com/v8/routes', expect.objectContaining({
       params: expect.objectContaining({ transportMode: 'scooter' }),
     }));
+  });
+
+  it('retries once after a transient DNS resolution failure', async () => {
+    process.env.HERE_ROUTING_API_KEY = 'test-routing-key';
+    jest.mocked(axios.get)
+      .mockRejectedValueOnce(Object.assign(new Error('temporary DNS failure'), { isAxiosError: true, code: 'EAI_AGAIN' }))
+      .mockResolvedValueOnce({ data: { routes: [{ sections: [{ summary: { length: 5400, duration: 720 }, polyline: 'encoded-route' }] }] } } as never);
+
+    await expect(provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }))
+      .resolves.toEqual({ distanceMeters: 5400, durationSeconds: 720, polyline: 'encoded-route' });
+    expect(axios.get).toHaveBeenCalledTimes(2);
   });
 
   it('fails closed when the server routing key is missing', async () => {

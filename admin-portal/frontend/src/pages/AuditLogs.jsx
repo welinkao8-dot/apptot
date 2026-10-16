@@ -1,24 +1,19 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
     ArrowLeft,
     Shield,
     Search,
-    Filter,
     ChevronDown,
     ChevronRight,
     User,
     Bike,
     DollarSign,
-    Trash2,
-    CheckCircle,
-    XCircle,
     RefreshCw,
     Clock
 } from 'lucide-react'
-import axios from 'axios'
-import toast from 'react-hot-toast'
+import adminApi from '../services/adminApi'
+import { buildAuditLogsQuery, createAuditLogRequestSequence, loadAuditLogsPage } from '../services/auditLogsPage'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const ACTION_COLORS = {
     'UPDATE_STATUS_ACTIVE': { bg: '#dcfce7', text: '#15803d', label: 'Ativado' },
@@ -48,48 +43,47 @@ function getActionMeta(action) {
 
 export default function AuditLogs({ onBack }) {
     const [logs, setLogs] = useState([])
+    const [total, setTotal] = useState(0)
     const [loading, setLoading] = useState(true)
+    const [error, setError] = useState(null)
     const [searchTerm, setSearchTerm] = useState('')
-    const [filterAction, setFilterAction] = useState('all')
-    const [filterTarget, setFilterTarget] = useState('all')
+    const [filterAction, setFilterAction] = useState('')
+    const [filterTarget, setFilterTarget] = useState('')
     const [expandedId, setExpandedId] = useState(null)
     const [currentPage, setCurrentPage] = useState(1)
     const itemsPerPage = 15
+    const [refreshVersion, setRefreshVersion] = useState(0)
+    const requests = useRef(null)
+    if (!requests.current) requests.current = createAuditLogRequestSequence()
 
     useEffect(() => {
+        const request = requests.current.begin()
+        const query = buildAuditLogsQuery({
+            page: currentPage,
+            pageSize: itemsPerPage,
+            action: filterAction,
+            target: filterTarget,
+            search: searchTerm,
+        })
+        setLoading(true)
+        setError(null)
+        loadAuditLogsPage(adminApi, query).then(page => {
+            if (!requests.current.isCurrent(request)) return
+            setLogs(page.items)
+            setTotal(page.total)
+        }).catch(() => {
+            if (requests.current.isCurrent(request)) setError('Não foi possível carregar os registos de auditoria.')
+        }).finally(() => {
+            if (requests.current.isCurrent(request)) setLoading(false)
+        })
+        return () => requests.current.invalidate()
+    }, [currentPage, filterAction, filterTarget, searchTerm, refreshVersion])
+
+    const resetFilters = (setter, value) => {
+        setter(value)
         setCurrentPage(1)
-    }, [searchTerm, filterAction, filterTarget])
-
-    useEffect(() => {
-        fetchLogs()
-    }, [])
-
-    const fetchLogs = async () => {
-        try {
-            setLoading(true)
-            const res = await axios.get(`${API_URL}/admin/logs`)
-            setLogs(Array.isArray(res.data) ? res.data : [])
-        } catch (err) {
-            toast.error('Erro ao carregar logs')
-        } finally {
-            setLoading(false)
-        }
     }
-
-    const uniqueActions = [...new Set(logs.map(l => l.action))]
-    const uniqueTargets = [...new Set(logs.map(l => l.target))]
-
-    const filteredLogs = logs.filter(log => {
-        const matchesSearch =
-            (log.target_id || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (log.action || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-            (log.profiles?.full_name || '').toLowerCase().includes(searchTerm.toLowerCase())
-        const matchesAction = filterAction === 'all' || log.action === filterAction
-        const matchesTarget = filterTarget === 'all' || log.target === filterTarget
-        return matchesSearch && matchesAction && matchesTarget
-    })
-    const totalPages = Math.ceil(filteredLogs.length / itemsPerPage)
-    const paginatedLogs = filteredLogs.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+    const totalPages = Math.max(1, Math.ceil(total / itemsPerPage))
     return (
         <div className="trips-module animate-fade-in">
             <div className="module-header-nav">
@@ -99,7 +93,7 @@ export default function AuditLogs({ onBack }) {
                         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Shield size={22} style={{ color: '#e91e63' }} /> Audit Logs
                         </h2>
-                        <p>{filteredLogs.length} registos encontrados</p>
+                        <p>{total} registos encontrados</p>
                     </div>
                 </div>
                 <div className="header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -109,43 +103,41 @@ export default function AuditLogs({ onBack }) {
                             type="text"
                             placeholder="Pesquisar ação, ID ou admin..."
                             value={searchTerm}
-                            onChange={e => setSearchTerm(e.target.value)}
+                            onChange={e => resetFilters(setSearchTerm, e.target.value)}
                         />
                     </div>
-                    <select
+                    <input
+                        type="text"
+                        placeholder="Filtrar ação"
                         value={filterAction}
-                        onChange={e => setFilterAction(e.target.value)}
-                        style={{
-                            padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0',
-                            background: '#fff', fontSize: 13, color: '#334155', cursor: 'pointer'
-                        }}
-                    >
-                        <option value="all">Todas as ações</option>
-                        {uniqueActions.map(a => <option key={a} value={a}>{getActionMeta(a).label}</option>)}
-                    </select>
-                    <select
+                        onChange={e => resetFilters(setFilterAction, e.target.value)}
+                        style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: '#fff', fontSize: 13, color: '#334155' }}
+                    />
+                    <input
+                        type="text"
+                        placeholder="Filtrar alvo"
                         value={filterTarget}
-                        onChange={e => setFilterTarget(e.target.value)}
-                        style={{
-                            padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0',
-                            background: '#fff', fontSize: 13, color: '#334155', cursor: 'pointer'
-                        }}
-                    >
-                        <option value="all">Todos os alvos</option>
-                        {uniqueTargets.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                    <button onClick={fetchLogs} style={{
+                        onChange={e => resetFilters(setFilterTarget, e.target.value)}
+                        style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: '#fff', fontSize: 13, color: '#334155' }}
+                    />
+                    <button onClick={() => setRefreshVersion(version => version + 1)} style={{
                         padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0',
                         background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
                         fontSize: 13, color: '#334155'
                     }}>
-                        <RefreshCw size={14} /> Atualizar
+                        <RefreshCw size={14} /> {loading ? 'A atualizar' : 'Atualizar'}
                     </button>
                 </div>
             </div>
 
             <div style={{ marginTop: 24, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {loading ? (
+                {error && (
+                    <div role="alert" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 18px', borderRadius: 10, background: '#fff7ed', color: '#9a3412' }}>
+                        <span>{error} {logs.length ? 'Os resultados apresentados são da última consulta bem-sucedida.' : ''}</span>
+                        <button onClick={() => setRefreshVersion(version => version + 1)} style={{ border: 0, background: 'transparent', color: 'inherit', fontWeight: 700, cursor: 'pointer' }}>Tentar novamente</button>
+                    </div>
+                )}
+                {loading && logs.length === 0 ? (
                     [1, 2, 3, 4, 5].map(i => (
                         <div key={i} style={{
                             background: '#fff', borderRadius: 14, padding: '18px 24px',
@@ -154,13 +146,13 @@ export default function AuditLogs({ onBack }) {
                             <div style={{ height: 16, background: '#f1f5f9', borderRadius: 6, width: '60%' }} />
                         </div>
                     ))
-                ) : filteredLogs.length === 0 ? (
+                ) : logs.length === 0 && !loading ? (
                     <div style={{ textAlign: 'center', padding: '80px 0', color: '#94a3b8' }}>
                         <Shield size={56} style={{ margin: '0 auto 16px', opacity: 0.2 }} />
                         <p>Nenhum log encontrado.</p>
                     </div>
                 ) : (
-                    paginatedLogs.map(log => {
+                    logs.map(log => {
                         const meta = getActionMeta(log.action)
                         const isExpanded = expandedId === log.id
                         const hasDetails = log.details && Object.keys(log.details).length > 0
@@ -247,71 +239,13 @@ export default function AuditLogs({ onBack }) {
                     })
                 )}
                 {/* Pagination Controls */}
-                {!loading && totalPages > 1 && (() => {
-                    const pages = [];
-                    if (totalPages <= 7) {
-                        for (let i = 1; i <= totalPages; i++) pages.push(i);
-                    } else {
-                        pages.push(1);
-                        if (currentPage > 3) pages.push('...');
-                        const start = Math.max(2, currentPage - 1);
-                        const end = Math.min(totalPages - 1, currentPage + 1);
-                        for (let i = start; i <= end; i++) {
-                            if (pages[pages.length - 1] !== i) pages.push(i);
-                        }
-                        if (currentPage < totalPages - 2) pages.push('...');
-                        if (pages[pages.length - 1] !== totalPages) pages.push(totalPages);
-                    }
-
-                    return (
-                        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24, marginBottom: 12 }}>
-                            <button
-                                onClick={() => setCurrentPage(prev => Math.max(prev - 1, 1))}
-                                disabled={currentPage === 1}
-                                style={{
-                                    padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-                                    background: '#fff', color: currentPage === 1 ? '#cbd5e1' : '#64748b',
-                                    fontWeight: 600, fontSize: 13, cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                Anterior
-                            </button>
-                            {pages.map((page, idx) => {
-                                if (page === '...') {
-                                    return <span key={`dots-${idx}`} style={{ color: '#94a3b8', padding: '0 4px' }}>...</span>;
-                                }
-                                return (
-                                    <button
-                                        key={page}
-                                        onClick={() => setCurrentPage(page)}
-                                        style={{
-                                            width: 36, height: 36, borderRadius: 8, border: 'none',
-                                            background: currentPage === page ? 'linear-gradient(135deg, #e91e63, #c2185b)' : '#f1f5f9',
-                                            color: currentPage === page ? '#fff' : '#64748b',
-                                            fontWeight: 700, fontSize: 13, cursor: 'pointer',
-                                            transition: 'all 0.2s'
-                                        }}
-                                    >
-                                        {page}
-                                    </button>
-                                );
-                            })}
-                            <button
-                                onClick={() => setCurrentPage(prev => Math.min(prev + 1, totalPages))}
-                                disabled={currentPage === totalPages}
-                                style={{
-                                    padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0',
-                                    background: '#fff', color: currentPage === totalPages ? '#cbd5e1' : '#64748b',
-                                    fontWeight: 600, fontSize: 13, cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                                    transition: 'all 0.2s'
-                                }}
-                            >
-                                Seguinte
-                            </button>
-                        </div>
-                    );
-                })()}
+                {!loading && total > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 24, marginBottom: 12 }}>
+                        <button onClick={() => setCurrentPage(page => Math.max(page - 1, 1))} disabled={currentPage <= 1}>Anterior</button>
+                        <span>Página {currentPage} de {totalPages}</span>
+                        <button onClick={() => setCurrentPage(page => Math.min(page + 1, totalPages))} disabled={currentPage >= totalPages}>Seguinte</button>
+                    </div>
+                )}
             </div>
         </div>
     )

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
     ArrowLeft,
     FileText,
@@ -12,10 +12,10 @@ import {
     RefreshCw,
     Receipt
 } from 'lucide-react'
-import axios from 'axios'
+import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
+import { buildInvoicesQuery, buildPaymentsQuery, createRequestSequence, loadFinancePage, normalizeInvoicesPage, normalizePaymentsPage } from '../services/adminFinancePagination'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
 
 const TYPE_META = {
     'ride': { label: 'Corrida', bg: '#dbeafe', text: '#1d4ed8' },
@@ -30,12 +30,19 @@ function getTypeMeta(type) {
 
 export default function Invoices({ onBack }) {
     const [invoices, setInvoices] = useState([])
+    const [totalInvoices, setTotalInvoices] = useState(0)
+    const [invoiceSummary, setInvoiceSummary] = useState(null)
+    const [paymentsSummary, setPaymentsSummary] = useState(null)
+    const [paymentsLoading, setPaymentsLoading] = useState(true)
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [filterType, setFilterType] = useState('all')
     const [selectedInvoice, setSelectedInvoice] = useState(null)
     const [currentPage, setCurrentPage] = useState(1)
     const itemsPerPage = 10
+    const invoicesRequest = useRef(createRequestSequence())
+    const paymentsRequest = useRef(createRequestSequence())
 
     useEffect(() => {
         setCurrentPage(1)
@@ -43,41 +50,63 @@ export default function Invoices({ onBack }) {
 
     useEffect(() => {
         fetchInvoices()
+        return () => invoicesRequest.current.invalidate()
+    }, [currentPage, searchTerm, filterType])
+
+    useEffect(() => {
+        fetchPayments()
+        return () => paymentsRequest.current.invalidate()
     }, [])
 
     const fetchInvoices = async () => {
+        const requestId = invoicesRequest.current.begin()
         try {
             setLoading(true)
-            const res = await axios.get(`${API_URL}/admin/invoices`)
-            setInvoices(Array.isArray(res.data) ? res.data : [])
+            setLoadError(false)
+            const query = buildInvoicesQuery({ page: currentPage, pageSize: itemsPerPage, type: filterType, search: searchTerm })
+            const page = await loadFinancePage(adminApi, '/admin/invoices', query, normalizeInvoicesPage)
+            if (!invoicesRequest.current.isCurrent(requestId)) return
+            setInvoices(page.items)
+            setTotalInvoices(page.total)
+            setInvoiceSummary(page.summary)
         } catch (err) {
-            toast.error('Erro ao carregar faturas')
+            if (!invoicesRequest.current.isCurrent(requestId)) return
+            console.error('Erro ao carregar faturas:', err)
+            setLoadError(true)
             setInvoices([])
+            setTotalInvoices(0)
+            setInvoiceSummary(null)
         } finally {
-            setLoading(false)
+            if (invoicesRequest.current.isCurrent(requestId)) setLoading(false)
         }
     }
 
-    const filteredInvoices = invoices.filter(inv => {
-        const name = inv.profiles?.full_name?.toLowerCase() || ''
-        const id = inv.id?.toLowerCase() || ''
-        const matchesSearch = name.includes(searchTerm.toLowerCase()) || id.includes(searchTerm.toLowerCase())
-        const matchesType = filterType === 'all' || inv.invoice_type === filterType
-        return matchesSearch && matchesType
-    })
+    const fetchPayments = async () => {
+        const requestId = paymentsRequest.current.begin()
+        setPaymentsLoading(true)
+        try {
+            const query = buildPaymentsQuery({ page: 1, pageSize: 1, status: 'all', search: '' })
+            const page = await loadFinancePage(adminApi, '/admin/payments', query, normalizePaymentsPage)
+            if (!paymentsRequest.current.isCurrent(requestId)) return
+            setPaymentsSummary(page.summary)
+        } catch (error) {
+            if (!paymentsRequest.current.isCurrent(requestId)) return
+            console.error('Erro ao carregar o resumo de pagamentos:', error)
+            toast.error('Não foi possível carregar o ledger de pagamentos')
+            setPaymentsSummary(null)
+        } finally {
+            if (paymentsRequest.current.isCurrent(requestId)) setPaymentsLoading(false)
+        }
+    }
 
-    const totalPages = Math.ceil(filteredInvoices.length / itemsPerPage)
-    const paginatedInvoices = filteredInvoices.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
+    const filteredInvoices = invoices
+    const totalPages = Math.ceil(totalInvoices / itemsPerPage)
+    const paginatedInvoices = invoices
+    const uniqueTypes = invoiceSummary?.invoiceTypes || []
 
-    const uniqueTypes = [...new Set(invoices.map(i => i.invoice_type).filter(Boolean))]
-
-    // KPIs
-    const totalAmount = invoices.reduce((s, i) => s + Number(i.amount || 0), 0)
-    const thisMonth = new Date(); thisMonth.setDate(1); thisMonth.setHours(0, 0, 0, 0)
-    const monthlyAmount = invoices
-        .filter(i => new Date(i.created_at) >= thisMonth)
-        .reduce((s, i) => s + Number(i.amount || 0), 0)
-    const monthlyCount = invoices.filter(i => new Date(i.created_at) >= thisMonth).length
+    useEffect(() => {
+        if (currentPage > Math.max(totalPages, 1)) setCurrentPage(Math.max(totalPages, 1))
+    }, [currentPage, totalPages])
 
     return (
         <div className="trips-module animate-fade-in">
@@ -88,7 +117,7 @@ export default function Invoices({ onBack }) {
                         <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                             <Receipt size={22} style={{ color: '#e91e63' }} /> Faturas
                         </h2>
-                        <p>{filteredInvoices.length} faturas encontradas</p>
+                        <p>{totalInvoices} faturas encontradas</p>
                     </div>
                 </div>
                 <div className="header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
@@ -96,6 +125,7 @@ export default function Invoices({ onBack }) {
                         <Search size={18} />
                         <input
                             type="text"
+                            maxLength={120}
                             placeholder="Pesquisar cliente ou ID..."
                             value={searchTerm}
                             onChange={e => setSearchTerm(e.target.value)}
@@ -112,7 +142,7 @@ export default function Invoices({ onBack }) {
                         <option value="all">Todos os tipos</option>
                         {uniqueTypes.map(t => <option key={t} value={t}>{getTypeMeta(t).label}</option>)}
                     </select>
-                    <button onClick={fetchInvoices} style={{
+                    <button onClick={() => { fetchInvoices(); fetchPayments() }} style={{
                         padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0',
                         background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
                         fontSize: 13, color: '#334155'
@@ -123,12 +153,13 @@ export default function Invoices({ onBack }) {
             </div>
 
             {/* KPI Cards */}
-            {!loading && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, marginTop: 24 }}>
+            {!loading && !loadError && invoiceSummary && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 24 }}>
                     {[
-                        { label: 'Total Faturado', value: `Kz ${totalAmount.toLocaleString()}`, icon: <DollarSign size={22} />, color: '#e91e63' },
-                        { label: 'Faturas Este Mês', value: monthlyCount, icon: <Calendar size={22} />, color: '#3b82f6' },
-                        { label: 'Volume Mensal', value: `Kz ${monthlyAmount.toLocaleString()}`, icon: <TrendingUp size={22} />, color: '#10b981' },
+                        { label: 'Valor em recibos emitidos', value: `Kz ${invoiceSummary.receiptTotal.toLocaleString()}`, icon: <FileText size={22} />, color: '#e91e63' },
+                        { label: 'Recibos este mês', value: invoiceSummary.monthlyReceiptCount, icon: <Calendar size={22} />, color: '#3b82f6' },
+                        { label: 'Cash confirmado', value: paymentsLoading ? '…' : paymentsSummary ? `Kz ${paymentsSummary.confirmedCashTotal.toLocaleString()}` : '—', icon: <DollarSign size={22} />, color: '#10b981' },
+                        { label: 'Cash pendente', value: paymentsLoading ? '…' : paymentsSummary ? `Kz ${paymentsSummary.cashPendingTotal.toLocaleString()}` : '—', icon: <TrendingUp size={22} />, color: '#f59e0b' },
                     ].map((kpi, i) => (
                         <div key={i} style={{
                             background: '#fff', borderRadius: 16, padding: '20px 24px',
@@ -159,6 +190,11 @@ export default function Invoices({ onBack }) {
                             <div style={{ height: 16, background: '#f1f5f9', borderRadius: 6, width: '50%' }} />
                         </div>
                     ))
+                ) : loadError ? (
+                    <div role="alert" style={{ textAlign: 'center', padding: '80px 0', color: '#64748b' }}>
+                        <p>Não foi possível carregar as faturas.</p>
+                        <button type="button" onClick={fetchInvoices}>Tentar novamente</button>
+                    </div>
                 ) : filteredInvoices.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '80px 0', color: '#94a3b8' }}>
                         <FileText size={56} style={{ margin: '0 auto 16px', opacity: 0.2 }} />
@@ -166,7 +202,7 @@ export default function Invoices({ onBack }) {
                         <p style={{ fontSize: 13 }}>As faturas são geradas automaticamente ao concluir corridas.</p>
                     </div>
                 ) : (
-                    <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #f1f5f9', overflow: 'hidden' }}>
+                    <div className="invoice-table-wrap" style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #f1f5f9', overflow: 'hidden' }}>
                         {/* Table header */}
                         <div style={{
                             display: 'grid',
@@ -325,6 +361,7 @@ export default function Invoices({ onBack }) {
             {/* Detail modal */}
             {selectedInvoice && (
                 <div
+                    className="invoice-dialog-overlay"
                     style={{
                         position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -333,6 +370,10 @@ export default function Invoices({ onBack }) {
                     onClick={() => setSelectedInvoice(null)}
                 >
                     <div
+                        className="invoice-dialog"
+                        role="dialog"
+                        aria-modal="true"
+                        aria-label={`Fatura ${selectedInvoice.id.substring(0, 8).toUpperCase()}`}
                         style={{
                             background: '#fff', borderRadius: 24, padding: 32,
                             width: 420, maxWidth: '90vw', boxShadow: '0 32px 80px rgba(0,0,0,0.2)'
@@ -354,6 +395,11 @@ export default function Invoices({ onBack }) {
                             ['Cliente', selectedInvoice.profiles?.full_name || 'Desconhecido'],
                             ['Montante', `Kz ${Number(selectedInvoice.amount).toLocaleString()}`],
                             ['Tipo', getTypeMeta(selectedInvoice.invoice_type).label],
+                            ['Pagamento', selectedInvoice.trips?.trip_payment?.status === 'confirmed'
+                                ? `Confirmado · ${selectedInvoice.trips.trip_payment.method}`
+                                : selectedInvoice.trips?.trip_payment?.status === 'pending'
+                                    ? `Pendente · ${selectedInvoice.trips.trip_payment.method}`
+                                    : 'Sem registo de pagamento'],
                             ['Data', new Date(selectedInvoice.created_at).toLocaleString('pt-AO')],
                             ['Corrida', selectedInvoice.trips?.id ? `#${selectedInvoice.trips.id.substring(0, 8).toUpperCase()}` : '—'],
                             ['Origem', selectedInvoice.trips?.origin_address || '—'],

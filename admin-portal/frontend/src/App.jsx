@@ -2,7 +2,6 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import Dashboard from './pages/Dashboard'
 import Login from './pages/Login'
 import { Toaster } from 'react-hot-toast'
-import './index.css'
 
 function AppContent() {
     const { user } = useAuth()
@@ -15,7 +14,7 @@ function AppContent() {
 function App() {
     return (
         <AuthProvider>
-            <Toaster position="top-right" />
+            <Toaster position="top-right" toastOptions={{ className: 'tot-toast' }} />
             <AppContent />
         </AuthProvider>
     )

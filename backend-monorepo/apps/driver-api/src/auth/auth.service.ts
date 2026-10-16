@@ -4,6 +4,8 @@ import { PrismaService } from '@app/database';
 import { validateJwtClaims } from '@app/auth';
 import * as bcrypt from 'bcrypt';
 
+const INVALID_DRIVER_PASSWORD_HASH = '$2b$10$C7qUnuw7LBGMex..UsA/OuOKjk74be2cR3D5mZU9ZdmIcwKzJ9RAS';
+
 @Injectable()
 export class AuthService {
     constructor(
@@ -17,7 +19,17 @@ export class AuthService {
             where: { phone, role: 'driver' }
         });
 
-        if (profile && profile.password_hash && (await bcrypt.compare(pass, profile.password_hash))) {
+        const passwordHash = profile?.password_hash || INVALID_DRIVER_PASSWORD_HASH;
+        let passwordMatches = false;
+        try {
+            passwordMatches = await bcrypt.compare(pass, passwordHash);
+        } catch {
+            // Keep malformed hashes from producing a distinct server error or skipping the comparison path.
+            await bcrypt.compare(pass, INVALID_DRIVER_PASSWORD_HASH);
+            return null;
+        }
+
+        if (profile && profile.password_hash && passwordMatches) {
             // Check for supplementary driver details
             const driverDetails = await this.prisma.drivers.findUnique({
                 where: { id: profile.id as any }
@@ -52,7 +64,7 @@ export class AuthService {
     }
 
     async register(data: any) {
-        const { full_name, phone, email, address, password } = data;
+        const { full_name, phone, email, address, password, vehicle_category } = data;
 
         // Check existing in either table
         const existing = await this.prisma.profiles.findFirst({
@@ -104,6 +116,7 @@ export class AuthService {
                     phone,
                     email,
                     address,
+                    vehicle_category,
                     password: hashedPassword,
                     status: 'pending_docs',
                     is_online: false
@@ -113,6 +126,7 @@ export class AuthService {
                     phone,
                     email,
                     address,
+                    vehicle_category,
                     password: hashedPassword,
                     status: 'pending_docs',
                     is_online: false

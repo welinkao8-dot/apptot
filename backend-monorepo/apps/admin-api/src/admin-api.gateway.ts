@@ -10,19 +10,11 @@ import {
 } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
 import { Server, Socket } from 'socket.io';
-
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || '')
-  .split(',')
-  .map((origin) => origin.trim())
-  .filter(Boolean);
+import { getCorsPolicy } from '@app/auth';
 
 @Injectable()
 @WebSocketGateway({
-  cors: {
-    origin: process.env.NODE_ENV === 'production'
-      ? allowedOrigins
-      : (allowedOrigins.length ? allowedOrigins : true),
-  },
+  cors: getCorsPolicy(),
   namespace: 'admin',
 })
 export class AdminGateway implements OnGatewayConnection, OnGatewayDisconnect {

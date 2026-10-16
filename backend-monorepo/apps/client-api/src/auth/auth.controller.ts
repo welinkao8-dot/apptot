@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { PrismaService } from '@app/database';
 import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
 import type { AuthUser } from '@app/auth';
+import { ChangePasswordDto, CheckPhoneDto, LoginDto, RegisterDto, UpdateProfileDto } from './dto/auth.dto';
 
 @Controller('auth')
 export class AuthController {
@@ -12,7 +13,7 @@ export class AuthController {
     ) { }
 
     @Post('login')
-    async login(@Body() body) {
+    async login(@Body() body: LoginDto) {
         const user = await this.authService.validateUser(body.phone, body.password);
         if (!user) {
             throw new BadRequestException('Credenciais inválidas');
@@ -21,7 +22,7 @@ export class AuthController {
     }
 
     @Post('register')
-    async register(@Body() body) {
+    async register(@Body() body: RegisterDto) {
         try {
             return await this.authService.register(body);
         } catch {
@@ -30,7 +31,7 @@ export class AuthController {
     }
 
     @Post('check-phone')
-    async checkPhone(@Body() body) {
+    async checkPhone(@Body() body: CheckPhoneDto) {
         try {
             const user = await this.prisma.profiles.findFirst({
                 where: { phone: body.phone }
@@ -44,14 +45,14 @@ export class AuthController {
     @Post('change-password')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('client')
-    async changePassword(@Body() body, @CurrentUser() user: AuthUser) {
+    async changePassword(@Body() body: ChangePasswordDto, @CurrentUser() user: AuthUser) {
         return this.authService.changePassword(user.sub, body.oldPassword, body.newPassword);
     }
 
     @Post('update-profile')
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('client')
-    async updateProfile(@Body() body, @CurrentUser() user: AuthUser) {
+    async updateProfile(@Body() body: UpdateProfileDto, @CurrentUser() user: AuthUser) {
         return this.authService.updateProfile(user.sub, { fullName: body.fullName, email: body.email });
     }
 }
