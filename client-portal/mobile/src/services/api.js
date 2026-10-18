@@ -2,8 +2,8 @@ import axios from 'axios';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import mobileUrls from '../config/mobileUrls';
 
-// Fallback local apenas para debug com adb reverse; produção recebe URL do workflow.
-export const API_URL = mobileUrls.getMobileUrl(process.env.TOT_CLIENT_API_URL, __DEV__ ? 'http://localhost:3001' : '');
+// Debug via Metro e release usam produção por padrão; a variável permite override local explícito.
+export const API_URL = mobileUrls.getMobileUrl(process.env.TOT_CLIENT_API_URL, 'https://api.taxitot.com');
 
 const api = axios.create({
     baseURL: API_URL,

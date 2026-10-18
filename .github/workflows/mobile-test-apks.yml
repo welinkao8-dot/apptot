@@ -11,8 +11,8 @@ jobs:
     name: Build customer test APK
     runs-on: ubuntu-latest
     env:
-      TOT_CLIENT_API_URL: ${{ vars.TOT_CLIENT_API_URL }}
-      TOT_CLIENT_SOCKET_URL: ${{ vars.TOT_CLIENT_SOCKET_URL }}
+      TOT_CLIENT_API_URL: https://api.taxitot.com
+      TOT_CLIENT_SOCKET_URL: https://driver-api.taxitot.com
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -57,8 +57,8 @@ jobs:
     name: Build driver test APK
     runs-on: ubuntu-latest
     env:
-      TOT_DRIVER_API_URL: ${{ vars.TOT_DRIVER_API_URL }}
-      TOT_DRIVER_SOCKET_URL: ${{ vars.TOT_DRIVER_SOCKET_URL }}
+      TOT_DRIVER_API_URL: https://driver-api.taxitot.com
+      TOT_DRIVER_SOCKET_URL: https://driver-api.taxitot.com
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

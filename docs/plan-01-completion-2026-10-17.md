@@ -21,7 +21,7 @@
 
 ## Fora do ambiente de produção
 
-`DRIVER_DOCUMENT_RETENTION_DAYS` continua sem valor porque nenhum prazo foi definido/aprovado. Sem essa configuração, a purga automática não apaga documentos; legal hold permanece respeitado. Definir esse valor antes de ativar a retenção em produção.
+**Decisão actualizada em 18/10/2026:** a purga automática de documentos de motorista foi retirada dos requisitos do plano. Não configurar `DRIVER_DOCUMENT_RETENTION_DAYS`; os documentos devem permanecer guardados. A capacidade técnica opcional existente não faz parte do deploy aprovado e só deve ser reavaliada mediante pedido explícito do proprietário.
 
 Nenhuma migration foi aplicada no Coolify. Não fiz APK, deploy, nem teste no telefone.
 

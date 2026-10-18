@@ -1,7 +1,7 @@
 import io from 'socket.io-client';
 import mobileUrls from '../config/mobileUrls';
 
-export const SOCKET_URL = mobileUrls.getMobileUrl(process.env.TOT_DRIVER_SOCKET_URL, __DEV__ ? 'http://localhost:3004' : '');
+export const SOCKET_URL = mobileUrls.getMobileUrl(process.env.TOT_DRIVER_SOCKET_URL, 'https://driver-api.taxitot.com');
 
 let socket = null;
 let socketToken = null;

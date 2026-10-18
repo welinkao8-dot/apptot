@@ -11,10 +11,8 @@ import { registerDriverPushToken, removeDriverPushToken } from '../services/driv
 
 export const AuthContext = createContext();
 
-// CONFIGURAÇÃO DA API
-// Fallback local apenas para debug; produção recebe URL pública do workflow.
-// Dispositivo físico Wi-Fi precisa do IP da LAN (ex: 10.140.244.1)
-export const API_URL = mobileUrls.getMobileUrl(process.env.TOT_DRIVER_API_URL, __DEV__ ? 'http://localhost:3004' : '');
+// Debug via Metro e release usam produção por padrão; a variável permite override local explícito.
+export const API_URL = mobileUrls.getMobileUrl(process.env.TOT_DRIVER_API_URL, 'https://driver-api.taxitot.com');
 const { LocationModule } = NativeModules;
 
 const syncNativeLocationUpload = async (driver, sessionToken) => {

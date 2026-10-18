@@ -54,15 +54,15 @@ Para os aplicativos móveis, não usas o Coolify.
 2. Vai ao teu GitHub em **Actions**.
 3. Seleciona o build concluído e faz download do APK no fundo da página.
 
-## 5. Checklist operacional do próximo Deploy — estado em 18/10/2026
+## 5. Checklist operacional de deploy — estado actualizado em 18/10/2026
 
-Esta secção substitui a sequência simplificada de “Deploy Final” acima. É um registo para executar quando o deploy for autorizado; **nada desta checklist foi executado no Coolify**. Os domínios `taxitot.com` são apenas exemplos antigos: confirmar os domínios reais antes de preencher o painel.
+Esta checklist regista os requisitos operacionais do rollout. O estado real do deploy de 18/10/2026 está em “Resultado do rollout Coolify — 18/10/2026”, no fim deste guia. Os domínios `taxitot.com` são exemplos antigos; usar os domínios já existentes no Coolify e confirmar os restantes antes de novas alterações.
 
 ### A. Preparar o recurso no Coolify
 
 - [ ] Confirmar o repositório, branch/revisão aprovada, `Base Directory` `./` e Compose `./docker-compose.prod.yml`.
 - [ ] Confirmar que os serviços Compose são reconhecidos: `db`, `migrate`, `admin-api`, `client-api`, `driver-api`, `admin-portal`, `client-portal`, `driver-portal`, `landing-page` e `landing-frota`.
-- [ ] Antes da release, guardar backup consistente da base PostgreSQL e dos ficheiros persistidos (`tot_data` e `admin_uploads`); confirmar como restaurar.
+- [~] Backup não realizado neste rollout por decisão explícita do proprietário, que confirmou não haver dados relevantes; o reset da base apagou o schema/dados anteriores. Para futuras releases com dados a preservar, manter backup/restore.
 - [ ] Confirmar que `db` usa PostgreSQL 15 e que `DATABASE_URL` liga ao host Compose `db` (não `localhost`) com a base/utilizador correctos. Codificar caracteres especiais da password na URL.
 
 ### B. Configurar variáveis de ambiente no Coolify
@@ -75,10 +75,10 @@ Guardar os valores secretos directamente no gestor de variáveis do Coolify; nun
 - [ ] `ALLOWED_ORIGINS` — origens exactas dos portais que chamam APIs, separadas por vírgula, com esquema e host, sem caminhos nem wildcard; usar os domínios finais HTTPS.
 - [ ] `ADMIN_API_URL` — URL pública HTTPS da Admin API; também é usada para formar URLs públicas dos uploads e no build do portal admin.
 - [ ] `CLIENT_API_URL`, `DRIVER_API_URL`, `DRIVER_API_SOCKET_URL` — URLs públicas HTTPS finais usadas pelos portais. Socket.IO deve funcionar por HTTPS/WSS.
-- [ ] `HERE_MAP_API_KEY` — chave de mapa/autocomplete entregue aos browsers e usada pelo Client API; restringir por origens/aplicações, APIs e quotas. É pública no bundle; nunca usar aqui a chave privada de routing.
-- [ ] `HERE_ROUTING_API_KEY` — chave privada usada apenas no Client API para calcular rotas/cotações.
-- [ ] `FIREBASE_SERVICE_ACCOUNT_JSON` — segredo JSON da service account no Driver API. Antes, activar Firebase Cloud Messaging API HTTP v1 no projecto `apptot-angola`; a service account e a role `roles/firebasecloudmessaging.admin` já estão registadas como configuradas. Guardar o JSON somente como variável secreta no Coolify.
-- [ ] `DRIVER_DOCUMENT_RETENTION_DAYS` — **decisão pendente do proprietário**. Definir período aprovado antes de activar a purga automática; não inventar valor. Sem a variável, os documentos não são automaticamente expirados/purgados.
+- [x] `HERE_MAP_API_KEY` — chave pública configurada no Runtime do `client-api`; nunca usar aqui a chave privada de routing. Restrições HERE por origem/API não foram activadas nem validadas.
+- [x] `HERE_ROUTING_API_KEY` — chave privada distinta configurada no Runtime do `client-api`; valor omitido.
+- [x] `FIREBASE_SERVICE_ACCOUNT_JSON` — segredo JSON configurado no Runtime do `driver-api`; não registar o valor. A entrega real de notificações continua por testar.
+- [x] Purga automática de documentos de motorista: fora da política e do escopo de deploy. Não configurar `DRIVER_DOCUMENT_RETENTION_DAYS`; os documentos devem permanecer guardados. Só alterar esta decisão mediante pedido explícito do proprietário.
 - [ ] `API_RATE_LIMIT_LIMIT` e `API_RATE_LIMIT_TTL_MS` — opcionais; defaults actuais 120 pedidos por rota/IP em 60.000 ms.
 - [ ] `TRUST_PROXY_HOPS` — definir conforme o número real de proxies entre cliente e API. Não adivinhar: `0` é o default e, atrás do proxy, pode fazer todos os clientes parecerem o mesmo IP. Rate limit usa memória por processo; não escalar réplicas sem store partilhado ou decisão explícita sobre limites independentes.
 - [ ] Rever portas host `ADMIN_API_HOST_PORT`/`CLIENT_API_HOST_PORT`/`DRIVER_API_HOST_PORT` se forem publicadas; defaults Compose 3000/3001/3004. Evitar conflitos e preferir encaminhamento dos domínios pelo proxy Coolify às portas internas 3000/3001/3004.
@@ -98,27 +98,58 @@ Configurar no serviço correspondente o domínio final e a porta interna do cont
 ### D. Aplicar migrations antes de actualizar as APIs
 
 - [ ] Conferir backup e identificar a base alvo antes de qualquer comando.
-- [ ] Consultar o estado de migrations Prisma na base de produção e aplicar somente migrations pendentes, pela ordem do Prisma, usando o job `migrate` do Compose (`docker compose -f docker-compose.prod.yml run --rm migrate`, ou execução equivalente de one-off release command no Coolify contra o mesmo ambiente).
-- [ ] Não executar `prisma db push`. Não iniciar rollout das APIs se o job de migrations falhar.
-- [ ] Confirmar especialmente a prontidão da migration `20261017130000_private_driver_documents`: a validação local encontrou dois documentos legados inválidos e fez rollback sem alterar os dados. Inspeccionar/regularizar esses registos com procedimento aprovado e backup antes de repetir em produção.
-- [ ] Verificar o resultado e `prisma migrate status`. As migrations no repositório incluem `20261015220000_driver_fcm_tokens`, `20261017110000_normalize_service_fee_types`, `20261017130000_private_driver_documents` e `20261018100000_admin_auth_sessions`; aplicar apenas as ainda pendentes, junto com quaisquer outras que o estado da base indicar.
+- [x] Migrations aplicadas uma vez no primeiro rollout com reset autorizado, após `migrate deploy` retornar P3005; não repetir o reset. Para futuras releases, usar migrations incrementais e verificar o histórico.
+- [x] Não foi executado `prisma db push`. O reset foi manual e específico para este banco sem dados a preservar; não repetir em futuros deploys.
+- [x] A migration `20261017130000_private_driver_documents` foi aplicada no reset da base vazia. Os dois registos legados pertenciam ao schema anterior removido no reset; não foram inspeccionados nem preservados.
+- [~] Reset terminou sem mensagem de falha e o login admin foi confirmado; `prisma migrate status` não foi consultado directamente.
 
 ### E. Rollout e verificações após o Deploy
 
-- [ ] Iniciar/actualizar o stack depois de migrations aprovadas; conferir healthchecks `/health` das três APIs (200) e estado saudável da base.
+- [~] `admin-api`, `client-api`, `driver-api` e `admin-portal` foram redeployados e aparecem `Running (unknown)`; não foi feita chamada directa aos healthchecks `/health`.
 - [ ] Verificar acesso HTTPS às três landings/portais e endpoints públicos das APIs; confirmar CORS para origens permitidas e bloqueio de origens não permitidas.
-- [ ] Entrar no painel admin, renovar sessão e terminar sessão; confirmar cookie seguro e acesso API. Verificar uploads e confirmar que persistem no volume `admin_uploads`.
+- [~] Login no painel admin confirmado pelo proprietário; renovação/saída da sessão e persistência de uploads não foram verificadas.
 - [ ] Verificar cotações/rotas HERE e mapas sem expor `HERE_ROUTING_API_KEY`; validar Socket.IO do motorista por WSS.
 - [ ] Confirmar rate limit com resposta HTTP 429 em excesso controlado e headers; conferir IP do cliente real com `TRUST_PROXY_HOPS` configurado.
 - [ ] Com credencial Firebase configurada, verificar registo de token e uma notificação de teste; não declarar push funcional só por a API iniciar.
-- [ ] Confirmar scheduler de retenção sem erro e comportamento de documentos com/sem legal hold, somente depois de aprovar `DRIVER_DOCUMENT_RETENTION_DAYS`.
+- [x] Não activar nem validar purga automática de documentos de motorista; não faz parte do rollout aprovado.
 - [ ] Monitorizar logs e erros, confirmar persistência/backup e registar PASS/FAIL/BLOCKED com data, revisão implantada e migrations aplicadas. Manter procedimento de rollback da imagem/revisão e de recuperação da base documentado.
 
-### Pendências conhecidas antes da produção
+### Pendências após o rollout de 18/10/2026
 
-1. Definir `DRIVER_DOCUMENT_RETENTION_DAYS`.
-2. Fechar os domínios finais e `ALLOWED_ORIGINS`.
-3. Confirmar topologia do proxy para `TRUST_PROXY_HOPS` e decidir escala (rate limit em memória por réplica).
-4. Activar FCM HTTP v1 e criar/guardar o JSON secreto no Coolify.
-5. Resolver/avaliar os dois documentos legados que bloqueiam a migration de documentos privados antes de aplicá-la.
-6. Fazer backup de produção e executar/validar migrations no alvo correcto antes do rollout.
+1. Confirmar `ALLOWED_ORIGINS`, topologia do proxy (`TRUST_PROXY_HOPS`) e configuração de escala/rate limit.
+2. Validar directamente `/health` nas três APIs; Coolify apresenta `Running (unknown)`.
+3. Fazer teste real de HERE, Socket.IO/WSS e FCM. Push real continua dependente de APK/dispositivo.
+4. Trocar a senha temporária do administrador criado após o reset.
+5. Não repetir o reset. Em deploys futuros com dados a preservar, fazer backup/restore verificável e aplicar migrations incrementais.
+
+A purga automática de documentos de motorista foi retirada dos requisitos e pendências do plano. `DRIVER_DOCUMENT_RETENTION_DAYS` não deve ser configurada; manter os documentos guardados. A capacidade técnica existente só deve ser revista se o proprietário pedir explicitamente uma política de eliminação.
+
+As antigas pendências de guardar JSON FCM, fazer o primeiro rollout e aplicar as migrations foram substituídas pelo resultado registado na secção 6. O backup não foi feito neste rollout, por decisão explícita do proprietário; a base foi limpa no reset autorizado.
+## 6. Resultado do rollout Coolify — 18/10/2026
+
+O proprietário confirmou o redeploy de `admin-api`, `client-api`, `driver-api` e `admin-portal`; os recursos aparecem `Running (unknown)`. Os logs apresentados de `client-api` e `admin-portal` indicam `Deployment is Finished`. O proprietário confirmou login no painel admin. O estado `unknown` não equivale a health-check HTTP validado.
+
+### Configuração confirmada
+
+- `driver-api`: `FIREBASE_SERVICE_ACCOUNT_JSON` como segredo Runtime.
+- `client-api`: `HERE_ROUTING_API_KEY` (privada) e `HERE_MAP_API_KEY` (pública) em Runtime, com chaves distintas.
+- `admin-portal`: `VITE_HERE_API_KEY` em Buildtime, Runtime desligado.
+- Os valores secretos não devem ser copiados para documentação, Git ou conversa.
+
+### Base de dados e migrations
+
+O primeiro `npm run db:migrate:deploy` falhou com Prisma `P3005`: o schema existente não estava vazio e não tinha histórico de migrations Prisma. O proprietário confirmou que não havia dados relevantes a preservar e dispensou backup para este rollout. Foi executado uma única vez no Post-deployment do `admin-api`:
+
+```sh
+npx prisma migrate reset --force --schema libs/database/prisma/schema.prisma
+```
+
+O reset destruiu os dados/schema anteriores e recriou o schema aplicando as migrations. O proprietário confirmou depois que conseguiu iniciar sessão no painel. O comando de reset foi removido do Coolify. **Não repetir esse reset** em deploys futuros; usar apenas migrations incrementais e verificar o histórico da base. Não foi feito backup neste rollout, conforme decisão explícita do proprietário.
+
+### Validações ainda pendentes
+
+- Health-check HTTP `/health` directo para cada API; Coolify mostra `Running (unknown)`.
+- Teste real de HERE, Socket.IO/WSS e entrega de push FCM num APK/dispositivo.
+- Purga automática de documentos de motorista retirada dos requisitos; não configurar `DRIVER_DOCUMENT_RETENTION_DAYS` e manter documentos guardados, conforme decisão de 18/10/2026.
+- Trocar a senha temporária do administrador criado após o reset.
+- Não foi feito build de APK nem teste em telefone.

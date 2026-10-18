@@ -42,3 +42,9 @@ The existing-database baseline operation is deliberately manual. No automatic sc
 Prisma migrations are forward-only here. Before deployment, retain a restorable backup and the previous image tags. If migration application fails, keep API rollout stopped, inspect `_prisma_migrations`, restore the backup or repair forward with a reviewed migration, then retry. Do not remove migration records or run a destructive schema reset as a rollback.
 
 PostgreSQL uses `pg_isready`; each API healthcheck calls its unauthenticated database readiness route. Compose orders API startup after database readiness, but migration application remains an explicit pre-deploy step so the operator can verify the correct database and baseline first.
+
+## Production rollout record — 2026-10-18
+
+The existing Coolify database returned Prisma `P3005` when `migrate deploy` was first run: its schema was non-empty and had no usable Prisma migration baseline. The owner confirmed there was no relevant production data to preserve and waived a backup for this rollout. A one-time `prisma migrate reset --force --schema libs/database/prisma/schema.prisma` was run as the Admin API post-deployment command. This destroyed the prior schema/data and recreated the schema from the checked-in migrations. The reset command was removed from Coolify afterward. The owner subsequently confirmed successful admin login after recreating the admin profile.
+
+Do not repeat this reset on future deployments. This destructive exception applied only to this database and this owner-approved rollout. Future releases must use incremental migrations and inspect migration status; retain backups/restore planning for data that must be preserved. Coolify showed all four existing resources (`admin-api`, `client-api`, `driver-api`, `admin-portal`) as `Running (unknown)`; direct `/health` checks were not recorded.

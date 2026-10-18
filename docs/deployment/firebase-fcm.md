@@ -36,7 +36,7 @@ When the key is absent, the API still starts and stores device tokens, but skips
 
 ## Database rollout
 
-A Prisma migration creates `driver_fcm_tokens`. Apply it to the production database before the Driver API version that uses this model is started. The migration has not been applied to any remote database.
+A Prisma migration creates `driver_fcm_tokens`. Apply it to the production database before the Driver API version that uses this model is started. This was true before the first Coolify rollout; see the current production status at the end of this document.
 
 ## Scope and verification
 
@@ -45,13 +45,13 @@ A Prisma migration creates `driver_fcm_tokens`. Apply it to the production datab
 - Driver API Jest: 15 suites / 126 tests passed.
 - Driver API Nest build passed.
 - Prisma schema validation passed.
-- No APK/Gradle/Metro/mobile-device build or test, secret creation, database migration, Coolify change, deploy, push or commit was performed.
+- Historical note: at implementation time, no APK/Gradle/Metro/mobile-device build or test, secret creation, database migration, Coolify change, deploy, push or commit had been performed. See current Coolify status below.
 - End-to-end delivery still requires the server secret, migration, GitHub APK build and a real Android notification test.
 
 
-## Coolify rollout checklist and current blockers
+## Coolify rollout checklist (pre-deploy snapshot)
 
-Before updating the Driver API in Coolify:
+This checklist records the state before the 2026-10-18 rollout. Steps 3 and 4 were completed as described in the current status below; real-device notification validation remains pending.
 
 1. Enable **Firebase Cloud Messaging API (HTTP v1)** in Google Cloud project `apptot-angola`.
 2. Grant the Driver API service account **Firebase Cloud Messaging API Admin** (`roles/firebasecloudmessaging.admin`) on that project and verify the binding.
@@ -60,3 +60,7 @@ Before updating the Driver API in Coolify:
 5. Verify real delivery with a GitHub-built Android APK in foreground, background, and terminated-app cases.
 
 **Verified status (2026-10-15):** migration `20261015220000_driver_fcm_tokens` is present in source but unapplied. `prisma migrate status` against local `tot_database` reported four pending migrations (`20261015190000_driver_location_accuracy`, `20261015200000_driver_vehicle_category`, `20261015210000_trip_quotes_service_fk`, and `20261015220000_driver_fcm_tokens`); all four were subsequently applied to local `tot_database`, and Prisma now reports the schema up to date. No remote database was changed. The IAM role has not been granted or verified: the authenticated Google account cannot view service accounts in this project. No private key was generated. Do not treat FCM as production-ready until all checklist items pass.
+
+## Current Coolify status — 2026-10-18
+
+The owner confirmed `FIREBASE_SERVICE_ACCOUNT_JSON` was configured as a protected Runtime secret on `driver-api` and the Driver API was redeployed. The production migration was applied during the owner-approved one-time database reset documented in `platform-migrations.md`. A real FCM notification has not been verified: APK generation and foreground/background/terminated-device tests remain pending. Do not describe end-to-end push delivery as tested based on deployment alone. Secret contents are intentionally omitted.

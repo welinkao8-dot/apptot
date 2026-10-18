@@ -25,7 +25,7 @@ Esta matriz liga as fronteiras de entrada mais sensíveis às regras implementad
 
 - Aplicações móveis ainda enviam `userId` em algumas rotas antigas de histórico/estatísticas. A API mantém esses caminhos por compatibilidade e deriva o proprietário sempre do JWT; o parâmetro de rota não concede acesso.
 - Cotações parciais mantêm o formato atual de array consumido pelo mobile: apenas serviços com rota válida são retornados. Cada quote agora inclui `unavailableServices` com o modo/serviço indisponível e motivo genérico. Se nenhum modo produzir rota, a API responde 503.
-- A retenção de documentos é parametrizada por `DRIVER_DOCUMENT_RETENTION_DAYS`. Sem um prazo aprovado/configurado, o código não apaga documentos automaticamente; legal hold impede a purga.
+- **Decisão de 18/10/2026:** purga automática de documentos de motorista fora do requisito aprovado. Não configurar `DRIVER_DOCUMENT_RETENTION_DAYS`; manter os documentos guardados. A rotina técnica opcional não deve ser activada sem pedido explícito do proprietário.
 - Este relatório não valida credenciais HERE/Firebase, domínio/CORS real, Coolify, APK ou execução no telefone.
 
 ## Inventário de fronteiras
