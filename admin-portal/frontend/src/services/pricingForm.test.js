@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 
-import { isPricingServiceDirty, normalizePricingService } from './pricingForm.js'
+import { buildPricingServicePayload, isPricingServiceDirty, normalizePricingService, normalizeVehicleCategory, formatVehicleCategory } from './pricingForm.js'
 
 const validService = {
     name: 'Moto',
@@ -36,6 +36,26 @@ test('normalizes decimal strings returned by the server before display', () => {
     })
     assert.equal(normalized.base_fare, 500)
     assert.equal(normalized.platform_fee_value, 15.5)
+})
+
+test('normalizes the legacy percent fee type returned by existing services', () => {
+    const normalized = normalizePricingService({ ...validService, platform_fee_type: 'percent' })
+    assert.equal(normalized.platform_fee_type, 'percentage')
+})
+
+test('builds an API payload without read-only metadata and normalizes the fee type', () => {
+    const payload = buildPricingServicePayload({
+        ...validService,
+        id: 7,
+        updated_at: '2026-10-17T10:00:00.000Z',
+        created_at: '2026-10-01T10:00:00.000Z',
+        platform_fee_type: 'percent',
+    })
+
+    assert.equal(payload.platform_fee_type, 'percentage')
+    assert.equal(Object.hasOwn(payload, 'id'), false)
+    assert.equal(Object.hasOwn(payload, 'updated_at'), false)
+    assert.equal(Object.hasOwn(payload, 'created_at'), false)
 })
 
 test('rejects empty, negative, non-finite, over-precision and out-of-range amounts', () => {
@@ -73,4 +93,22 @@ test('compares edited monetary values by their submitted decimal value', () => {
     assert.equal(isPricingServiceDirty(original, { ...validService, base_fare: '500.01' }), true)
     assert.equal(isPricingServiceDirty({ ...original, base_fare: '' }, { ...validService, base_fare: 0 }), true)
     assert.equal(isPricingServiceDirty(null, validService), true)
+})
+
+test('normalizes and formats vehicle categories accurately', () => {
+    assert.equal(normalizeVehicleCategory('moto'), 'moto')
+    assert.equal(normalizeVehicleCategory('Motorcycle'), 'moto')
+    assert.equal(normalizeVehicleCategory('Scooter'), 'moto')
+    assert.equal(normalizeVehicleCategory('car'), 'car')
+    assert.equal(normalizeVehicleCategory('Carro'), 'car')
+    assert.equal(normalizeVehicleCategory('Automóvel'), 'car')
+    assert.equal(normalizeVehicleCategory('van'), 'van')
+    assert.equal(normalizeVehicleCategory('Carrinha'), 'van')
+    assert.equal(normalizeVehicleCategory('truck'), 'truck')
+    assert.equal(normalizeVehicleCategory('Camião'), 'truck')
+
+    assert.equal(formatVehicleCategory('moto'), 'Moto')
+    assert.equal(formatVehicleCategory('car'), 'Carro')
+    assert.equal(formatVehicleCategory('van'), 'Carrinha')
+    assert.equal(formatVehicleCategory('truck'), 'Camião')
 })

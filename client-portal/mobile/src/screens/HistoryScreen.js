@@ -6,6 +6,7 @@ import {
     FlatList,
     TouchableOpacity,
     ActivityIndicator,
+    Alert,
     SafeAreaView,
     StatusBar,
     Dimensions,
@@ -14,10 +15,11 @@ import {
 } from 'react-native';
 import { useAuth } from '../context/AuthContext';
 import colors from '../theme/colors';
-import { ArrowLeft, Clock, MapPin, ChevronRight, Info, Calendar, Menu, Search, Navigation, Banknote, X } from 'lucide-react-native';
+import { ArrowLeft, Clock, MapPin, ChevronRight, Info, Calendar, Menu, Search, Navigation, Banknote, Download, X } from 'lucide-react-native';
 import api from '../services/api';
+import { shareOperationalReceipt } from '../services/operationalReceiptExporter';
 import { toSafeErrorLog } from '../utils/safeErrorLog';
-import { getReceiptPaymentSummary, getReceiptTitle } from '../utils/receiptSummary';
+import { canGenerateOperationalReceipt, getReceiptPaymentSummary, getReceiptTitle } from '../utils/receiptSummary';
 
 const { width } = Dimensions.get('window');
 
@@ -27,9 +29,35 @@ export default function HistoryScreen({ navigation }) {
     const [status, setStatus] = useState({ loading: true, loadingMore: false, error: false, errorPage: 1 });
     const [query, setQuery] = useState({ filter: 'all', page: 1, hasMore: true });
     const [receiptTrip, setReceiptTrip] = useState(null);
+    const [receiptExporting, setReceiptExporting] = useState(false);
     const receiptSummary = getReceiptPaymentSummary(receiptTrip);
     const requestIdRef = useRef(0);
     const activeRequestRef = useRef(null);
+    const receiptExportLockRef = useRef(false);
+
+    const handleExportReceipt = async () => {
+        if (!receiptTrip || receiptExportLockRef.current) return;
+        receiptExportLockRef.current = true;
+        setReceiptExporting(true);
+        try {
+            const response = await api.get(`/trips/${receiptTrip.id}`);
+            const latestTrip = response?.data;
+            if (!latestTrip || latestTrip.id !== receiptTrip.id) {
+                throw new Error('Não foi possível confirmar o estado da viagem no servidor.');
+            }
+            if (!canGenerateOperationalReceipt(latestTrip)) {
+                Alert.alert('Pagamento ainda não confirmado', 'O recibo ficará disponível depois de o pagamento ser confirmado pelo servidor.');
+                return;
+            }
+            await shareOperationalReceipt(latestTrip);
+        } catch (error) {
+            console.error('Erro ao preparar recibo operacional:', toSafeErrorLog(error));
+            Alert.alert('Não foi possível preparar o recibo', 'Tente novamente.');
+        } finally {
+            receiptExportLockRef.current = false;
+            setReceiptExporting(false);
+        }
+    };
 
     useEffect(() => {
         setTrips([]);
@@ -231,13 +259,18 @@ export default function HistoryScreen({ navigation }) {
                 <View style={styles.modalOverlay}>
                     <View style={styles.receiptCard}>
                         <View style={styles.receiptPinkHeader}>
-                            <Text style={styles.receiptHeaderText}>{getReceiptTitle()}</Text>
+                            <Text style={styles.receiptHeaderText}>{getReceiptTitle(receiptTrip)}</Text>
                             <TouchableOpacity style={styles.closeReceipt} onPress={() => setReceiptTrip(null)}>
                                 <X size={24} color="#FFF" />
                             </TouchableOpacity>
                         </View>
 
                         <ScrollView style={styles.receiptContent} showsVerticalScrollIndicator={false}>
+                            <Text style={styles.receiptDisclaimer}>
+                                {canGenerateOperationalReceipt(receiptTrip)
+                                    ? 'Documento operacional · não fiscal'
+                                    : 'O recibo fica disponível após a confirmação do pagamento pelo servidor.'}
+                            </Text>
                             <View style={styles.receiptSection}>
                                 <Text style={styles.receiptLabel}>ID DA VIAGEM</Text>
                                 <Text style={styles.receiptValue}>#TOT-{receiptTrip?.id?.substring(0, 8)?.toUpperCase() || '---'}</Text>
@@ -276,6 +309,21 @@ export default function HistoryScreen({ navigation }) {
                                     <Text style={styles.paymentMethodText}>{receiptSummary.paymentLabel}</Text>
                                 </View>
                             </View>
+
+                            <TouchableOpacity
+                                style={[styles.downloadBtn, receiptExporting && styles.downloadBtnDisabled]}
+                                onPress={handleExportReceipt}
+                                disabled={receiptExporting}
+                                accessibilityRole="button"
+                                accessibilityLabel="Guardar recibo operacional"
+                            >
+                                {receiptExporting
+                                    ? <ActivityIndicator color={colors.primary} />
+                                    : <Download size={18} color={colors.primary} />}
+                                <Text style={styles.downloadBtnText}>
+                                    {receiptExporting ? 'A preparar recibo…' : 'Guardar'}
+                                </Text>
+                            </TouchableOpacity>
 
                         </ScrollView>
                     </View>
@@ -572,6 +620,13 @@ const styles = StyleSheet.create({
     receiptContent: {
         padding: 24,
     },
+    receiptDisclaimer: {
+        color: colors.textSecondary,
+        fontSize: 12,
+        fontWeight: '700',
+        marginBottom: 18,
+        textAlign: 'center',
+    },
     receiptSection: {
         marginBottom: 20,
     },
@@ -653,6 +708,8 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     downloadBtn: {
+        flexDirection: 'row',
+        gap: 10,
         backgroundColor: '#F8FAFC',
         borderWidth: 1.5,
         borderColor: '#E2E8F0',
@@ -662,6 +719,9 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         marginTop: 10,
         marginBottom: 20,
+    },
+    downloadBtnDisabled: {
+        opacity: 0.65,
     },
     downloadBtnText: {
         color: colors.text,

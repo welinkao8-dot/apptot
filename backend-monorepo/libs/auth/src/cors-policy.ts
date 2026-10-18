@@ -6,6 +6,20 @@ export interface CorsPolicy {
   methods: string;
 }
 
+function getAllowedOrigins(env: Record<string, string | undefined>): Set<string> {
+  const configured = parseOrigins(env.ALLOWED_ORIGINS ?? '');
+  const isProduction = env.NODE_ENV === 'production';
+  if (isProduction && configured.length === 0) {
+    throw new Error('ALLOWED_ORIGINS é obrigatório em produção.');
+  }
+  return new Set(configured.length ? configured : DEVELOPMENT_ORIGINS);
+}
+
+export function isCorsOriginAllowed(origin: string | undefined, env: Record<string, string | undefined> = process.env): boolean {
+  if (origin === undefined) return false;
+  return getAllowedOrigins(env).has(origin);
+}
+
 const DEVELOPMENT_ORIGINS = [
   'http://localhost:3000',
   'http://localhost:3001',
@@ -37,12 +51,7 @@ function parseOrigins(value: string): string[] {
 }
 
 export function getCorsPolicy(env: Record<string, string | undefined> = process.env): CorsPolicy {
-  const configured = parseOrigins(env.ALLOWED_ORIGINS ?? '');
-  const isProduction = env.NODE_ENV === 'production';
-  if (isProduction && configured.length === 0) {
-    throw new Error('ALLOWED_ORIGINS é obrigatório em produção.');
-  }
-  const allowedOrigins = new Set(configured.length ? configured : DEVELOPMENT_ORIGINS);
+  const allowedOrigins = getAllowedOrigins(env);
 
   return {
     origin: (origin, callback) => {

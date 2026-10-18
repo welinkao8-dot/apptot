@@ -22,7 +22,7 @@ export class PaymentsService {
     return this.prisma.$transaction(async (tx) => {
       const trip = await tx.trips.findUnique({
         where: { id: tripId },
-        select: { id: true, driver_id: true, status: true },
+        select: { id: true, driver_id: true, client_id: true, category: true, status: true },
       });
       if (!trip) throw new NotFoundException('Viagem não encontrada.');
       if (trip.driver_id !== driverId) throw new ForbiddenException('Apenas o motorista atribuído pode confirmar a cobrança.');
@@ -41,7 +41,10 @@ export class PaymentsService {
       }
 
       if (payment.status === 'confirmed') {
-        if (payment.confirmed_by === driverId) return payment;
+        if (payment.confirmed_by === driverId) {
+          await this.ensureOperationalReceipt(tx, trip, payment);
+          return payment;
+        }
         throw new BadRequestException('Este pagamento já foi confirmado por outro ator.');
       }
       if (payment.status !== 'pending' || payment.method !== 'cash') {
@@ -55,7 +58,10 @@ export class PaymentsService {
       });
       if (update.count !== 1) {
         const current = await tx.trip_payments.findUnique({ where: { trip_id: tripId } });
-        if (current?.status === 'confirmed' && current.confirmed_by === driverId) return current;
+        if (current?.status === 'confirmed' && current.confirmed_by === driverId) {
+          await this.ensureOperationalReceipt(tx, trip, current);
+          return current;
+        }
         throw new BadRequestException('O pagamento foi atualizado por outra operação.');
       }
 
@@ -70,7 +76,26 @@ export class PaymentsService {
       });
       const confirmed = await tx.trip_payments.findUnique({ where: { trip_id: tripId } });
       if (!confirmed) throw new NotFoundException('Pagamento confirmado não foi encontrado.');
+      await this.ensureOperationalReceipt(tx, trip, confirmed);
       return confirmed;
+    });
+  }
+
+  private async ensureOperationalReceipt(
+    tx: Prisma.TransactionClient,
+    trip: { id: string; client_id: string | null; category: string | null },
+    payment: { amount: Prisma.Decimal },
+  ) {
+    const existing = await tx.invoices.findFirst({ where: { trip_id: trip.id } });
+    if (existing) return existing;
+
+    return tx.invoices.create({
+      data: {
+        trip_id: trip.id,
+        user_id: trip.client_id,
+        amount: payment.amount,
+        invoice_type: trip.category === 'delivery' ? 'delivery_receipt' : 'ride_receipt',
+      },
     });
   }
 }

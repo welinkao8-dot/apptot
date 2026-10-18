@@ -26,12 +26,17 @@ import {
 import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
 import HereMap from '../components/HereMap'
-import { formatLocationAge, resolveDriverLocation } from '../services/driverLocation'
+import { loadDriverLocation } from '../services/driverLocation'
+import DriverLocationContent from '../components/DriverLocationContent'
+import { formatDate, formatDateTime, formatKz } from '../services/format'
 import StatusReasonDialog from '../components/StatusReasonDialog'
+import { useNavigate } from 'react-router-dom'
 import { buildDriversQuery, createRequestSequence, loadDriversPage, normalizeDriverTripsPage } from '../services/adminDriversList'
 
 
 export default function Drivers({ onBack }) {
+    const navigate = useNavigate()
+    const handleBack = onBack || (() => navigate('/'))
     const [drivers, setDrivers] = useState([])
     const [driversTotal, setDriversTotal] = useState(0)
     const [loading, setLoading] = useState(true)
@@ -45,6 +50,7 @@ export default function Drivers({ onBack }) {
     const [showMap, setShowMap] = useState(false)
     const [driverLocation, setDriverLocation] = useState(null)
     const [isLocationLoading, setIsLocationLoading] = useState(false)
+    const locationRequests = useRef(createRequestSequence())
     const [documentsLoading, setDocumentsLoading] = useState(false)
     const [documentsError, setDocumentsError] = useState(false)
     const [vehicleCategoryDraft, setVehicleCategoryDraft] = useState('')
@@ -160,18 +166,23 @@ export default function Drivers({ onBack }) {
         setShowMap(true)
         fetchDriverDocuments(driver.id)
         fetchTrips(driver.id)
-        try {
-            const response = await adminApi.get(`/admin/drivers/${encodeURIComponent(driver.id)}`)
-            const currentDriver = response.data
+        const result = await loadDriverLocation(adminApi, driver.id, locationRequests.current)
+        if (result.state === 'stale') return
+        if (result.state !== 'error') {
+            const currentDriver = result.driver
             setSelectedDriver(currentDriver)
             setVehicleCategoryDraft(currentDriver.vehicle_category || '')
-            setDriverLocation(resolveDriverLocation(currentDriver))
-        } catch (error) {
-            console.error('Error fetching driver location:', error)
-            setDriverLocation({ state: 'error', position: null, updatedAt: null, ageMs: null })
-        } finally {
-            setIsLocationLoading(false)
+            setDriverLocation(result)
+        } else {
+            setDriverLocation(result)
         }
+        setIsLocationLoading(false)
+    }
+
+    const closeDriverLocation = () => {
+        locationRequests.current.invalidate()
+        setIsLocationLoading(false)
+        setShowMap(false)
     }
 
     const handleUpdateStatus = async (id, status, reason) => {
@@ -260,7 +271,7 @@ export default function Drivers({ onBack }) {
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', color: '#475569' }}>
                                 <Calendar size={16} style={{ color: '#e91e63', flexShrink: 0 }} />
-                                <span>Membro desde {new Date(selectedDriver.created_at || Date.now()).toLocaleDateString()}</span>
+                                <span>Membro desde {formatDate(selectedDriver.created_at)}</span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' }}>
                                 <Activity size={16} style={{ color: '#e91e63', flexShrink: 0 }} />
@@ -351,7 +362,7 @@ export default function Drivers({ onBack }) {
                                 </div>
                                 <div>
                                     <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Ganhos Totais</span>
-                                    <span style={{ fontSize: '20px', fontWeight: '900', lineHeight: '1.1' }}>Kz {totalEarnings.toLocaleString()}</span>
+                                    <span style={{ fontSize: '20px', fontWeight: '900', lineHeight: '1.1' }}>{formatKz(totalEarnings)}</span>
                                 </div>
                             </div>
                             <div style={{ background: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)', borderRadius: '24px', padding: '20px', display: 'flex', alignItems: 'center', gap: '16px', boxShadow: '0 8px 24px rgba(233,30,99,0.2)', color: 'white' }}>
@@ -427,7 +438,7 @@ export default function Drivers({ onBack }) {
                                                 </div>
                                                 <div>
                                                     <div style={{ fontSize: '13px', fontWeight: '800', color: '#334155' }}>#{trip.id.substring(0, 8).toUpperCase()}</div>
-                                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{new Date(trip.created_at).toLocaleDateString()} • {trip.profiles_trips_client_idToprofiles?.full_name || 'Anônimo'}</div>
+                                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{formatDate(trip.created_at)} • {trip.profiles_trips_client_idToprofiles?.full_name || 'Anônimo'}</div>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -435,7 +446,7 @@ export default function Drivers({ onBack }) {
                                                     {trip.status?.toUpperCase()}
                                                 </span>
                                                 <span style={{ fontSize: '14px', fontWeight: '900', color: '#1e293b', minWidth: '80px', textAlign: 'right' }}>
-                                                    Kz {Number(trip.final_fare || trip.estimated_fare || 0).toLocaleString()}
+                                                    Kz {Number(trip.final_fare ?? trip.estimated_fare ?? 0).toLocaleString('pt-AO')}
                                                 </span>
                                             </div>
                                         </div>
@@ -452,57 +463,28 @@ export default function Drivers({ onBack }) {
 
                 {/* Real-time Location Map Modal */}
                 {showMap && selectedDriver && (
-                <div className="driver-map-overlay" onClick={() => setShowMap(false)}>
+                <div className="driver-map-overlay" onClick={closeDriverLocation}>
                         <div className="driver-map-dialog" role="dialog" aria-modal="true" aria-label={`Localização de ${selectedDriver.full_name}`} onClick={e => e.stopPropagation()}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
                                 <div>
                                     <h3 style={{ fontSize: '18px', fontWeight: '900', color: '#1e293b', margin: 0 }}>Última localização recebida</h3>
                                     <p style={{ fontSize: '13px', color: '#64748b', margin: '4px 0 0 0' }}>
                                         Motorista: {selectedDriver.full_name}
-                                        {driverLocation?.updatedAt && ` · ${new Date(driverLocation.updatedAt).toLocaleString('pt-AO')}`}
+                                        {driverLocation?.updatedAt && ` · ${formatDateTime(driverLocation.updatedAt)}`}
                                     </p>
                                 </div>
-                                <button style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748b' }} onClick={() => setShowMap(false)}>
+                                <button style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#64748b' }} onClick={closeDriverLocation}>
                                     <X size={18} />
                                 </button>
                             </div>
                             <div style={{ height: '350px', borderRadius: '18px', overflow: 'hidden', border: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                                {isLocationLoading ? (
-                                    <div style={{ height: '100%', display: 'grid', placeItems: 'center', color: '#64748b' }}>
-                                        A carregar a última localização…
-                                    </div>
-                                ) : driverLocation?.position ? (
-                                    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                                        {driverLocation.state !== 'fresh' && (
-                                            <div role="status" style={{ padding: '8px 12px', background: driverLocation.state === 'stale' ? '#fff7ed' : '#f1f5f9', color: driverLocation.state === 'stale' ? '#9a3412' : '#475569', fontSize: 12, fontWeight: 700 }}>
-                                                {driverLocation.state === 'stale'
-                                                    ? `Posição desatualizada (${formatLocationAge(driverLocation.ageMs)}).`
-                                                    : 'Não foi possível confirmar a hora desta posição.'}
-                                            </div>
-                                        )}
-                                        {driverLocation.accuracyMeters != null && (
-                                            <div style={{ padding: '6px 12px', background: '#f8fafc', color: '#475569', fontSize: 12 }}>
-                                                Precisão reportada pelo GPS: ±{Math.round(driverLocation.accuracyMeters)} m
-                                            </div>
-                                        )}
-                                        <div style={{ flex: 1, minHeight: 0 }}>
-                                            <DriverMap location={driverLocation.position} name={selectedDriver.full_name} />
-                                        </div>
-                                    </div>
-                                ) : (
-                                    <div style={{ height: '100%', display: 'grid', placeItems: 'center', padding: '24px', textAlign: 'center', color: '#64748b' }}>
-                                        <div>
-                                            <p>{driverLocation?.state === 'error'
-                                                ? 'Não foi possível carregar a localização.'
-                                                : 'Ainda não há uma localização válida enviada por este motorista.'}</p>
-                                            {driverLocation?.state === 'error' && (
-                                                <button type="button" onClick={() => handleShowDriverLocation(selectedDriver)} style={{ border: 0, borderRadius: 8, padding: '8px 14px', background: '#e91e63', color: '#fff', fontWeight: 700, cursor: 'pointer' }}>
-                                                    Tentar novamente
-                                                </button>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
+                                <DriverLocationContent
+                                    location={driverLocation}
+                                    isLoading={isLocationLoading}
+                                    onRetry={() => handleShowDriverLocation(selectedDriver)}
+                                >
+                                    {driverLocation?.position && <DriverMap location={driverLocation.position} name={selectedDriver.full_name} />}
+                                </DriverLocationContent>
                             </div>
                         </div>
                     </div>
@@ -528,7 +510,6 @@ export default function Drivers({ onBack }) {
         <div className="drivers-module animate-fade-in">
             <div className="module-header-nav">
                 <div className="flex items-center gap-4">
-                    <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
                     <div className="title-area">
                         <h2>Gestão de Motoristas</h2>
                         <p>{filteredDriverCount} {filteredDriverCount === 1 ? 'motorista encontrado' : 'motoristas encontrados'}</p>
@@ -536,7 +517,7 @@ export default function Drivers({ onBack }) {
                 </div>
 
                 <div className="header-actions">
-                    <div className="search-bar-premium">
+                    <div className="tot-search">
                         <Search size={18} />
                         <input
                             type="text"
@@ -552,6 +533,7 @@ export default function Drivers({ onBack }) {
                             <option value="all">Filtro: Todos</option>
                             <option value="pending">Pendentes</option>
                             <option value="active">Ativos</option>
+                            <option value="suspended">Suspensos</option>
                             <option value="rejected">Rejeitados</option>
                         </select>
                     </div>
@@ -560,14 +542,14 @@ export default function Drivers({ onBack }) {
 
             <div className="admin-record-list drivers-record-list mt-6">
                 <div className="admin-record-list-head drivers-record-head" aria-hidden="true">
-                    <span>Motorista</span><span>Conta</span><span>Disponibilidade</span><span>Ações</span>
+                    <span>Motorista</span><span>Conta</span><span>Disponibilidade</span><span className="text-right pr-2">Ações</span>
                 </div>
                 {loading ? (
                     [1, 2, 3].map(i => <div key={i} className="admin-record-row admin-record-loading drivers-record-row" role="status" aria-label="A carregar motoristas"><span /><span /><span /><span /></div>)
                 ) : driversError ? (
                     <div className="empty-state-container py-40">
                         <p>Erro ao carregar motoristas.</p>
-                        <button className="btn-pill-sm primary" onClick={fetchDrivers}>Tentar novamente</button>
+                        <button className="btn-action-primary" onClick={fetchDrivers}>Tentar novamente</button>
                     </div>
                 ) : paginatedDrivers.length > 0 ? (
                     paginatedDrivers.map(driver => (
@@ -593,7 +575,8 @@ export default function Drivers({ onBack }) {
                             </div>
                             <div className="actions-inline">
                                     <button
-                                        className="btn-pill-sm primary"
+                                        type="button"
+                                        className="btn-action-primary"
                                         onClick={() => handleViewProfile(driver)}
                                     >
                                         <Eye size={14} />
@@ -601,13 +584,14 @@ export default function Drivers({ onBack }) {
                                     </button>
                                     {driver.status === 'active' && (
                                         <button
-                                            className="btn-pill-sm outline"
+                                            type="button"
+                                            className="btn-action-secondary"
                                             onClick={() => {
                                                 handleShowDriverLocation(driver)
                                             }}
                                         >
-                                            <Navigation size={14} className="text-pink-500" />
-                                            <span className="text-pink-500">Mapa</span>
+                                            <Navigation size={14} />
+                                            <span>Mapa</span>
                                         </button>
                                     )}
                             </div>

@@ -1,11 +1,10 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { Mail, Lock, Eye, EyeOff, CircleAlert, ArrowRight } from 'lucide-react'
+import { Mail, Lock, Eye, EyeOff, AlertCircle, ArrowRight, Loader2 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 
-/* Os erros do Supabase chegam em inglês. Traduzir aqui evita a mistura de
-   línguas no ecrã e permite dizer o que fazer a seguir, em vez de nomear a
-   falha. */
 const describeSignInError = raw => {
     const value = String(raw || '').toLowerCase()
     if (value.includes('invalid') || value.includes('credential')) {
@@ -28,7 +27,7 @@ export default function Login() {
     const [isLoading, setIsLoading] = useState(false)
     const { signIn } = useAuth()
 
-    const handleLogin = async (e) => {
+    const handleLogin = async e => {
         e.preventDefault()
         setIsLoading(true)
         setError('')
@@ -37,84 +36,108 @@ export default function Login() {
             setError(describeSignInError(signInError))
             setIsLoading(false)
         } else {
-            toast.success('Sessão iniciada')
+            toast.success('Sessão iniciada com sucesso!')
         }
     }
 
     return (
-        <div className="login-page">
-            <div className="login-card animate-fade-in">
-                <div className="login-brand">
-                    <span className="login-brand-mark" aria-hidden="true">TOT</span>
-                    <span className="login-brand-copy">
-                        <strong>Painel de operações</strong>
-                        <small>Gestão de frota e corridas</small>
-                    </span>
+        <div className="min-h-screen bg-[#F0F2F5] flex items-center justify-center p-4">
+            <div className="w-full max-w-md bg-white rounded-[32px] p-8 sm:p-10 shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-200/80">
+                {/* Brand & Logo Header */}
+                <div className="flex flex-col items-center text-center mb-8">
+                    <img
+                        src="/logo.png"
+                        alt="TOT Moto Táxi"
+                        className="w-16 h-16 rounded-full object-contain shadow-sm mb-3 ring-4 ring-pink-50"
+                    />
+                    <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold px-3 py-1 rounded-full bg-pink-50 text-[#E91E63] border border-pink-200/60 uppercase tracking-wider">
+                            Admin Portal
+                        </span>
+                    </div>
+                    <h1 className="text-xl font-semibold text-slate-900 mt-4">Bem-vindo à Consola</h1>
+                    <p className="text-xs text-slate-500 mt-1">
+                        Acesso exclusivo para gestão de frota, finanças e operações
+                    </p>
                 </div>
 
-                <div className="login-intro">
-                    <h1>Entrar</h1>
-                    <p>Use as credenciais de administrador para aceder à consola.</p>
-                </div>
-
-                <form onSubmit={handleLogin} className="login-form">
+                {/* Form */}
+                <form onSubmit={handleLogin} className="space-y-4">
                     {error && (
-                        <p className="login-error" role="alert">
-                            <CircleAlert size={18} aria-hidden="true" />
+                        <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200/80 text-rose-700 text-xs flex items-center gap-2.5">
+                            <AlertCircle size={16} className="shrink-0 text-rose-600" />
                             <span>{error}</span>
-                        </p>
+                        </div>
                     )}
 
-                    <div className="input-field">
-                        <label htmlFor="admin-email">E-mail</label>
-                        <div className="input-wrapper">
-                            <Mail size={18} className="input-icon" aria-hidden="true" />
-                            <input
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-slate-700" htmlFor="admin-email">
+                            E-mail de Administrador
+                        </label>
+                        <div className="relative">
+                            <Mail size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Input
                                 id="admin-email"
                                 type="email"
-                                name="email"
                                 autoComplete="username"
-                                placeholder="nome@tot.ao"
+                                placeholder="admin@tot.ao"
                                 value={email}
                                 onChange={e => setEmail(e.target.value)}
                                 required
+                                className="pl-10 h-11 rounded-2xl border-slate-200/80 focus-visible:ring-[#E91E63] text-xs bg-slate-50/50"
                             />
                         </div>
                     </div>
 
-                    <div className="input-field">
-                        <label htmlFor="admin-password">Palavra-passe</label>
-                        <div className="input-wrapper">
-                            <Lock size={18} className="input-icon" aria-hidden="true" />
-                            <input
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-slate-700" htmlFor="admin-password">
+                            Palavra-passe
+                        </label>
+                        <div className="relative">
+                            <Lock size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                            <Input
                                 id="admin-password"
                                 type={showPassword ? 'text' : 'password'}
-                                name="password"
                                 autoComplete="current-password"
                                 placeholder="••••••••"
                                 value={password}
                                 onChange={e => setPassword(e.target.value)}
                                 required
+                                className="pl-10 pr-10 h-11 rounded-2xl border-slate-200/80 focus-visible:ring-[#E91E63] text-xs bg-slate-50/50"
                             />
                             <button
                                 type="button"
-                                className="login-password-toggle"
-                                onClick={() => setShowPassword(current => !current)}
+                                onClick={() => setShowPassword(p => !p)}
+                                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                                 aria-label={showPassword ? 'Ocultar palavra-passe' : 'Mostrar palavra-passe'}
-                                aria-pressed={showPassword}
                             >
-                                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                             </button>
                         </div>
                     </div>
 
-                    <button type="submit" className="tot-btn tot-btn--primary tot-btn--lg tot-btn--block" disabled={isLoading}>
-                        <span>{isLoading ? 'A autenticar…' : 'Entrar'}</span>
-                        {!isLoading && <ArrowRight size={18} aria-hidden="true" />}
-                    </button>
+                    <Button
+                        type="submit"
+                        disabled={isLoading}
+                        className="w-full h-11 rounded-full bg-[#E91E63] hover:bg-[#D81B60] text-white font-semibold text-xs shadow-md shadow-pink-500/25 transition-all mt-6 flex items-center justify-center gap-2"
+                    >
+                        {isLoading ? (
+                            <>
+                                <Loader2 size={16} className="animate-spin" />
+                                <span>A autenticar...</span>
+                            </>
+                        ) : (
+                            <>
+                                <span>Entrar na Consola</span>
+                                <ArrowRight size={15} />
+                            </>
+                        )}
+                    </Button>
                 </form>
 
-                <p className="login-footer">TOT Mobility Group · Acesso restrito a administradores</p>
+                <div className="text-center mt-6 text-[11px] text-slate-400">
+                    TOT Moto Táxi Angola • Todos os direitos reservados
+                </div>
             </div>
         </div>
     )

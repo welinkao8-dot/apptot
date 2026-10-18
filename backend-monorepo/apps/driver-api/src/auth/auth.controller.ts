@@ -1,6 +1,11 @@
 import { BadRequestException, Body, Controller, Get, Post, UseGuards, UnauthorizedException, ValidationPipe, ForbiddenException } from '@nestjs/common';
 import { AuthService } from './auth.service';
-import { PrismaService } from '@app/database';
+import {
+    getDriverDocumentPresence,
+    PrismaService,
+    readDriverDocumentRetentionDays,
+    replaceDriverDocuments,
+} from '@app/database';
 import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
 import type { AuthUser } from '@app/auth';
 import { DriverChangePasswordDto, DriverCheckPhoneDto, DriverLoginDto, DriverRegisterDto, DriverUpdateDocsDto, DriverUpdateProfileDto } from './auth.dto';
@@ -46,18 +51,22 @@ export class AuthController {
         if (![body.bi_frente, body.bi_verso, body.carta].every(validateDriverDocumentImage)) {
             throw new BadRequestException('Cada documento deve ser uma imagem JPEG, PNG ou WebP válida com até 8 MB.');
         }
-        const result = await this.prisma.drivers.updateMany({
-            where: { id: user.sub, status: { in: ['pending_docs', 'pending'] } },
-            data: {
-                doc_bi_frente: body.bi_frente,
-                doc_bi_verso: body.bi_verso,
-                doc_carta_conducao: body.carta,
-                status: 'pending',
-            },
+        const retentionDays = readDriverDocumentRetentionDays();
+        await this.prisma.$transaction(async (tx) => {
+            await tx.$queryRaw`SELECT "id" FROM "drivers" WHERE "id" = ${user.sub}::uuid FOR UPDATE`;
+            const result = await tx.drivers.updateMany({
+                where: { id: user.sub, status: { in: ['pending_docs', 'pending'] } },
+                data: { status: 'pending' },
+            });
+            if (result.count !== 1) {
+                throw new ForbiddenException('A conta já não está à espera de documentos.');
+            }
+            await replaceDriverDocuments(tx, user.sub, {
+                bi_frente: body.bi_frente,
+                bi_verso: body.bi_verso,
+                carta: body.carta,
+            }, new Date(), retentionDays);
         });
-        if (result.count !== 1) {
-            throw new ForbiddenException('A conta já não está à espera de documentos.');
-        }
         return { success: true };
     }
 
@@ -65,18 +74,14 @@ export class AuthController {
     @UseGuards(JwtAuthGuard, RolesGuard)
     @Roles('driver')
     async me(@CurrentUser() user: AuthUser) {
-        const [profile, driver] = await Promise.all([
+        const [profile, documentState] = await Promise.all([
             this.prisma.profiles.findUnique({ where: { id: user.sub }, select: { id: true, status: true } }),
-            this.prisma.drivers.findUnique({ where: { id: user.sub }, select: { status: true, doc_bi_frente: true, doc_bi_verso: true, doc_carta_conducao: true } }),
+            getDriverDocumentPresence(this.prisma, user.sub),
         ]);
-        if (!profile || !driver) throw new UnauthorizedException('Perfil de motorista não encontrado.');
+        if (!profile || !documentState) throw new UnauthorizedException('Perfil de motorista não encontrado.');
         return {
-            status: driver.status || profile.status,
-            documents: {
-                bi_frente: Boolean(driver.doc_bi_frente),
-                bi_verso: Boolean(driver.doc_bi_verso),
-                carta: Boolean(driver.doc_carta_conducao),
-            },
+            status: documentState.status || profile.status,
+            documents: documentState.documents,
         };
     }
 

@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, NotFoundException } from '@nes
 import { PaymentsService } from './payments.service';
 
 describe('PaymentsService cash settlement', () => {
-  const trip = { id: 'trip-a', driver_id: 'driver-a', status: 'completed' };
+  const trip = { id: 'trip-a', driver_id: 'driver-a', client_id: 'client-a', category: 'ride', status: 'completed' };
   const pending = { id: 'payment-a', trip_id: 'trip-a', method: 'cash', amount: '950.00', status: 'pending' };
 
   it('allows only the assigned driver to confirm cash collection', async () => {
@@ -63,6 +63,7 @@ describe('PaymentsService cash settlement', () => {
         findUnique: jest.fn().mockResolvedValueOnce(pending).mockResolvedValueOnce(confirmed),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
+      invoices: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) },
       audit_logs: { create: jest.fn() },
     };
     const prisma = { $transaction: jest.fn(callback => callback(tx)) };
@@ -73,6 +74,9 @@ describe('PaymentsService cash settlement', () => {
       where: { id: 'payment-a', status: 'pending', method: 'cash' },
       data: expect.objectContaining({ status: 'confirmed', confirmed_by: 'driver-a', confirmed_at: expect.any(Date) }),
     }));
+    expect(tx.invoices.create).toHaveBeenCalledWith({ data: {
+      trip_id: 'trip-a', user_id: 'client-a', amount: '950.00', invoice_type: 'ride_receipt',
+    } });
     expect(tx.audit_logs.create).toHaveBeenCalledWith({
       data: { admin_id: 'driver-a', action: 'cash_payment_confirmed', target: 'trip_payment', target_id: 'payment-a', details: { tripId: 'trip-a', amount: '950.00', method: 'cash' } },
     });
@@ -83,10 +87,14 @@ describe('PaymentsService cash settlement', () => {
     const tx = {
       trips: { findUnique: jest.fn().mockResolvedValue(trip) },
       trip_payments: { findUnique: jest.fn().mockResolvedValue(confirmed), updateMany: jest.fn() },
+      invoices: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) },
     };
     const service = new PaymentsService({ $transaction: jest.fn(callback => callback(tx)) } as never);
     await expect(service.confirmCashPayment('trip-a', 'driver-a', '950.00')).resolves.toEqual(confirmed);
     expect(tx.trip_payments.updateMany).not.toHaveBeenCalled();
+    expect(tx.invoices.create).toHaveBeenCalledWith({ data: {
+      trip_id: 'trip-a', user_id: 'client-a', amount: '950.00', invoice_type: 'ride_receipt',
+    } });
   });
 
   it('does not treat a retry with a conflicting amount as idempotent', async () => {
@@ -109,6 +117,7 @@ describe('PaymentsService cash settlement', () => {
         findUnique: jest.fn().mockResolvedValueOnce(pending).mockResolvedValueOnce(confirmed),
         updateMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
+      invoices: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) },
       audit_logs: { create: jest.fn() },
     };
     const service = new PaymentsService({ $transaction: jest.fn(callback => callback(tx)) } as never);

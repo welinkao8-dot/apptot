@@ -68,6 +68,32 @@ describe('delivery submission lifecycle', () => {
     return node;
   };
 
+  it('does not restore suggestions when an address search is cleared before its response arrives', async () => {
+    let resolveSuggestions;
+    hereService.fetchSuggestions.mockReset().mockImplementation(() => new Promise((resolve) => { resolveSuggestions = resolve; }));
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(require('./DeliveryFlowScreen').default, {
+        navigation: { navigate: jest.fn() },
+        route: { params: { pickupCoords: { lat: -8.8, lng: 13.2 } } },
+      }));
+    });
+    const searchInput = renderer.root.find((node) => node.type === TextInput && node.props.placeholder === 'Onde entregar?');
+
+    await act(async () => searchInput.props.onChangeText('Talatona'));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 550)));
+    expect(hereService.fetchSuggestions).toHaveBeenCalledTimes(1);
+
+    await act(async () => renderer.root.find((node) => node.type === TextInput && node.props.placeholder === 'Onde entregar?').props.onChangeText(''));
+    await act(async () => {
+      resolveSuggestions([{ id: 'stale', name: 'Rua da Baía', address: 'Rua da Baía', lat: -8.8, lng: 13.2 }]);
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findAll((node) => node.type === 'Text' && node.children.join('') === 'Rua da Baía')).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+
   it('emits only one delivery request when submit is triggered twice before rerender', async () => {
     const emitRequest = jest.fn();
     socket.timeout.mockReturnValue({ emit: emitRequest });
@@ -150,6 +176,42 @@ describe('active delivery restoration', () => {
     expect(globalThis.__deliveryMapMethods.setUserLocation).toHaveBeenCalledWith({ lat: -8.8123, lng: 13.2412 });
     expect(globalThis.__deliveryMapMethods.drawRoute).toHaveBeenCalledWith('restored-route', expect.objectContaining({ bottom: expect.any(Number) }));
     expect(renderer.root.findAll((node) => node.type === 'Text' && node.children.join('').includes('Ana'))).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
+
+  it('restores confirmed payment after reconnect when the payment event was missed', async () => {
+    const activeTrip = {
+      id: 'trip-delivery-reconnect', category: 'delivery', status: 'accepted',
+      origin_lat: -8.8, origin_lng: 13.2, dest_lat: -9.0, dest_lng: 13.4,
+      dest_address: 'Destino', estimated_fare: '1200.00',
+      delivery_info: { recipient_name: 'Ana', recipient_phone: '923456789', package_description: 'Documentos' },
+    };
+    const paidTrip = {
+      ...activeTrip, status: 'completed', final_fare: '1200.00',
+      trip_payment: { status: 'confirmed', method: 'cash', amount: '1200.00' },
+    };
+    socket.on.mockClear();
+    api.get.mockReset()
+      .mockResolvedValueOnce({ data: [activeTrip] })
+      .mockResolvedValueOnce({ data: activeTrip });
+    api.getServices.mockResolvedValue({ data: [{ id: 1, name: 'Estafeta', category: 'delivery' }] });
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(require('./DeliveryFlowScreen').default, {
+        navigation: { navigate: jest.fn() }, route: { params: {} },
+      }));
+    });
+    const onConnect = socket.on.mock.calls.find(([event]) => event === 'connect')?.[1];
+    expect(onConnect).toEqual(expect.any(Function));
+
+    api.get.mockReset()
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: paidTrip });
+    await act(async () => onConnect());
+
+    expect(api.get).toHaveBeenNthCalledWith(1, '/trips/active/user-1');
+    expect(api.get).toHaveBeenNthCalledWith(2, '/trips/trip-delivery-reconnect');
+    expect(renderer.root.findAll((node) => node.type === 'Text' && node.children.join('') === 'Entrega Concluída!')).toHaveLength(1);
     await act(async () => renderer.unmount());
   });
 });

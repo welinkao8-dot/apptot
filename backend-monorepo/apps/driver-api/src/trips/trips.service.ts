@@ -463,18 +463,6 @@ export class TripsService {
             await tx.trips.update({ where: { id: tripId }, data: { final_fare: finalFare } });
             trip.final_fare = finalFare;
 
-            const existingInvoice = await tx.invoices.findFirst({ where: { trip_id: tripId } });
-            if (!existingInvoice) {
-                await tx.invoices.create({
-                    data: {
-                        trip_id: tripId,
-                        user_id: trip.client_id,
-                        amount: trip.final_fare || trip.estimated_fare || 0,
-                        invoice_type: trip.category === 'delivery' ? 'delivery_receipt' : 'ride_receipt'
-                    }
-                });
-            }
-
             await tx.trip_payments.create({
                 data: {
                     trip_id: tripId,
@@ -537,8 +525,14 @@ export class TripsService {
     }
 
     async createInvoice(tripId: string) {
-        const trip = await this.findOne(tripId);
+        const trip = await this.prisma.trips.findUnique({
+            where: { id: tripId },
+            include: { trip_payment: true },
+        });
         if (!trip) throw new BadRequestException('Trip not found');
+        if (trip.status !== 'completed' || trip.trip_payment?.status !== 'confirmed' || !trip.trip_payment.confirmed_at) {
+            throw new BadRequestException('O recibo só pode ser criado após a confirmação do pagamento.');
+        }
         const existing = await this.prisma.invoices.findFirst({ where: { trip_id: tripId } });
         if (existing) return existing;
 
@@ -546,8 +540,8 @@ export class TripsService {
             data: {
                 trip_id: tripId,
                 user_id: trip.client_id,
-                amount: trip.final_fare || trip.estimated_fare || 0,
-                invoice_type: 'ride_receipt'
+                amount: trip.trip_payment.amount,
+                invoice_type: trip.category === 'delivery' ? 'delivery_receipt' : 'ride_receipt'
             }
         });
     }

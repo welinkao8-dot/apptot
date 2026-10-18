@@ -1,98 +1,44 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# TOT backend monorepo
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+The active backend is the NestJS monorepo. `admin-api`, `client-api`, and `driver-api` share the Prisma schema and the PostgreSQL database. The old standalone Express servers are preserved under `archive/legacy-backends/` and are not part of local or production startup.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Local development
 
-## Description
+Install dependencies from this directory, generate Prisma Client, and start PostgreSQL with the repository's `docker-compose.yml` if needed:
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
-
-```bash
-$ npm install
+```powershell
+npm ci
+npx prisma generate --schema libs/database/prisma/schema.prisma
 ```
 
-## Compile and run the project
+Set `DATABASE_URL`, `JWT_SECRET`, and the API-specific keys in your local environment. Start each service in a separate terminal from this directory:
 
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+```powershell
+npm run start:dev -- admin-api
+npm run start:dev -- client-api
+npm run start:dev -- driver-api
 ```
 
-## Run tests
+The default ports are 3000, 3001, and 3004. Never run production migrations against a local database with important data; use `npm run db:migrate:deploy` only for the intended database.
 
-```bash
-# unit tests
-$ npm run test
+## API rate limits
 
-# e2e tests
-$ npm run test:e2e
+All three APIs limit each route to 120 requests per client IP per 60 seconds by default. Configure `API_RATE_LIMIT_LIMIT` and `API_RATE_LIMIT_TTL_MS` to change the limit and window. The Nest guard returns HTTP 429 after the budget is exhausted and includes rate-limit headers.
 
-# test coverage
-$ npm run test:cov
+The tracker uses Express's trusted-proxy setting. `TRUST_PROXY_HOPS` defaults to `0`; set the exact number of trusted reverse-proxy hops in the deployment environment only when requests are guaranteed to pass through those proxies. Do not trust forwarded headers from clients that can reach the API directly. The built-in storage is per process, so multiple replicas need shared throttler storage before horizontal scaling; otherwise each replica has its own budget.
+
+## Validation
+
+```powershell
+npm test -- --runInBand
+npx jest --config apps/admin-api/test/jest-e2e.json --runInBand
+npx jest --config apps/client-api/test/jest-e2e.json --runInBand
+npx jest --config apps/driver-api/test/jest-e2e.json --runInBand
+npx nest build admin-api
+npx nest build client-api
+npx nest build driver-api
 ```
 
-## Deployment
+The disposable PostgreSQL 15 integration harness is `npm run test:plan01:postgres`. It starts and removes its own uniquely named test container and refuses non-local database URLs. It does not connect to the developer's `tot_db` container.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+Production Compose uses the root `backend.Dockerfile` and starts the three compiled Nest applications. Production rollout instructions remain in the repository's `DEPLOY_GUIDE_COOLIFY.md`.

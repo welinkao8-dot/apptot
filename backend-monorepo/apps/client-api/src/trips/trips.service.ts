@@ -174,6 +174,7 @@ export class TripsService {
             include: {
                 profiles_trips_driver_idToprofiles: true,
                 invoices: true,
+                trip_payment: { select: { status: true, method: true, amount: true, confirmed_at: true } },
                 trip_quotes: { select: { pricing_snapshot: true } },
             }
         }));

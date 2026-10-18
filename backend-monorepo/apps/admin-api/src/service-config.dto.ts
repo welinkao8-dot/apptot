@@ -1,4 +1,5 @@
 import { PartialType } from '@nestjs/mapped-types';
+import { Transform } from 'class-transformer';
 import { IsIn, IsNotEmpty, IsNumber, IsOptional, IsString, Max, MaxLength, Min } from 'class-validator';
 
 const DECIMAL_10_2_MAX = 99_999_999.99;
@@ -49,6 +50,10 @@ export class CreateServiceConfigDto {
   min_fare!: number;
 
   @IsIn(PLATFORM_FEE_TYPES)
+  @Transform(({ value }) => {
+    const normalized = String(value ?? '').trim().toLowerCase();
+    return normalized === 'percent' ? 'percentage' : normalized || value;
+  })
   platform_fee_type!: (typeof PLATFORM_FEE_TYPES)[number];
 
   @IsMoney()

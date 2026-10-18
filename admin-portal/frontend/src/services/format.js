@@ -42,6 +42,15 @@ export function formatDateTime(value, fallback = 'Sem data registada') {
     }).format(date)
 }
 
+export function formatDate(value, fallback = 'Sem data registada') {
+    if (!value) return fallback
+    const date = new Date(value)
+    if (Number.isNaN(date.getTime())) return fallback
+    return new Intl.DateTimeFormat('pt-AO', {
+        day: '2-digit', month: '2-digit', year: 'numeric',
+    }).format(date)
+}
+
 export function formatClock(value, fallback = 'Sem registo') {
     if (!value) return fallback
     const date = new Date(value)
@@ -57,4 +66,34 @@ export function formatPhone(value) {
     if (digits.length === 9) return `${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6)}`
     if (digits.length === 12) return `+${digits.slice(0, 3)} ${digits.slice(3, 6)} ${digits.slice(6, 9)} ${digits.slice(9)}`
     return digits
+}
+
+const PAYMENT_METHODS = {
+    cash: 'Numerário (Cash)',
+    multicaixa_express: 'Multicaixa Express',
+    mcx: 'Multicaixa Express',
+    wallet: 'Carteira Digital',
+    card: 'Cartão de Pagamento',
+    bank_transfer: 'Transferência Bancária',
+}
+
+export function formatPaymentMethod(method, fallback = 'Não especificado') {
+    if (!method) return fallback
+    const key = String(method).trim().toLowerCase()
+    return PAYMENT_METHODS[key] || key.replace(/[_-]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+}
+
+const SERVICE_TYPES = {
+    ride: 'Corrida',
+    delivery: 'Entrega',
+    express: 'Serviço Expresso',
+    standard: 'Padrão',
+    moto: 'Moto Táxi',
+    comfort: 'Conforto',
+}
+
+export function formatServiceType(serviceType, fallback = 'Moto Táxi') {
+    if (!serviceType) return fallback
+    const key = String(serviceType).trim().toLowerCase()
+    return SERVICE_TYPES[key] || key.replace(/[_-]+/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
 }

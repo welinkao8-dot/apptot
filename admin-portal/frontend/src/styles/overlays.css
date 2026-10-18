@@ -20,9 +20,12 @@
     align-items: center;
     justify-content: center;
     padding: var(--tot-space-5);
-    background: rgba(20, 27, 38, .5);
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
     overflow-y: auto;
     overscroll-behavior: contain;
+    animation: tot-fade-in 0.2s ease-out;
 }
 
 .modal-content,
@@ -33,20 +36,46 @@
 .status-reason-dialog,
 .map-modal,
 .verif-modal {
+    position: relative;
     width: min(100%, 560px);
     max-height: calc(100dvh - var(--tot-space-10));
     margin: auto;
-    overflow-y: auto;
-    background: var(--tot-surface);
-    border: 0;
-    border-radius: var(--tot-radius-lg);
-    box-shadow: var(--tot-shadow-overlay);
+    overflow: hidden;
+    background: #ffffff;
+    border: 1px solid rgba(251, 207, 232, 0.8);
+    border-radius: 32px;
+    box-shadow: 0 25px 60px -15px rgba(233, 30, 99, 0.22), 0 0 0 1px rgba(233, 30, 99, 0.12);
+    animation: tot-zoom-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.glass-modal,
-.glass {
-    background: var(--tot-surface);
-    backdrop-filter: none;
+.modal-content::before,
+.receipt-modal::before,
+.invoice-dialog::before,
+.driver-map-dialog::before,
+.status-reason-dialog::before,
+.map-modal::before,
+.verif-modal::before {
+    content: '';
+    display: block;
+    height: 6px;
+    width: 100%;
+    background: linear-gradient(90deg, #E91E63 0%, #FF2E93 50%, #880E4F 100%);
+}
+
+@keyframes tot-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes tot-zoom-in {
+    from {
+        opacity: 0;
+        transform: scale(0.95) translateY(8px);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1) translateY(0);
+    }
 }
 
 .wide-modal {

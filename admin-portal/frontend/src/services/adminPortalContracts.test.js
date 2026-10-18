@@ -5,11 +5,22 @@ import { bindAdminDashboardEvents, bindAdminSocketAuth, getAdminSocketOptions, h
 test('uses the admin socket token handshake and actual gateway event names', () => {
         const socket = { on: (...args) => socket.onCalls.push(args), off: (...args) => socket.offCalls.push(args), onCalls: [], offCalls: [] };
         const refresh = () => {};
-        assert.deepEqual(getAdminSocketOptions('jwt'), { auth: { token: 'jwt' } });
-        const unbind = bindAdminDashboardEvents(socket, { onDriverStatusUpdated: refresh, onPricingUpdated: refresh });
-        assert.deepEqual(socket.onCalls.map(([event]) => event), ['driver_status_updated', 'pricing_updated']);
+        let currentToken = 'first-jwt';
+        const options = getAdminSocketOptions(() => currentToken);
+        const authPayloads = [];
+        options.auth(payload => authPayloads.push(payload));
+        currentToken = 'renewed-jwt';
+        options.auth(payload => authPayloads.push(payload));
+        assert.deepEqual(authPayloads, [{ token: 'first-jwt' }, { token: 'renewed-jwt' }]);
+        let reconnects = 0;
+        const unbind = bindAdminDashboardEvents(socket, { onDriverStatusUpdated: refresh, onPricingUpdated: refresh, onReconnected: () => { reconnects += 1; } });
+        assert.deepEqual(socket.onCalls.map(([event]) => event), ['driver_status_updated', 'pricing_updated', 'connect']);
+        const handleConnect = socket.onCalls.find(([event]) => event === 'connect')?.[1];
+        handleConnect();
+        handleConnect();
+        assert.equal(reconnects, 1);
         unbind();
-        assert.equal(socket.offCalls.length, 2);
+        assert.equal(socket.offCalls.length, 3);
 });
 
 test('expires admin auth only for explicit socket auth rejection, not transport failures', () => {

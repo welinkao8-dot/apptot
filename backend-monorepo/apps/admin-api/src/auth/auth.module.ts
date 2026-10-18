@@ -7,7 +7,7 @@ import { DatabaseModule } from '@app/database';
 @Module({
     imports: [
         DatabaseModule,
-        SharedAuthModule.register({ expiresIn: '1d' }),
+        SharedAuthModule.register({ expiresIn: '15m' }),
     ],
     controllers: [AuthController],
     providers: [AuthService],

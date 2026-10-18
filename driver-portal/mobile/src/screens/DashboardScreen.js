@@ -30,7 +30,7 @@ import { startAndWaitForLocationFix as waitForGpsFix } from '../services/driverL
 import { acceptRideWithReconciliation } from '../services/rideAcceptance';
 import { runRideTransitionWithReconciliation } from '../services/rideTransition';
 import { reconcileActiveRide } from '../services/rideReconciliation';
-import { isTripOfferMessage, registerDriverPushToken } from '../services/driverPushNotifications';
+import { isTripOfferMessage, openPendingTripOffer, registerDriverPushToken } from '../services/driverPushNotifications';
 
 const { LocationModule } = NativeModules;
 const { width } = Dimensions.get('window');
@@ -183,26 +183,42 @@ export default function DashboardScreen({ navigation }) {
             console.error('Error fetching dashboard stats:', toSafeErrorLog(e));
         } 
     };
-    const fetchPendingTrips = async () => { try { const r = await api.get('/trips/pending'); if (r.data) setRequests(r.data); } catch (e) {} };
+    const fetchPendingTrips = async () => { try { const r = await api.get('/trips/pending'); if (r.data) setRequests(r.data); return r.data; } catch (e) { return []; } };
 
     useEffect(() => {
         if (!token || Platform.OS !== 'android') return undefined;
 
-        const handlePushMessage = (message) => {
+        const handlePushMessage = async (message, shouldOpenOffer = false) => {
             const tripId = isTripOfferMessage(message);
             if (!tripId) return;
             if (!notifiedOfferIds.current.has(tripId)) {
                 notifiedOfferIds.current.add(tripId);
                 ReactNativeHapticFeedback.trigger('notificationSuccess', hapticOptions);
-                Toast.show({ type: 'info', text1: 'Nova solicitação', text2: 'Abre a lista para ver a oferta.' });
+                Toast.show({ type: 'info', text1: 'Nova solicitação', text2: shouldOpenOffer ? 'A verificar se a oferta ainda está disponível.' : 'Abre a lista para ver a oferta.' });
             }
-            fetchPendingTrips();
+            if (shouldOpenOffer) {
+                const trip = await openPendingTripOffer({
+                    tripId,
+                    api,
+                    navigation,
+                    onAccept: (offer) => handleAcceptRide(offer),
+                    onReject: (offer) => handleDeclineRide(offer),
+                });
+                if (trip) {
+                    setRequests((current) => current.some((item) => item.id === trip.id) ? current : [trip, ...current]);
+                } else {
+                    await fetchPendingTrips();
+                    Toast.show({ type: 'info', text1: 'Oferta indisponível', text2: 'A solicitação expirou ou já foi aceite.' });
+                }
+                return;
+            }
+            await fetchPendingTrips();
         };
 
         const instance = messaging();
         const unsubscribeForeground = instance.onMessage(handlePushMessage);
-        const unsubscribeOpened = instance.onNotificationOpenedApp(handlePushMessage);
-        instance.getInitialNotification().then(handlePushMessage).catch(() => {});
+        const unsubscribeOpened = instance.onNotificationOpenedApp((message) => handlePushMessage(message, true));
+        instance.getInitialNotification().then((message) => handlePushMessage(message, true)).catch(() => {});
         return () => {
             unsubscribeForeground();
             unsubscribeOpened();

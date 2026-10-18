@@ -158,6 +158,23 @@ describe('TripsService', () => {
     }));
   });
 
+  it('returns only persisted payment fields when restoring a specific client trip', async () => {
+    const payment = { status: 'confirmed', method: 'cash', amount: '950.00', confirmed_at: new Date('2026-10-18T00:00:00Z') };
+    const prisma = { trips: { findUnique: jest.fn().mockResolvedValue({
+      id: 'trip-a', client_id: 'client-a', status: 'completed', trip_payment: payment,
+    }) } };
+    const service = new TripsService(prisma as never, {} as never);
+
+    const trip = await service.findOneForClient('trip-a', 'client-a');
+
+    expect(trip.trip_payment).toEqual(payment);
+    expect(prisma.trips.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      include: expect.objectContaining({
+        trip_payment: { select: { status: true, method: true, amount: true, confirmed_at: true } },
+      }),
+    }));
+  });
+
   it('applies one-based history pagination instead of returning the first page repeatedly', async () => {
     const findMany = jest.fn().mockResolvedValue([]);
     const service = new TripsService({ trips: { findMany } } as never, {} as never);

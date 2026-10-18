@@ -26,6 +26,68 @@ describe('QuotesService', () => {
     }));
   });
 
+  it('uses an admin-updated rate for new quotes and leaves an earlier quote snapshot unchanged', async () => {
+    const activeService = { id: 4, category: 'ride', name: 'Carro', routing_mode: 'car', base_fare: 500, price_per_km: 100, price_per_min: 50, min_fare: 700 };
+    const persisted = [];
+    const prisma = {
+      service_configs: { findMany: jest.fn().mockImplementation(async () => [{ ...activeService }]) },
+      trip_quotes: { create: jest.fn().mockImplementation(({ data }) => { const quote = { id: `quote-${persisted.length + 1}`, ...data }; persisted.push(quote); return quote; }) },
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 4 }]),
+      $transaction: jest.fn(operation => operation(prisma)),
+    };
+    const router = { getRoute: jest.fn().mockResolvedValue({ distanceMeters: 10_000, durationSeconds: 1_200, polyline: 'route' }) };
+    const service = new QuotesService(prisma as never, router as never);
+    const request = { category: 'ride' as const, originAddress: 'A', destAddress: 'B', originLat: -8.8, originLng: 13.2, destLat: -8.9, destLng: 13.3 };
+
+    const first = await service.create('client-a', request);
+    activeService.base_fare = 600;
+    activeService.price_per_km = 120;
+    const second = await service.create('client-a', request);
+
+    expect(first[0].estimatedFare).toBe('2500.00');
+    expect(second[0].estimatedFare).toBe('2800.00');
+    expect(persisted[0].pricing_snapshot).toMatchObject({ baseFare: 500, pricePerKm: 100, pricePerMin: 50, minFare: 700 });
+    expect(persisted[1].pricing_snapshot).toMatchObject({ baseFare: 600, pricePerKm: 120, pricePerMin: 50, minFare: 700 });
+  });
+
+  it('rejects fares above the supported database precision before persisting any quote', async () => {
+    const prisma = {
+      service_configs: { findMany: jest.fn().mockResolvedValue([{ id: 4, category: 'ride', name: 'Carro', routing_mode: 'car', base_fare: 0, price_per_km: 99_999_999, price_per_min: 0, min_fare: 0 }]) },
+      trip_quotes: { create: jest.fn() },
+      $queryRaw: jest.fn().mockResolvedValue([{ id: 4 }]),
+      $transaction: jest.fn(),
+    };
+    const router = { getRoute: jest.fn().mockResolvedValue({ distanceMeters: 10_000, durationSeconds: 1, polyline: 'route' }) };
+    const service = new QuotesService(prisma as never, router as never);
+
+    await expect(service.create('client-a', {
+      category: 'ride', originAddress: 'A', destAddress: 'B',
+      originLat: -8.8, originLng: 13.2, destLat: -8.9, destLng: 13.3,
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { base_fare: -1, price_per_km: 10, price_per_min: 1, min_fare: 1 },
+    { base_fare: 1, price_per_km: Number.NaN, price_per_min: 1, min_fare: 1 },
+    { base_fare: 1, price_per_km: 10, price_per_min: 1, min_fare: 100_000_000 },
+  ])('rejects corrupt service pricing before requesting a route: %p', async (pricing) => {
+    const prisma = {
+      service_configs: { findMany: jest.fn().mockResolvedValue([{ id: 4, category: 'ride', name: 'Carro', routing_mode: 'car', ...pricing }]) },
+      trip_quotes: { create: jest.fn() },
+      $transaction: jest.fn(),
+    };
+    const router = { getRoute: jest.fn() };
+    const service = new QuotesService(prisma as never, router as never);
+
+    await expect(service.create('client-a', {
+      category: 'ride', originAddress: 'A', destAddress: 'B',
+      originLat: -8.8, originLng: 13.2, destLat: -8.9, destLng: 13.3,
+    })).rejects.toBeInstanceOf(BadRequestException);
+    expect(router.getRoute).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
   it('calculates each service with its configured transport mode and returns matching geometry', async () => {
     const services = [
       { id: 4, category: 'ride', name: 'Carro', routing_mode: 'car', base_fare: 500, price_per_km: 100, price_per_min: 50, min_fare: 700 },
@@ -80,7 +142,11 @@ describe('QuotesService', () => {
     });
 
     expect(quotes).toHaveLength(1);
-    expect(quotes[0]).toEqual(expect.objectContaining({ serviceConfigId: 5, routePolyline: 'scooter-route' }));
+    expect(quotes[0]).toEqual(expect.objectContaining({
+      serviceConfigId: 5,
+      routePolyline: 'scooter-route',
+      unavailableServices: [{ serviceConfigId: 4, serviceName: 'Carro', routingMode: 'car', reason: 'route_unavailable' }],
+    }));
     expect(prisma.trip_quotes.create).toHaveBeenCalledTimes(1);
     expect(router.getRoute).toHaveBeenCalledTimes(2);
   });

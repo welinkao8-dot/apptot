@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Get, Post, Param, Body, Query, UseGuards, UseInterceptors, UploadedFile, UsePipes, ValidationPipe } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Post, Param, Body, Query, UseGuards, UseInterceptors, UploadedFile, UsePipes, ValidationPipe, ParseIntPipe, ParseUUIDPipe, Optional, HttpCode, HttpStatus } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { join } from 'path';
@@ -10,14 +10,20 @@ import type { AuthUser } from '@app/auth';
 import { CreateServiceConfigDto, UpdateServiceConfigDto } from './service-config.dto';
 import { AdminStatusDto, DriverStatusDto, DriverToggleStatusDto, DriverVehicleCategoryDto } from './admin-status.dto';
 import { getSupportedRasterImageType } from './image-upload';
+import { QuotePreviewDto } from './quote-preview.dto';
+import { QuotePreviewService } from './quote-preview.service';
 
 const strictStatusPipe = new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true });
+function assertAllowedQueryKeys(query: object, allowed: string[]) {
+  const unknown = Object.keys(query).find(key => !allowed.includes(key));
+  if (unknown) throw new BadRequestException(`Parâmetro desconhecido: ${unknown}.`);
+}
 
 @Controller('admin')
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles('admin')
 export class AdminApiController {
-  constructor(private readonly adminApiService: AdminApiService) { }
+  constructor(private readonly adminApiService: AdminApiService, @Optional() private readonly quotePreviewService?: QuotePreviewService) { }
 
   @Get('stats')
   getStats() {
@@ -26,6 +32,7 @@ export class AdminApiController {
 
   @Get('drivers')
   getAllDrivers(@Query() query: { page?: string; limit?: string; status?: string; search?: string }) {
+    assertAllowedQueryKeys(query, ['page', 'limit', 'status', 'search']);
     const parsePositiveInteger = (value: string | undefined, fallback: number, name: string, max: number) => {
       if (value === undefined) return fallback;
       if (typeof value !== 'string' || !/^\d+$/.test(value)) throw new BadRequestException(`${name} deve ser um número inteiro positivo.`);
@@ -47,6 +54,7 @@ export class AdminApiController {
 
   @Get('clients')
   getAllClients(@Query() query: { page?: string; limit?: string; search?: string }) {
+    assertAllowedQueryKeys(query, ['page', 'limit', 'search']);
     const parsePositiveInteger = (value: string | undefined, fallback: number, name: string, max: number) => {
       if (value === undefined) return fallback;
       if (typeof value !== 'string' || !/^\d+$/.test(value)) throw new BadRequestException(`${name} deve ser um número inteiro positivo.`);
@@ -63,14 +71,16 @@ export class AdminApiController {
   }
 
   @Get('clients/:id/trips')
-  getClientTrips(@Param('id') id: string, @Query() query: { page?: string; limit?: string }) {
+  getClientTrips(@Param('id', ParseUUIDPipe) id: string, @Query() query: { page?: string; limit?: string }) {
+    assertAllowedQueryKeys(query, ['page', 'limit']);
     const page = this.parsePaginationValue(query.page, 1, 'page', 100_000);
     const limit = this.parsePaginationValue(query.limit, 20, 'limit', 100);
     return this.adminApiService.getClientTrips(id, page, limit);
   }
 
   @Get('drivers/:id/trips')
-  getDriverTrips(@Param('id') id: string, @Query() query: { page?: string; limit?: string }) {
+  getDriverTrips(@Param('id', ParseUUIDPipe) id: string, @Query() query: { page?: string; limit?: string }) {
+    assertAllowedQueryKeys(query, ['page', 'limit']);
     const page = this.parsePaginationValue(query.page, 1, 'page', 100_000);
     const limit = this.parsePaginationValue(query.limit, 20, 'limit', 100);
     return this.adminApiService.getDriverTrips(id, page, limit);
@@ -95,29 +105,29 @@ export class AdminApiController {
   }
 
   @Get('drivers/:id')
-  getDriver(@Param('id') id: string) {
+  getDriver(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminApiService.getDriverById(id);
   }
 
   @Get('drivers/:id/documents')
-  getDriverDocuments(@Param('id') id: string) {
+  getDriverDocuments(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminApiService.getDriverDocuments(id);
   }
 
   @Post('drivers/:id/vehicle-category')
   @UsePipes(strictStatusPipe)
-  updateDriverVehicleCategory(@Param('id') id: string, @Body() body: DriverVehicleCategoryDto, @CurrentUser() admin: AuthUser) {
+  updateDriverVehicleCategory(@Param('id', ParseUUIDPipe) id: string, @Body() body: DriverVehicleCategoryDto, @CurrentUser() admin: AuthUser) {
     return this.adminApiService.updateDriverVehicleCategory(id, body.vehicle_category, admin.sub);
   }
 
   @Post('drivers/:id/approve')
-  approveDriver(@Param('id') id: string, @CurrentUser() admin: AuthUser) {
+  approveDriver(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() admin: AuthUser) {
     return this.adminApiService.approveDriver(id, admin.sub);
   }
 
   @Post('drivers/:id/status')
   @UsePipes(strictStatusPipe)
-  updateStatus(@Param('id') id: string, @Body() body: DriverStatusDto, @CurrentUser() admin: AuthUser) {
+  updateStatus(@Param('id', ParseUUIDPipe) id: string, @Body() body: DriverStatusDto, @CurrentUser() admin: AuthUser) {
     return this.adminApiService.updateDriverStatus(id, body.status === 'approved' ? 'active' : body.status, admin.sub, body.reason);
   }
 
@@ -126,31 +136,40 @@ export class AdminApiController {
     return this.adminApiService.getServiceConfigs();
   }
 
+  @Post('services/:id/quote-preview')
+  @HttpCode(HttpStatus.OK)
+  @UsePipes(strictStatusPipe)
+  previewServiceQuote(@Param('id', ParseIntPipe) id: number, @Body() body: QuotePreviewDto) {
+    if (!this.quotePreviewService) throw new BadRequestException('A simulação de tarifas não está disponível.');
+    return this.quotePreviewService.preview(id, body);
+  }
+
   @Post('services')
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
+  @UsePipes(strictStatusPipe)
   createService(@Body() data: CreateServiceConfigDto, @CurrentUser() admin: AuthUser) {
     return this.adminApiService.createServiceConfig(data, admin.sub);
   }
 
   @Post('services/:id')
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
-  updateService(@Param('id') id: string, @Body() data: UpdateServiceConfigDto, @CurrentUser() admin: AuthUser) {
-    return this.adminApiService.updateServiceConfig(Number(id), data, admin.sub);
+  @UsePipes(strictStatusPipe)
+  updateService(@Param('id', ParseIntPipe) id: number, @Body() data: UpdateServiceConfigDto, @CurrentUser() admin: AuthUser) {
+    return this.adminApiService.updateServiceConfig(id, data, admin.sub);
   }
 
   @Post('services/:id/delete') // or 
-  deleteService(@Param('id') id: string, @CurrentUser() admin: AuthUser) {
-    return this.adminApiService.deleteServiceConfig(Number(id), admin.sub);
+  deleteService(@Param('id', ParseIntPipe) id: number, @CurrentUser() admin: AuthUser) {
+    return this.adminApiService.deleteServiceConfig(id, admin.sub);
   }
 
   @Post('configs/:id')
-  @UsePipes(new ValidationPipe({ whitelist: true, transform: true }))
-  updateConfig(@Param('id') id: string, @Body() data: UpdateServiceConfigDto, @CurrentUser() admin: AuthUser) {
-    return this.adminApiService.updateServiceConfig(Number(id), data, admin.sub);
+  @UsePipes(strictStatusPipe)
+  updateConfig(@Param('id', ParseIntPipe) id: number, @Body() data: UpdateServiceConfigDto, @CurrentUser() admin: AuthUser) {
+    return this.adminApiService.updateServiceConfig(id, data, admin.sub);
   }
 
   @Get('trips')
   getAllTrips(@Query() query: { page?: string; limit?: string; status?: string; search?: string }) {
+    assertAllowedQueryKeys(query, ['page', 'limit', 'status', 'search']);
     const parsePositiveInteger = (value: string | undefined, fallback: number, name: string, max = Number.MAX_SAFE_INTEGER) => {
       if (value === undefined) return fallback;
       if (!/^\d+$/.test(value)) throw new BadRequestException(`${name} deve ser um número inteiro positivo.`);
@@ -174,12 +193,13 @@ export class AdminApiController {
   }
 
   @Get('trips/:id')
-  getTripById(@Param('id') id: string) {
+  getTripById(@Param('id', ParseUUIDPipe) id: string) {
     return this.adminApiService.getTripById(id);
   }
 
   @Get('invoices')
   getAllInvoices(@Query() query: { page?: string; limit?: string; type?: string; search?: string }) {
+    assertAllowedQueryKeys(query, ['page', 'limit', 'type', 'search']);
     const page = this.parsePaginationValue(query.page, 1, 'page', 100_000);
     const limit = this.parsePaginationValue(query.limit, 20, 'limit', 100);
     if (query.type !== undefined && typeof query.type !== 'string') throw new BadRequestException('type deve ser texto.');
@@ -193,6 +213,7 @@ export class AdminApiController {
 
   @Get('payments')
   getAllPayments(@Query() query: { page?: string; limit?: string; status?: string; search?: string }) {
+    assertAllowedQueryKeys(query, ['page', 'limit', 'status', 'search']);
     const page = this.parsePaginationValue(query.page, 1, 'page', 100_000);
     const limit = this.parsePaginationValue(query.limit, 20, 'limit', 100);
     if (query.status !== undefined && (typeof query.status !== 'string' || !['all', 'pending', 'confirmed'].includes(query.status))) {
@@ -205,7 +226,7 @@ export class AdminApiController {
   }
 
   @Get('invoices/user/:userId')
-  getInvoicesByUser(@Param('userId') userId: string) {
+  getInvoicesByUser(@Param('userId', ParseUUIDPipe) userId: string) {
     return this.adminApiService.getInvoicesByUser(userId);
   }
 
@@ -216,6 +237,7 @@ export class AdminApiController {
 
   @Get('logs')
   getLogs(@Query() query: { page?: string; limit?: string; action?: string; target?: string; search?: string }) {
+    assertAllowedQueryKeys(query, ['page', 'limit', 'action', 'target', 'search']);
     const page = this.parsePaginationValue(query.page, 1, 'page', 100_000);
     const limit = this.parsePaginationValue(query.limit, 20, 'limit', 100);
     const parseFilter = (value: string | undefined, name: string, maxLength: number) => {
@@ -238,14 +260,14 @@ export class AdminApiController {
 
   @Post('drivers/:id/toggle-status')
   @UsePipes(strictStatusPipe)
-  toggleDriverStatus(@Param('id') id: string, @Body() body: DriverToggleStatusDto, @CurrentUser() admin: AuthUser) {
+  toggleDriverStatus(@Param('id', ParseUUIDPipe) id: string, @Body() body: DriverToggleStatusDto, @CurrentUser() admin: AuthUser) {
     const newStatus = body.action === 'activate' ? 'active' : 'suspended';
     return this.adminApiService.updateDriverStatus(id, newStatus, admin.sub, body.reason);
   }
 
   @Post('clients/:id/status')
   @UsePipes(strictStatusPipe)
-  updateClientStatus(@Param('id') id: string, @Body() body: AdminStatusDto, @CurrentUser() admin: AuthUser) {
+  updateClientStatus(@Param('id', ParseUUIDPipe) id: string, @Body() body: AdminStatusDto, @CurrentUser() admin: AuthUser) {
     return this.adminApiService.updateClientStatus(id, body.status, admin.sub, body.reason);
   }
 

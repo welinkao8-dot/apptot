@@ -143,7 +143,7 @@ describe('AdminApiController', () => {
     const deleteServiceConfig = jest.fn();
     const controller = new AdminApiController({ deleteServiceConfig } as never);
 
-    controller.deleteService('7', { sub: 'admin-profile-id' } as never);
+    controller.deleteService(7, { sub: 'admin-profile-id' } as never);
 
     expect(deleteServiceConfig).toHaveBeenCalledWith(7, 'admin-profile-id');
   });

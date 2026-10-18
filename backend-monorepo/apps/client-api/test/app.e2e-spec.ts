@@ -6,6 +6,7 @@ import { PrismaService } from '@app/database';
 import { ClientApiModule } from './../src/client-api.module';
 
 describe('ClientApiController (e2e)', () => {
+  const tripRouteId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
   let app: INestApplication;
   let jwt: JwtService;
   let prisma: any;
@@ -27,6 +28,7 @@ describe('ClientApiController (e2e)', () => {
 
   beforeAll(() => {
     process.env.JWT_SECRET = 'task-3-e2e-secret';
+    process.env.API_RATE_LIMIT_LIMIT = '10';
   });
 
   beforeEach(async () => {
@@ -45,7 +47,7 @@ describe('ClientApiController (e2e)', () => {
         },
       })),
       trips: {
-        findUnique: jest.fn((args: { where?: { id?: string; quote_id?: string } }) => Promise.resolve(args.where?.id === 'trip-b' ? trip : null)),
+        findUnique: jest.fn((args: { where?: { id?: string; quote_id?: string } }) => Promise.resolve(args.where?.id === tripRouteId ? trip : null)),
         findMany: jest.fn(({ where }: { where: { client_id: string } }) => Promise.resolve(where.client_id === trip.client_id ? [trip] : [])),
         create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
       },
@@ -70,12 +72,40 @@ describe('ClientApiController (e2e)', () => {
     await app.close();
   });
 
+  it('returns 429 after the configured request budget is exhausted', async () => {
+    let response;
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      response = await request(app.getHttpServer()).get('/');
+    }
+    expect(response?.status).toBe(429);
+  });
+
   it('reports database readiness on the unauthenticated health route', () => {
     return request(app.getHttpServer()).get('/health').expect(200).expect({ status: 'ok' });
   });
 
   it('rejects an unauthenticated client trip read', () => {
-    return request(app.getHttpServer()).get('/trips/trip-b').expect(401);
+    return request(app.getHttpServer()).get(`/trips/${tripRouteId}`).expect(401);
+  });
+
+  it('rejects malformed map coordinates instead of silently routing around them', async () => {
+    const token = jwt.sign({ sub: 'client-a', role: 'client' });
+    await request(app.getHttpServer()).get('/locations/autosuggest?q=maianga&lat=not-a-number&lng=13.2')
+      .set('Authorization', `Bearer ${token}`).expect(400);
+  });
+
+  it.each([
+    '/locations/autosuggest?q=maianga&unexpected=1',
+    '/locations/autosuggest?q=maianga&q=talatona',
+  ])('rejects unknown or repeated autosuggest query parameters: %s', async (path) => {
+    const token = jwt.sign({ sub: 'client-a', role: 'client' });
+    await request(app.getHttpServer()).get(path).set('Authorization', `Bearer ${token}`).expect(400);
+  });
+
+  it('rejects a malformed trip id before querying the database', async () => {
+    const token = jwt.sign({ sub: 'client-a', role: 'client' });
+    await request(app.getHttpServer()).get('/trips/not-a-uuid').set('Authorization', `Bearer ${token}`).expect(400);
+    expect(prisma.trips.findUnique).not.toHaveBeenCalled();
   });
 
   it('requires client authentication to create a quote', () => {
@@ -121,7 +151,7 @@ describe('ClientApiController (e2e)', () => {
   it('rejects a driver token on a client trip route', () => {
     const token = jwt.sign({ sub: 'driver-a', role: 'driver' });
     return request(app.getHttpServer())
-      .get('/trips/trip-b')
+      .get(`/trips/${tripRouteId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
   });
@@ -129,7 +159,7 @@ describe('ClientApiController (e2e)', () => {
   it('rejects a client reading another client’s trip', () => {
     const token = jwt.sign({ sub: 'client-a', role: 'client' });
     return request(app.getHttpServer())
-      .get('/trips/trip-b')
+      .get(`/trips/${tripRouteId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
   });
@@ -235,7 +265,7 @@ describe('ClientApiController (e2e)', () => {
   it('allows the client who owns a trip to read it', () => {
     const token = jwt.sign({ sub: 'client-b', role: 'client' });
     return request(app.getHttpServer())
-      .get('/trips/trip-b')
+      .get(`/trips/${tripRouteId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200)
       .expect((response) => {

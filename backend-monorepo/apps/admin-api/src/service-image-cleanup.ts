@@ -3,6 +3,19 @@ import { dirname, resolve } from 'path';
 
 const SERVICE_IMAGE_PATH = /^\/uploads\/services\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.(jpg|png|webp)$/i;
 
+export function getManagedServiceImageAssetId(imageUrl: string | null | undefined): string | null {
+  if (!imageUrl) return null;
+  try {
+    const image = new URL(imageUrl);
+    const api = new URL(process.env.ADMIN_API_URL || 'http://localhost:3000');
+    const match = SERVICE_IMAGE_PATH.exec(image.pathname);
+    if (image.origin !== api.origin || image.search || image.hash || !match) return null;
+    return match[1];
+  } catch {
+    return null;
+  }
+}
+
 function managedServiceImagePath(imageUrl: string): string | null {
   let image: URL;
   let api: URL;

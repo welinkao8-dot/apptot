@@ -27,9 +27,6 @@ model drivers {
   password           String?   @db.VarChar(255)
   status             String?   @default("pending") @db.VarChar(50)
   vehicle_category   String?   @db.VarChar(20)
-  doc_bi_frente      String?
-  doc_bi_verso       String?
-  doc_carta_conducao String?
   is_online          Boolean?  @default(false)
   current_lat        Float?
   current_lng        Float?
@@ -40,6 +37,28 @@ model drivers {
   updated_at         DateTime? @default(now()) @db.Timestamp(6)
   trip_offers        trip_driver_offers[]
   fcm_tokens         driver_fcm_tokens[]
+  driver_documents   driver_documents[]
+}
+
+/// Private document binaries are never served by the public uploads middleware.
+/// Retention dates are set only when a document is superseded or an account is rejected.
+model driver_documents {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  driver_id       String    @db.Uuid
+  document_type   String    @db.VarChar(32)
+  content         Bytes?
+  mime_type       String    @db.VarChar(32)
+  size_bytes      Int
+  uploaded_at     DateTime  @default(now()) @db.Timestamptz(6)
+  superseded_at   DateTime? @db.Timestamptz(6)
+  retention_until DateTime? @db.Timestamptz(6)
+  legal_hold      Boolean   @default(false)
+  deleted_at      DateTime? @db.Timestamptz(6)
+  deletion_reason String?   @db.VarChar(32)
+  drivers         drivers   @relation(fields: [driver_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([driver_id, document_type, superseded_at, deleted_at])
+  @@index([retention_until, legal_hold, deleted_at])
 }
 
 model driver_fcm_tokens {
@@ -85,6 +104,20 @@ model profiles {
   trips_trips_driver_idToprofiles trips[]         @relation("trips_driver_idToprofiles")
   audit_logs                      audit_logs[]
   trip_payments_confirmed         trip_payments[] @relation("payment_confirmed_by")
+  admin_auth_sessions             admin_auth_sessions[]
+}
+
+model admin_auth_sessions {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  admin_id           String    @db.Uuid
+  refresh_token_hash String    @unique @db.VarChar(64)
+  created_at         DateTime  @default(now()) @db.Timestamptz(6)
+  last_used_at       DateTime? @db.Timestamptz(6)
+  expires_at         DateTime  @db.Timestamptz(6)
+  revoked_at         DateTime? @db.Timestamptz(6)
+  profiles           profiles  @relation(fields: [admin_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([admin_id, revoked_at, expires_at])
 }
 
 model audit_logs {

@@ -38,6 +38,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3000"
+      API_RATE_LIMIT_LIMIT: ${API_RATE_LIMIT_LIMIT:-120}
+      API_RATE_LIMIT_TTL_MS: ${API_RATE_LIMIT_TTL_MS:-60000}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required and must use host db}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
@@ -67,6 +70,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3001"
+      API_RATE_LIMIT_LIMIT: ${API_RATE_LIMIT_LIMIT:-120}
+      API_RATE_LIMIT_TTL_MS: ${API_RATE_LIMIT_TTL_MS:-60000}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required and must use host db}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       HERE_ROUTING_API_KEY: ${HERE_ROUTING_API_KEY:?HERE_ROUTING_API_KEY is required for quotes}
@@ -93,6 +99,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3004"
+      API_RATE_LIMIT_LIMIT: ${API_RATE_LIMIT_LIMIT:-120}
+      API_RATE_LIMIT_TTL_MS: ${API_RATE_LIMIT_TTL_MS:-60000}
+      TRUST_PROXY_HOPS: ${TRUST_PROXY_HOPS:-0}
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required and must use host db}
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       INTERNAL_SERVICE_TOKEN: ${INTERNAL_SERVICE_TOKEN:?INTERNAL_SERVICE_TOKEN is required}
@@ -117,7 +126,7 @@ services:
       dockerfile: frontend.Dockerfile
       args:
         PORTAL_PATH: admin-portal/frontend
-        VITE_API_URL: ${ADMIN_API_URL}
+        VITE_API_URL: ${ADMIN_API_URL:?ADMIN_API_URL is required for admin portal}
 
   client-portal:
     build:

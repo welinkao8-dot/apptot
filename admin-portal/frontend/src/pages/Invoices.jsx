@@ -10,23 +10,19 @@ import {
     Calendar,
     TrendingUp,
     RefreshCw,
-    Receipt
+    Receipt,
+    X,
 } from 'lucide-react'
 import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
 import { buildInvoicesQuery, buildPaymentsQuery, createRequestSequence, loadFinancePage, normalizeInvoicesPage, normalizePaymentsPage } from '../services/adminFinancePagination'
-
-
-const TYPE_META = {
-    'ride': { label: 'Corrida', bg: '#dbeafe', text: '#1d4ed8' },
-    'delivery': { label: 'Entrega', bg: '#d1fae5', text: '#065f46' },
-    'client': { label: 'Cliente', bg: '#ede9fe', text: '#5b21b6' },
-    'driver': { label: 'Motorista', bg: '#fef3c7', text: '#92400e' },
-}
+import { describeInvoiceType } from '../services/invoiceType'
+import { formatDate, formatDateTime, formatKz, formatPaymentMethod } from '../services/format'
 
 function getTypeMeta(type) {
-    return TYPE_META[type] || { label: type || 'Geral', bg: '#f1f5f9', text: '#475569' }
+    return describeInvoiceType(type)
 }
+
 
 export default function Invoices({ onBack }) {
     const [invoices, setInvoices] = useState([])
@@ -112,16 +108,13 @@ export default function Invoices({ onBack }) {
         <div className="trips-module animate-fade-in">
             <div className="module-header-nav">
                 <div className="flex items-center gap-4">
-                    <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
                     <div className="title-area">
-                        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Receipt size={22} style={{ color: '#e91e63' }} /> Faturas
-                        </h2>
+                        <h2>Faturas</h2>
                         <p>{totalInvoices} faturas encontradas</p>
                     </div>
                 </div>
                 <div className="header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div className="search-bar-premium">
+                    <div className="tot-search">
                         <Search size={18} />
                         <input
                             type="text"
@@ -132,47 +125,71 @@ export default function Invoices({ onBack }) {
                         />
                     </div>
                     <select
+                        className="filter-select-premium"
                         value={filterType}
                         onChange={e => setFilterType(e.target.value)}
-                        style={{
-                            padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0',
-                            background: '#fff', fontSize: 13, color: '#334155', cursor: 'pointer'
-                        }}
                     >
                         <option value="all">Todos os tipos</option>
                         {uniqueTypes.map(t => <option key={t} value={t}>{getTypeMeta(t).label}</option>)}
                     </select>
-                    <button onClick={() => { fetchInvoices(); fetchPayments() }} style={{
-                        padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0',
-                        background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                        fontSize: 13, color: '#334155'
-                    }}>
-                        <RefreshCw size={14} /> Atualizar
+                    <button className="tot-btn tot-btn--primary tot-btn--icon" onClick={() => { fetchInvoices(); fetchPayments() }} disabled={loading} aria-label="Atualizar faturas e pagamentos" title="Atualizar">
+                        <RefreshCw size={16} className={loading ? 'is-spinning' : ''} aria-hidden="true" />
                     </button>
                 </div>
             </div>
 
-            {/* KPI Cards */}
+            {/* KPI Cards (Estilo do perfil de motoristas) */}
             {!loading && !loadError && invoiceSummary && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginTop: 24 }}>
                     {[
-                        { label: 'Valor em recibos emitidos', value: `Kz ${invoiceSummary.receiptTotal.toLocaleString()}`, icon: <FileText size={22} />, color: '#e91e63' },
-                        { label: 'Recibos este mês', value: invoiceSummary.monthlyReceiptCount, icon: <Calendar size={22} />, color: '#3b82f6' },
-                        { label: 'Cash confirmado', value: paymentsLoading ? '…' : paymentsSummary ? `Kz ${paymentsSummary.confirmedCashTotal.toLocaleString()}` : '—', icon: <DollarSign size={22} />, color: '#10b981' },
-                        { label: 'Cash pendente', value: paymentsLoading ? '…' : paymentsSummary ? `Kz ${paymentsSummary.cashPendingTotal.toLocaleString()}` : '—', icon: <TrendingUp size={22} />, color: '#f59e0b' },
+                        { label: 'Valor em recibos emitidos', value: formatKz(invoiceSummary.receiptTotal), icon: <FileText size={22} /> },
+                        { label: 'Recibos este mês', value: invoiceSummary.monthlyReceiptCount, icon: <Calendar size={22} /> },
+                        { label: 'Cash confirmado', value: paymentsLoading ? '…' : paymentsSummary ? formatKz(paymentsSummary.confirmedCashTotal) : '—', icon: <DollarSign size={22} /> },
+                        { label: 'Cash pendente', value: paymentsLoading ? '…' : paymentsSummary ? formatKz(paymentsSummary.cashPendingTotal) : '—', icon: <TrendingUp size={22} /> },
                     ].map((kpi, i) => (
-                        <div key={i} style={{
-                            background: '#fff', borderRadius: 16, padding: '20px 24px',
-                            border: '1.5px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 16
-                        }}>
+                        <div
+                            key={i}
+                            style={{
+                                background: 'linear-gradient(135deg, #e91e63 0%, #c2185b 100%)',
+                                borderRadius: '24px',
+                                padding: '20px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '16px',
+                                boxShadow: '0 8px 24px rgba(233,30,99,0.2)',
+                                color: 'white'
+                            }}
+                        >
                             <div style={{
-                                width: 48, height: 48, borderRadius: 14, display: 'flex',
-                                alignItems: 'center', justifyContent: 'center',
-                                background: `${kpi.color}18`, color: kpi.color, flexShrink: 0
-                            }}>{kpi.icon}</div>
+                                width: '48px',
+                                height: '48px',
+                                borderRadius: '14px',
+                                background: 'rgba(255,255,255,0.2)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                flexShrink: 0
+                            }}>
+                                {kpi.icon}
+                            </div>
                             <div>
-                                <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>{kpi.label}</p>
-                                <p style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0 }}>{kpi.value}</p>
+                                <span style={{
+                                    display: 'block',
+                                    fontSize: '10px',
+                                    fontWeight: '800',
+                                    color: 'rgba(255,255,255,0.7)',
+                                    textTransform: 'uppercase',
+                                    letterSpacing: '0.5px'
+                                }}>
+                                    {kpi.label}
+                                </span>
+                                <span style={{
+                                    fontSize: '22px',
+                                    fontWeight: '900',
+                                    lineHeight: '1.1'
+                                }}>
+                                    {kpi.value}
+                                </span>
                             </div>
                         </div>
                     ))}
@@ -246,7 +263,7 @@ export default function Invoices({ onBack }) {
                                         {inv.profiles?.full_name || 'Desconhecido'}
                                     </span>
                                     <span style={{ fontSize: 14, fontWeight: 800, color: '#e91e63' }}>
-                                        Kz {Number(inv.amount).toLocaleString()}
+                                        {formatKz(inv.amount)}
                                     </span>
                                     <span style={{ display: 'inline-flex' }}>
                                         <span style={{
@@ -256,7 +273,7 @@ export default function Invoices({ onBack }) {
                                         }}>{meta.label}</span>
                                     </span>
                                     <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                                        {new Date(inv.created_at).toLocaleDateString('pt-AO')}
+                                        {formatDate(inv.created_at)}
                                     </span>
                                     <div style={{ display: 'flex', gap: 8 }}>
                                         {inv.pdf_url ? (
@@ -358,92 +375,91 @@ export default function Invoices({ onBack }) {
                 })()}
             </div>
 
-            {/* Detail modal */}
+            {/* Detail modal with TOT Pink Identity */}
             {selectedInvoice && (
                 <div
-                    className="invoice-dialog-overlay"
-                    style={{
-                        position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        zIndex: 1000, backdropFilter: 'blur(4px)'
-                    }}
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md animate-in fade-in duration-200"
                     onClick={() => setSelectedInvoice(null)}
                 >
                     <div
-                        className="invoice-dialog"
+                        className="relative w-full max-w-lg bg-white rounded-[32px] overflow-hidden shadow-[0_25px_60px_-15px_rgba(233,30,99,0.22)] border border-pink-100 ring-1 ring-pink-500/15 animate-in zoom-in-95 duration-200"
                         role="dialog"
                         aria-modal="true"
                         aria-label={`Fatura ${selectedInvoice.id.substring(0, 8).toUpperCase()}`}
-                        style={{
-                            background: '#fff', borderRadius: 24, padding: 32,
-                            width: 420, maxWidth: '90vw', boxShadow: '0 32px 80px rgba(0,0,0,0.2)'
-                        }}
                         onClick={e => e.stopPropagation()}
                     >
-                        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-                            <div style={{
-                                width: 64, height: 64, borderRadius: 20, background: '#e91e6318',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                margin: '0 auto 12px', color: '#e91e63'
-                            }}>
-                                <FileText size={32} />
-                            </div>
-                            <h3 style={{ margin: 0, fontSize: 20, fontWeight: 800 }}>Fatura #{selectedInvoice.id.substring(0, 8).toUpperCase()}</h3>
-                        </div>
+                        {/* Branded pink gradient top bar */}
+                        <div className="h-2 w-full bg-gradient-to-r from-[#E91E63] via-[#FF2E93] to-[#880E4F]" />
 
-                        {[
-                            ['Cliente', selectedInvoice.profiles?.full_name || 'Desconhecido'],
-                            ['Montante', `Kz ${Number(selectedInvoice.amount).toLocaleString()}`],
-                            ['Tipo', getTypeMeta(selectedInvoice.invoice_type).label],
-                            ['Pagamento', selectedInvoice.trips?.trip_payment?.status === 'confirmed'
-                                ? `Confirmado · ${selectedInvoice.trips.trip_payment.method}`
-                                : selectedInvoice.trips?.trip_payment?.status === 'pending'
-                                    ? `Pendente · ${selectedInvoice.trips.trip_payment.method}`
-                                    : 'Sem registo de pagamento'],
-                            ['Data', new Date(selectedInvoice.created_at).toLocaleString('pt-AO')],
-                            ['Corrida', selectedInvoice.trips?.id ? `#${selectedInvoice.trips.id.substring(0, 8).toUpperCase()}` : '—'],
-                            ['Origem', selectedInvoice.trips?.origin_address || '—'],
-                            ['Destino', selectedInvoice.trips?.dest_address || '—'],
-                        ].map(([label, value]) => (
-                            <div key={label} style={{
-                                display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                padding: '10px 0', borderBottom: '1px solid #f1f5f9', fontSize: 14
-                            }}>
-                                <span style={{ color: '#64748b', fontWeight: 500 }}>{label}</span>
-                                <span style={{ color: '#0f172a', fontWeight: 600, textAlign: 'right', maxWidth: 200 }}>{value}</span>
-                            </div>
-                        ))}
+                        {/* Close button */}
+                        <button
+                            type="button"
+                            onClick={() => setSelectedInvoice(null)}
+                            className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 flex items-center justify-center transition-colors"
+                            aria-label="Fechar"
+                        >
+                            <X size={16} />
+                        </button>
 
-                        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-                            {selectedInvoice.pdf_url ? (
-                                <a
-                                    href={selectedInvoice.pdf_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    style={{
-                                        flex: 1, padding: '12px', borderRadius: 12, textAlign: 'center',
-                                        background: 'linear-gradient(135deg, #e91e63, #c2185b)',
-                                        color: '#fff', fontWeight: 700, textDecoration: 'none',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8
-                                    }}
-                                >
-                                    <Download size={16} /> Baixar PDF
-                                </a>
-                            ) : (
-                                <span role="status" style={{ flex: 1, padding: 12, color: '#64748b', fontSize: 12, textAlign: 'center' }}>
-                                    Ficheiro PDF indisponível
+                        <div className="p-6 sm:p-8">
+                            <div className="text-center mb-6">
+                                <div className="w-14 h-14 rounded-2xl bg-pink-50 text-[#E91E63] ring-4 ring-pink-100/60 flex items-center justify-center mx-auto mb-3 shadow-sm">
+                                    <FileText size={28} />
+                                </div>
+                                <h3 className="text-xl font-bold text-slate-900">
+                                    Fatura #{selectedInvoice.id.substring(0, 8).toUpperCase()}
+                                </h3>
+                                <span className="inline-block mt-1.5 px-3 py-0.5 rounded-full text-xs font-semibold bg-pink-50 text-[#E91E63] border border-pink-200/60">
+                                    {getTypeMeta(selectedInvoice.invoice_type).label}
                                 </span>
-                            )}
-                            <button
-                                onClick={() => setSelectedInvoice(null)}
-                                style={{
-                                    flex: 1, padding: '12px', borderRadius: 12,
-                                    background: '#f1f5f9', border: 'none', color: '#334155',
-                                    fontWeight: 600, cursor: 'pointer', fontSize: 14
-                                }}
-                            >
-                                Fechar
-                            </button>
+                            </div>
+
+                            <div className="space-y-1.5 divide-y divide-slate-100 text-xs">
+                                {[
+                                    ['Cliente', selectedInvoice.profiles?.full_name || 'Desconhecido'],
+                                    ['Montante', formatKz(selectedInvoice.amount)],
+                                    ['Tipo', getTypeMeta(selectedInvoice.invoice_type).label],
+                                    ['Pagamento', selectedInvoice.trips?.trip_payment?.status === 'confirmed'
+                                        ? `Confirmado · ${formatPaymentMethod(selectedInvoice.trips.trip_payment.method)}`
+                                        : selectedInvoice.trips?.trip_payment?.status === 'pending'
+                                            ? `Pendente · ${formatPaymentMethod(selectedInvoice.trips.trip_payment.method)}`
+                                            : 'Sem registo de pagamento'],
+                                    ['Data', formatDateTime(selectedInvoice.created_at)],
+                                    ['Corrida', selectedInvoice.trips?.id ? `#${selectedInvoice.trips.id.substring(0, 8).toUpperCase()}` : '—'],
+                                    ['Origem', selectedInvoice.trips?.origin_address || '—'],
+                                    ['Destino', selectedInvoice.trips?.dest_address || '—'],
+                                ].map(([label, value]) => (
+                                    <div key={label} className="flex justify-between items-center py-2 px-1">
+                                        <span className="text-slate-500 font-medium">{label}</span>
+                                        <span className="text-slate-900 font-semibold text-right max-w-[220px] truncate">{value}</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="flex gap-3 mt-6 pt-4 border-t border-slate-100">
+                                {selectedInvoice.pdf_url ? (
+                                    <a
+                                        href={selectedInvoice.pdf_url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex-1 py-2.5 px-4 rounded-full bg-gradient-to-r from-[#E91E63] to-[#D81B60] text-white text-xs font-semibold shadow-md shadow-pink-500/25 hover:opacity-95 flex items-center justify-center gap-2 transition-all"
+                                    >
+                                        <Download size={15} />
+                                        <span>Baixar PDF</span>
+                                    </a>
+                                ) : (
+                                    <span role="status" className="flex-1 py-2 text-center text-slate-400 text-xs">
+                                        PDF indisponível
+                                    </span>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedInvoice(null)}
+                                    className="flex-1 py-2.5 px-4 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors"
+                                >
+                                    Fechar
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

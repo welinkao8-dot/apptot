@@ -7,6 +7,7 @@ import { TripsModule } from './trips/trips.module';
 import { DatabaseModule } from '@app/database';
 import { QuotesModule } from './quotes/quotes.module';
 import { LocationsModule } from './locations/locations.module';
+import { ApiRateLimitModule } from '../../../libs/rate-limit/src/rate-limit.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { LocationsModule } from './locations/locations.module';
     TripsModule,
     QuotesModule,
     LocationsModule,
+    ApiRateLimitModule,
   ],
   controllers: [ClientApiController],
   providers: [ClientApiService],

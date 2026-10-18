@@ -1,8 +1,7 @@
-import { IsIn, IsString, Length } from 'class-validator';
+import { IsIn, IsString, IsUUID } from 'class-validator';
 
 export class NotifyDriverStatusDto {
-  @IsString()
-  @Length(1, 64)
+  @IsUUID()
   driverId!: string;
 
   @IsString()

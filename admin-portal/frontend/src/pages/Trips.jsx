@@ -4,7 +4,6 @@ import {
     Clock,
     ArrowLeft,
     Navigation,
-    User,
     RefreshCw,
     ChevronRight,
     Download,
@@ -12,9 +11,10 @@ import {
 } from 'lucide-react'
 import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
-import { hasReceiptFile } from '../services/adminPortalContracts'
+import { fetchConfirmedTripRecord, openOperationalTripRecord } from '../services/operationalTripRecord'
 import { buildTripsQuery, normalizeTripsPage } from '../services/adminTripsPagination'
-import { formatKz, formatDateTime } from '../services/format'
+import { formatKz, formatDateTime, formatPaymentMethod } from '../services/format'
+import { useNavigate } from 'react-router-dom'
 import RubberSegment from '../components/react-bits/RubberSegment'
 
 /* O estado é o único sítio onde a cor significa algo, e o tom vem daqui.
@@ -44,17 +44,43 @@ const initialsOf = name => String(name || '?')
     .join('')
 
 export default function Trips({ onBack }) {
+    const navigate = useNavigate()
+    const handleBack = onBack || (() => navigate('/'))
     const [trips, setTrips] = useState([])
     const [loading, setLoading] = useState(true)
     const [activeTab, setActiveTab] = useState('all')
     const [searchTerm, setSearchTerm] = useState('')
     const [selectedTrip, setSelectedTrip] = useState(null)
+    const [receiptChecking, setReceiptChecking] = useState(false)
     const [liveCount, setLiveCount] = useState(0)
     const [currentPage, setCurrentPage] = useState(1)
     const [totalTrips, setTotalTrips] = useState(0)
     const [fetchError, setFetchError] = useState('')
     const itemsPerPage = 20
     const latestRequest = useRef(0)
+
+    const handleSaveTripReceipt = async () => {
+        if (!selectedTrip || receiptChecking) return
+        const popup = window.open('', '_blank')
+        if (!popup) {
+            toast.error('Permita a janela de impressão para guardar o recibo.')
+            return
+        }
+
+        setReceiptChecking(true)
+        try {
+            const trip = await fetchConfirmedTripRecord(
+                selectedTrip.id,
+                id => adminApi.get(`/admin/trips/${id}`),
+            )
+            openOperationalTripRecord(trip, window, popup)
+        } catch (error) {
+            popup.close()
+            toast.error(error.message || 'Não foi possível confirmar o pagamento no servidor.')
+        } finally {
+            setReceiptChecking(false)
+        }
+    }
 
     const fetchTrips = async (page = currentPage, status = activeTab, search = searchTerm) => {
         const requestId = ++latestRequest.current
@@ -150,13 +176,8 @@ export default function Trips({ onBack }) {
         <div className="trips-module animate-fade-in">
             <div className="module-header-nav">
                 <div className="module-header-left">
-                    <button type="button" className="btn-back-square" onClick={onBack} aria-label="Voltar ao painel">
-                        <ArrowLeft size={19} aria-hidden="true" />
-                    </button>
                     <div className="title-area">
-                        <h2 className="title-with-icon">
-                            <Navigation size={20} aria-hidden="true" /> Corridas
-                        </h2>
+                        <h2>Corridas</h2>
                         <p>
                             {totalTrips} {totalTrips === 1 ? 'corrida' : 'corridas'} no total
                             {liveCount > 0 && ` · ${liveCount} ${liveCount === 1 ? 'ativa' : 'ativas'} nesta página`}
@@ -176,7 +197,7 @@ export default function Trips({ onBack }) {
                     </label>
                     <button
                         type="button"
-                        className="tot-btn tot-btn--icon"
+                        className="tot-btn tot-btn--primary tot-btn--icon"
                         onClick={() => fetchTrips()}
                         disabled={loading}
                         aria-label="Atualizar corridas"
@@ -213,16 +234,18 @@ export default function Trips({ onBack }) {
 
             <div className="admin-record-list trips-record-list">
                 <div className="admin-record-list-head trips-record-head" aria-hidden="true">
-                    <span>Cliente e percurso</span>
+                    <span>Cliente / Motorista</span>
+                    <span>Origem</span>
+                    <span>Destino</span>
                     <span>Estado</span>
                     <span>Valor</span>
-                    <span>Ações</span>
+                    <span className="text-right pr-2">Ações</span>
                 </div>
 
                 {loading ? (
                     [1, 2, 3].map(i => (
                         <div key={i} className="admin-record-row admin-record-loading trip-record-row" role="status" aria-label="A carregar corridas">
-                            <span /><span /><span /><span />
+                            <span /><span /><span /><span /><span /><span />
                         </div>
                     ))
                 ) : trips.length > 0 ? (
@@ -230,42 +253,33 @@ export default function Trips({ onBack }) {
                         const meta = statusMeta(trip.status)
                         const client = trip.profiles_trips_client_idToprofiles?.full_name || 'Cliente não identificado'
                         const driver = trip.profiles_trips_driver_idToprofiles?.full_name
-                        const fare = trip.final_fare || trip.estimated_fare || 0
+                        const fare = trip.final_fare ?? trip.estimated_fare ?? 0
                         return (
                             <div key={trip.id} className={`admin-record-row trip-record-row ${meta.live ? 'is-live' : ''}`}>
                                 <div className="card-left-section">
                                     <span className="avatar-box" aria-hidden="true">{initialsOf(client)}</span>
                                     <div className="info-group">
                                         <h3>{client}</h3>
-                                        <p>
-                                            <User size={12} aria-hidden="true" />
-                                            {driver || 'Aguarda motorista'}
-                                        </p>
-                                        <div className="trip-route">
-                                            <div className="trip-route-stop">
-                                                <span className="trip-route-label">Origem</span>
-                                                <span className="trip-route-value">{trip.origin_address || 'Endereço não registado'}</span>
-                                            </div>
-                                            <div className="trip-route-stop">
-                                                <span className="trip-route-label">Destino</span>
-                                                <span className="trip-route-value">{trip.dest_address || 'Endereço não registado'}</span>
-                                            </div>
-                                        </div>
+                                        <p>{driver || 'Aguarda motorista'}</p>
                                     </div>
                                 </div>
+
+                                <span className="trip-route-value trip-address-column trip-origin-column">{trip.origin_address || 'Endereço não registado'}</span>
+                                <span className="trip-route-value trip-address-column trip-destination-column">{trip.dest_address || 'Endereço não registado'}</span>
 
                                 <span className={`status-pill status-pill--${meta.tone} trip-record-state`}>{meta.label}</span>
 
                                 <span className="trip-record-fare">{formatKz(fare)}</span>
 
-                                <div className="record-actions">
+                                <div className="actions-inline">
                                     <button
                                         type="button"
-                                        className="record-action"
+                                        className="btn-action-primary"
                                         onClick={() => setSelectedTrip(trip)}
                                         aria-label={`Ver detalhes da corrida de ${client}`}
                                     >
-                                        Detalhes <ChevronRight size={15} aria-hidden="true" />
+                                        <span>Detalhes</span>
+                                        <ChevronRight size={14} aria-hidden="true" />
                                     </button>
                                 </div>
                             </div>
@@ -318,31 +332,25 @@ export default function Trips({ onBack }) {
                             {selectedTrip.payment_method && (
                                 <div className="receipt-row">
                                     <label>Pagamento</label>
-                                    <span>{selectedTrip.payment_method}</span>
+                                    <span>{formatPaymentMethod(selectedTrip.payment_method)}</span>
                                 </div>
                             )}
                             <div className="receipt-divider" />
                             <div className="receipt-total">
                                 <span className="total-label">Total</span>
-                                <span className="total-value">{formatKz(selectedTrip.final_fare || selectedTrip.estimated_fare || 0)}</span>
+                                <span className="total-value">{formatKz(selectedTrip.final_fare ?? selectedTrip.estimated_fare ?? 0)}</span>
                             </div>
                         </div>
                         <div className="receipt-actions">
-                            {hasReceiptFile(selectedTrip.invoices?.find(invoice => invoice.pdf_url)?.pdf_url) ? (
-                                <a
-                                    className="tot-btn tot-btn--soft"
-                                    href={selectedTrip.invoices.find(invoice => invoice.pdf_url).pdf_url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    download
-                                >
-                                    <Download size={17} aria-hidden="true" /> Baixar PDF
-                                </a>
-                            ) : (
-                                <button type="button" className="tot-btn" disabled title="O backend ainda não gera ficheiros PDF">
-                                    <Download size={17} aria-hidden="true" /> PDF indisponível
-                                </button>
-                            )}
+                            <button
+                                type="button"
+                                className="tot-btn tot-btn--soft"
+                                onClick={handleSaveTripReceipt}
+                                disabled={receiptChecking}
+                                title="Só fica disponível depois de o servidor confirmar o pagamento."
+                            >
+                                <Download size={17} aria-hidden="true" /> {receiptChecking ? 'A confirmar…' : 'Guardar'}
+                            </button>
                             <button type="button" className="tot-btn tot-btn--primary" onClick={() => setSelectedTrip(null)}>Fechar</button>
                         </div>
                     </div>

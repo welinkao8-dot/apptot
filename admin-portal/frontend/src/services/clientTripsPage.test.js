@@ -3,7 +3,7 @@ import assert from 'node:assert/strict'
 import { fetchClientTripsPage } from './clientTripsPage.js'
 
 const validPage = {
-    items: [{ id: 'trip-a', client_id: 'client-a' }],
+    items: [{ id: 'trip-a', client_id: 'client-a', status: 'completed' }],
     total: 41,
     page: 3,
     pageSize: 20,
@@ -30,7 +30,7 @@ test('rejects malformed successful responses instead of treating them as an empt
 
 test('rejects rows that belong to a different client', async () => {
     await assert.rejects(
-        fetchClientTripsPage(async () => ({ ...validPage, items: [{ id: 'trip-b', client_id: 'client-b' }] }), 'client-a', 3, 20),
+        fetchClientTripsPage(async () => ({ ...validPage, items: [{ id: 'trip-b', client_id: 'client-b', status: 'completed' }] }), 'client-a', 3, 20),
         /cliente selecionado/,
     )
 })

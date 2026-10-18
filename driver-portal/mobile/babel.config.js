@@ -1,10 +1,11 @@
 const mobileUrls = require('./src/config/mobileUrls');
 const environmentValues = {
   TOT_DRIVER_API_URL: process.env.TOT_DRIVER_API_URL || '',
+  TOT_DRIVER_SOCKET_URL: process.env.TOT_DRIVER_SOCKET_URL || '',
 };
 
 if (process.env.NODE_ENV === 'production') {
-  mobileUrls.validateReleaseUrl(environmentValues.TOT_DRIVER_API_URL, 'TOT_DRIVER_API_URL');
+  Object.entries(environmentValues).forEach(([key, value]) => mobileUrls.validateReleaseUrl(value, key));
 }
 
 module.exports = {

@@ -7,13 +7,17 @@ import { join } from 'path';
 import { PrismaService } from '@app/database';
 import { AdminGateway } from './../src/admin-api.gateway';
 import { AdminApiModule } from './../src/admin-api.module';
+import { QuotePreviewService } from './../src/quote-preview.service';
 
 describe('AdminApiController (e2e)', () => {
+  const adminDriverRouteId = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+  const adminClientRouteId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
   let app: INestApplication;
   let jwt: JwtService;
 
   beforeAll(() => {
     process.env.JWT_SECRET = 'task-3-e2e-secret';
+    process.env.API_RATE_LIMIT_LIMIT = '10';
   });
 
   beforeEach(async () => {
@@ -40,6 +44,14 @@ describe('AdminApiController (e2e)', () => {
             };
             return select ? Object.fromEntries(Object.keys(select).map(key => [key, driver[key as keyof typeof driver]])) : driver;
           }),
+        },
+        driver_documents: {
+          findMany: jest.fn().mockResolvedValue([
+            { document_type: 'bi_frente', content: Buffer.from([0xff, 0xd8, 0xff]), mime_type: 'image/jpeg' },
+            { document_type: 'bi_verso', content: Buffer.from([0xff, 0xd8, 0xff]), mime_type: 'image/jpeg' },
+            { document_type: 'carta', content: Buffer.from([0xff, 0xd8, 0xff]), mime_type: 'image/jpeg' },
+          ]),
+          updateMany: jest.fn().mockResolvedValue({ count: 0 }),
         },
         profiles: {
           count: jest.fn().mockResolvedValue(1),
@@ -75,12 +87,15 @@ describe('AdminApiController (e2e)', () => {
         $transaction: jest.fn((callback) => callback({
           $queryRawUnsafe: jest.fn().mockResolvedValue([]),
           drivers: { update: jest.fn().mockResolvedValue({ id: 'driver-a', status: 'rejected' }) },
+          driver_documents: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
           profiles: { update: jest.fn().mockResolvedValue({ id: 'client-a', status: 'suspended' }) },
           audit_logs: { create: jest.fn().mockResolvedValue({ id: 'audit-a' }) },
         })),
       })
       .overrideProvider(AdminGateway)
       .useValue({ sendToAdmins: jest.fn() })
+      .overrideProvider(QuotePreviewService)
+      .useValue({ preview: jest.fn().mockResolvedValue({ serviceConfigId: 7, serviceName: 'Carro', distanceMeters: 10000, durationSeconds: 1200, currentFare: '2500.00', proposedFare: '3000.00' }) })
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -91,6 +106,14 @@ describe('AdminApiController (e2e)', () => {
 
   afterEach(async () => {
     await app.close();
+  });
+
+  it('returns 429 after the configured request budget is exhausted', async () => {
+    let response;
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      response = await request(app.getHttpServer()).get('/admin/stats');
+    }
+    expect(response?.status).toBe(429);
   });
 
   it('reports database readiness on the unauthenticated health route', () => {
@@ -115,6 +138,30 @@ describe('AdminApiController (e2e)', () => {
     return request(app.getHttpServer()).get('/admin/drivers').expect(401);
   });
 
+  it('protects the server-side quote preview and validates its route and proposed fare', async () => {
+    const path = '/admin/services/7/quote-preview';
+    const body = {
+      originLat: -8.8, originLng: 13.2, destLat: -8.9, destLng: 13.3,
+      proposed: { base_fare: 600, price_per_km: 120, price_per_min: 60, min_fare: 800 },
+    };
+    await request(app.getHttpServer()).post(path).send(body).expect(401);
+    const clientToken = jwt.sign({ sub: 'client-a', role: 'client' });
+    await request(app.getHttpServer()).post(path).set('Authorization', `Bearer ${clientToken}`).send(body).expect(403);
+    const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
+    await request(app.getHttpServer()).post(path).set('Authorization', `Bearer ${adminToken}`).send(body)
+      .expect(200).expect({ serviceConfigId: 7, serviceName: 'Carro', distanceMeters: 10000, durationSeconds: 1200, currentFare: '2500.00', proposedFare: '3000.00' });
+    await request(app.getHttpServer()).post(path).set('Authorization', `Bearer ${adminToken}`)
+      .send({ ...body, originLat: 0 }).expect(400);
+  });
+
+  it('rejects malformed resource ids before calling management services', async () => {
+    const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
+    const prisma = app.get<PrismaService>(PrismaService);
+    await request(app.getHttpServer()).get('/admin/trips/not-a-uuid').set('Authorization', `Bearer ${adminToken}`).expect(400);
+    await request(app.getHttpServer()).get('/admin/drivers/not-a-uuid').set('Authorization', `Bearer ${adminToken}`).expect(400);
+    expect(prisma.drivers.findUnique).not.toHaveBeenCalled();
+  });
+
   it('returns an explicitly paginated trip result with validated server filters', async () => {
     const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
     await request(app.getHttpServer())
@@ -134,6 +181,14 @@ describe('AdminApiController (e2e)', () => {
       .get(`/admin/trips?search=${'x'.repeat(121)}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(400);
+  });
+
+  it('rejects unknown trip filters and malformed numeric service ids', async () => {
+    const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
+    await request(app.getHttpServer()).get('/admin/trips?unexpected=value')
+      .set('Authorization', `Bearer ${adminToken}`).expect(400);
+    await request(app.getHttpServer()).post('/admin/services/not-a-number')
+      .set('Authorization', `Bearer ${adminToken}`).send({ base_fare: 500 }).expect(400);
   });
 
   it('restricts payment reconciliation to admins and returns settlement status', async () => {
@@ -174,38 +229,38 @@ describe('AdminApiController (e2e)', () => {
   });
 
   it('restricts per-user invoice lookup to admins', async () => {
-    await request(app.getHttpServer()).get('/admin/invoices/user/client-a').expect(401);
+    await request(app.getHttpServer()).get(`/admin/invoices/user/${adminClientRouteId}`).expect(401);
     const clientToken = jwt.sign({ sub: 'client-a', role: 'client' });
-    await request(app.getHttpServer()).get('/admin/invoices/user/client-a')
+    await request(app.getHttpServer()).get(`/admin/invoices/user/${adminClientRouteId}`)
       .set('Authorization', `Bearer ${clientToken}`).expect(403);
 
     const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
-    await request(app.getHttpServer()).get('/admin/invoices/user/client-a')
+    await request(app.getHttpServer()).get(`/admin/invoices/user/${adminClientRouteId}`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200)
       .expect(response => expect(response.body).toEqual([expect.objectContaining({ id: 'invoice-a', amount: '950.00', invoice_type: 'ride' })]));
   });
 
   it('restricts client status mutations to admins', async () => {
-    await request(app.getHttpServer()).post('/admin/clients/client-a/status').send({ status: 'suspended' }).expect(401);
+    await request(app.getHttpServer()).post(`/admin/clients/${adminClientRouteId}/status`).send({ status: 'suspended' }).expect(401);
     const clientToken = jwt.sign({ sub: 'client-a', role: 'client' });
-    await request(app.getHttpServer()).post('/admin/clients/client-a/status')
+    await request(app.getHttpServer()).post(`/admin/clients/${adminClientRouteId}/status`)
       .set('Authorization', `Bearer ${clientToken}`).send({ status: 'suspended' }).expect(403);
 
     const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
-    await request(app.getHttpServer()).post('/admin/clients/client-a/status')
+    await request(app.getHttpServer()).post(`/admin/clients/${adminClientRouteId}/status`)
       .set('Authorization', `Bearer ${adminToken}`).send({ status: 'suspended' })
       .expect(201).expect({ success: true });
   });
 
   it('restricts driver status mutations to admins', async () => {
-    await request(app.getHttpServer()).post('/admin/drivers/driver-a/status').send({ status: 'rejected' }).expect(401);
+    await request(app.getHttpServer()).post(`/admin/drivers/${adminDriverRouteId}/status`).send({ status: 'rejected' }).expect(401);
     const clientToken = jwt.sign({ sub: 'client-a', role: 'client' });
-    await request(app.getHttpServer()).post('/admin/drivers/driver-a/status')
+    await request(app.getHttpServer()).post(`/admin/drivers/${adminDriverRouteId}/status`)
       .set('Authorization', `Bearer ${clientToken}`).send({ status: 'rejected' }).expect(403);
 
     const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
-    await request(app.getHttpServer()).post('/admin/drivers/driver-a/status')
+    await request(app.getHttpServer()).post(`/admin/drivers/${adminDriverRouteId}/status`)
       .set('Authorization', `Bearer ${adminToken}`).send({ status: 'rejected' })
       .expect(201).expect({ success: true });
   });
@@ -250,20 +305,20 @@ describe('AdminApiController (e2e)', () => {
   it('returns owner-filtered paginated trip histories and summaries', async () => {
     const token = jwt.sign({ sub: 'admin-a', role: 'admin' });
     const prisma = app.get<PrismaService>(PrismaService);
-    await request(app.getHttpServer()).get('/admin/clients/client-a/trips?page=2&limit=10')
+    await request(app.getHttpServer()).get(`/admin/clients/${adminClientRouteId}/trips?page=2&limit=10`)
       .set('Authorization', `Bearer ${token}`).expect(200)
       .expect({ items: [{ id: 'trip-a', status: 'ongoing' }], total: 41, page: 2, pageSize: 10, summary: { confirmedSpend: 950 } });
-    await request(app.getHttpServer()).get('/admin/drivers/driver-a/trips?page=2&limit=10')
+    await request(app.getHttpServer()).get(`/admin/drivers/${adminDriverRouteId}/trips?page=2&limit=10`)
       .set('Authorization', `Bearer ${token}`).expect(200)
       .expect({ items: [{ id: 'trip-a', status: 'ongoing' }], total: 41, page: 2, pageSize: 10, summary: { completedEarnings: 900 } });
-    expect(prisma.trips.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { client_id: 'client-a' }, skip: 10, take: 10 }));
-    expect(prisma.trips.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: { driver_id: 'driver-a' }, skip: 10, take: 10 }));
+    expect(prisma.trips.findMany).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { client_id: adminClientRouteId }, skip: 10, take: 10 }));
+    expect(prisma.trips.findMany).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: { driver_id: adminDriverRouteId }, skip: 10, take: 10 }));
   });
 
   it('omits credentials and personal documents from driver detail responses', () => {
     const token = jwt.sign({ sub: 'admin-a', role: 'admin' });
     return request(app.getHttpServer())
-      .get('/admin/drivers/driver-a')
+      .get(`/admin/drivers/${adminDriverRouteId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200)
       .expect((response) => {
@@ -277,25 +332,25 @@ describe('AdminApiController (e2e)', () => {
 
   it('returns only driver documents on the admin-only review endpoint', async () => {
     const clientToken = jwt.sign({ sub: 'client-a', role: 'client' });
-    await request(app.getHttpServer()).get('/admin/drivers/driver-a/documents')
+    await request(app.getHttpServer()).get(`/admin/drivers/${adminDriverRouteId}/documents`)
       .set('Authorization', `Bearer ${clientToken}`).expect(403);
 
     const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
-    await request(app.getHttpServer()).get('/admin/drivers/driver-a/documents')
+    await request(app.getHttpServer()).get(`/admin/drivers/${adminDriverRouteId}/documents`)
       .set('Authorization', `Bearer ${adminToken}`)
       .expect(200)
       .expect({
         id: 'driver-a',
-        doc_bi_frente: 'front-document',
-        doc_bi_verso: 'back-document',
-        doc_carta_conducao: 'licence-document',
+        doc_bi_frente: 'data:image/jpeg;base64,/9j/',
+        doc_bi_verso: 'data:image/jpeg;base64,/9j/',
+        doc_carta_conducao: 'data:image/jpeg;base64,/9j/',
       });
   });
 
   it('rejects unsupported driver vehicle categories on the admin route', async () => {
     const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
     await request(app.getHttpServer())
-      .post('/admin/drivers/driver-a/vehicle-category')
+      .post(`/admin/drivers/${adminDriverRouteId}/vehicle-category`)
       .set('Authorization', `Bearer ${adminToken}`)
       .send({ vehicle_category: 'spaceship' })
       .expect(400);
@@ -314,9 +369,23 @@ describe('AdminApiController (e2e)', () => {
       .expect(400);
   });
 
+  it.each([
+    ['/admin/services', { id: 9, name: 'Moto' }],
+    ['/admin/services/9', { base_fare: 500, updated_at: '2026-10-17T00:00:00.000Z' }],
+    ['/admin/configs/9', { base_fare: 500, id: 9 }],
+  ])('rejects persistence-only pricing fields on %s', async (path, payload) => {
+    const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
+    await request(app.getHttpServer())
+      .post(path)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send(payload)
+      .expect(400);
+  });
+
   it('accepts raster image uploads with server-generated names and rejects spoofed or oversized files', async () => {
     const adminToken = jwt.sign({ sub: 'admin-a', role: 'admin' });
     const clientToken = jwt.sign({ sub: 'client-a', role: 'client' });
+    await request(app.getHttpServer()).post('/admin/upload').set('Authorization', `Bearer ${adminToken}`).expect(400);
     await request(app.getHttpServer())
       .post('/admin/upload')
       .attach('file', Buffer.from([0xff, 0xd8, 0xff]), { filename: 'unauthorized.jpg', contentType: 'image/jpeg' })
@@ -334,6 +403,15 @@ describe('AdminApiController (e2e)', () => {
     expect(accepted.body.url).toMatch(/^http:\/\/localhost:3000\/uploads\/services\/[0-9a-f-]+\.jpg$/i);
     const filename = accepted.body.url.split('/').pop();
     await unlink(join(process.cwd(), 'uploads', 'services', filename));
+
+    const unicodeDoubleExtension = await request(app.getHttpServer())
+      .post('/admin/upload')
+      .set('Authorization', `Bearer ${adminToken}`)
+      .attach('file', Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), { filename: 'imagem-área.jpg.png.svg', contentType: 'image/png' })
+      .expect(201);
+    expect(unicodeDoubleExtension.body.url).toMatch(/^http:\/\/localhost:3000\/uploads\/services\/[0-9a-f-]+\.png$/i);
+    const unicodeFilename = unicodeDoubleExtension.body.url.split('/').pop();
+    await unlink(join(process.cwd(), 'uploads', 'services', unicodeFilename));
 
     await request(app.getHttpServer())
       .post('/admin/upload')

@@ -25,10 +25,14 @@ import adminApi from '../services/adminApi'
 import { fetchClientTripsPage } from '../services/clientTripsPage'
 import toast from 'react-hot-toast'
 import { hasReceiptFile } from '../services/adminPortalContracts'
+import { formatDate } from '../services/format'
 import StatusReasonDialog from '../components/StatusReasonDialog'
+import { useNavigate } from 'react-router-dom'
 
 
 export default function Clients({ onBack }) {
+    const navigate = useNavigate()
+    const handleBack = onBack || (() => navigate('/'))
     const [clients, setClients] = useState([])
     const [totalClients, setTotalClients] = useState(0)
     const [clientsError, setClientsError] = useState(false)
@@ -171,7 +175,6 @@ export default function Clients({ onBack }) {
             <div className="clients-module animate-fade-in">
                 <div className="module-header-nav">
                     <div className="flex items-center gap-4">
-                        <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
                         <div className="title-area">
                             <h2>Clientes</h2>
                             <p>{totalClients} {totalClients === 1 ? 'cliente registado' : 'clientes registados'}</p>
@@ -179,7 +182,7 @@ export default function Clients({ onBack }) {
                     </div>
 
                     <div className="header-actions">
-                        <div className="search-bar-premium">
+                        <div className="tot-search">
                             <Search size={18} />
                             <input
                                 type="text"
@@ -194,7 +197,7 @@ export default function Clients({ onBack }) {
 
                 <div className="admin-record-list clients-record-list mt-6">
                     <div className="admin-record-list-head clients-record-head" aria-hidden="true">
-                        <span>Cliente</span><span>Atividade</span><span>Registado</span><span>Ações</span>
+                        <span>Cliente</span><span>Atividade</span><span>Registado</span><span className="text-right pr-2">Ações</span>
                     </div>
                     {loading ? (
                         [1, 2, 3].map(i => <div key={i} className="admin-record-row admin-record-loading clients-record-row" role="status" aria-label="A carregar clientes"><span /><span /><span /><span /></div>)
@@ -216,15 +219,23 @@ export default function Clients({ onBack }) {
                                     <span className="record-secondary-label">{client.paidTripsCount === 1 ? 'corrida paga' : 'corridas pagas'}</span>
                                 </div>
                                 <div className="client-record-date">
-                                    <span className="record-primary-value">{new Date(client.created_at).toLocaleDateString('pt-AO')}</span>
+                                    <span className="record-primary-value">{formatDate(client.created_at)}</span>
                                     <span className="record-secondary-label">Membro desde</span>
                                 </div>
                                 <div className="actions-inline" aria-label={`Ações para ${client.full_name || 'cliente'}`}>
-                                        <button className="btn-pill-sm primary" onClick={() => handleViewHistory(client)}>
+                                        <button
+                                            type="button"
+                                            className="btn-action-primary"
+                                            onClick={() => handleViewHistory(client)}
+                                        >
                                             <History size={14} />
                                             <span>Histórico</span>
                                         </button>
-                                        <button className="btn-pill-sm outline text-pink-500" onClick={() => handleViewProfile(client)}>
+                                        <button
+                                            type="button"
+                                            className="btn-action-secondary"
+                                            onClick={() => handleViewProfile(client)}
+                                        >
                                             <User size={14} />
                                             <span>Perfil</span>
                                         </button>
@@ -364,7 +375,7 @@ export default function Clients({ onBack }) {
 
                                     <div className="flex items-center gap-10 mt-3">
                                         <div className="price-tag-modern" style={{ marginRight: '20px' }}>
-                                            Kz {Number(trip.final_fare || trip.estimated_fare || 0).toLocaleString()}
+                                            Kz {Number(trip.final_fare ?? trip.estimated_fare ?? 0).toLocaleString('pt-AO')}
                                         </div>
 
                                         <button className="btn-pill-sm primary h-12 px-6" onClick={() => setSelectedTrip(trip)}>
@@ -462,7 +473,7 @@ export default function Clients({ onBack }) {
                             <div className="receipt-header">
                                 <FileText size={40} className="mx-auto mb-2 opacity-50" />
                                 <h3>Resumo da viagem</h3>
-                                <p className="text-xs opacity-70">TOT PREMIUM ANGOLA</p>
+                                <p className="text-xs opacity-70">Recibo de Viagem</p>
                             </div>
                             <div className="receipt-body">
                                 <div className="receipt-row">
@@ -471,7 +482,7 @@ export default function Clients({ onBack }) {
                                 </div>
                                 <div className="receipt-row">
                                     <label>Data</label>
-                                    <span>{new Date(selectedTrip.created_at).toLocaleDateString()}</span>
+                                    <span>{formatDate(selectedTrip.created_at)}</span>
                                 </div>
                                 <div className="receipt-row">
                                     <label>Cliente</label>
@@ -493,7 +504,7 @@ export default function Clients({ onBack }) {
                                 <div className="receipt-divider"></div>
                                 <div className="receipt-total">
                                     <span className="total-label">Valor da viagem · {selectedTrip.trip_payment?.status === 'confirmed' ? 'Pagamento confirmado' : 'Pagamento pendente'}</span>
-                                    <span className="total-value">Kz {Number(selectedTrip.trip_payment?.amount || selectedTrip.final_fare || selectedTrip.estimated_fare || 0).toLocaleString()}</span>
+                                    <span className="total-value">Kz {Number(selectedTrip.trip_payment?.amount ?? selectedTrip.final_fare ?? selectedTrip.estimated_fare ?? 0).toLocaleString('pt-AO')}</span>
                                 </div>
                             </div>
                             <div className="receipt-actions">
@@ -554,7 +565,7 @@ export default function Clients({ onBack }) {
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', color: '#475569' }}>
                                 <Calendar size={16} style={{ color: '#e91e63', flexShrink: 0 }} />
-                                <span>Membro desde {new Date(selectedClient.created_at).toLocaleDateString()}</span>
+                                <span>Membro desde {formatDate(selectedClient.created_at)}</span>
                             </div>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px' }}>
                                 <Activity size={16} style={{ color: '#e91e63', flexShrink: 0 }} />
@@ -615,7 +626,7 @@ export default function Clients({ onBack }) {
                                 <div>
                                     <span style={{ display: 'block', fontSize: '10px', fontWeight: '800', color: 'rgba(255,255,255,0.7)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Total Gasto</span>
                                     <span style={{ fontSize: '20px', fontWeight: '900', lineHeight: '1.1' }}>
-                                        {Number.isFinite(totalSpent) ? `Kz ${totalSpent.toLocaleString()}` : 'Indisponível'}
+                                        {Number.isFinite(totalSpent) ? `Kz ${totalSpent.toLocaleString('pt-AO')}` : 'Indisponível'}
                                     </span>
                                 </div>
                             </div>
@@ -651,7 +662,7 @@ export default function Clients({ onBack }) {
                                                 </div>
                                                 <div>
                                                     <div style={{ fontSize: '13px', fontWeight: '800', color: '#334155' }}>#{trip.id.substring(0, 8).toUpperCase()}</div>
-                                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{new Date(trip.created_at).toLocaleDateString()} • {trip.profiles_trips_driver_idToprofiles?.full_name || 'A aguardar'}</div>
+                                                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{formatDate(trip.created_at)} • {trip.profiles_trips_driver_idToprofiles?.full_name || 'A aguardar'}</div>
                                                 </div>
                                             </div>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -659,7 +670,7 @@ export default function Clients({ onBack }) {
                                                     {trip.status?.toUpperCase()}
                                                 </span>
                                                 <span style={{ fontSize: '14px', fontWeight: '900', color: '#1e293b', minWidth: '80px', textAlign: 'right' }}>
-                                                    Kz {Number(trip.final_fare || trip.estimated_fare || 0).toLocaleString()}
+                                                    Kz {Number(trip.final_fare ?? trip.estimated_fare ?? 0).toLocaleString('pt-AO')}
                                                 </span>
                                             </div>
                                         </div>

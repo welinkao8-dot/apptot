@@ -1,5 +1,7 @@
 import io from 'socket.io-client';
-import { API_URL } from '../context/AuthContext';
+import mobileUrls from '../config/mobileUrls';
+
+export const SOCKET_URL = mobileUrls.getMobileUrl(process.env.TOT_DRIVER_SOCKET_URL, __DEV__ ? 'http://localhost:3004' : '');
 
 let socket = null;
 let socketToken = null;
@@ -12,7 +14,7 @@ export const connectSocket = (token) => {
 
     if (socket) socket.disconnect();
 
-    socket = io(API_URL, {
+    socket = io(SOCKET_URL, {
         auth: { token },
         transports: ['websocket'],
         autoConnect: true,

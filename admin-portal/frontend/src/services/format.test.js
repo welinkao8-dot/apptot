@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { formatKz, formatKzExact, formatNumber, formatPhone, formatDateTime, formatDayShort } from './format.js'
+import { formatKz, formatKzExact, formatNumber, formatPhone, formatDate, formatDateTime, formatDayShort } from './format.js'
 
 /* O ICU pode usar espaço normal, espaço inquebrável ou espaço estreito como
    separador de milhares. Normalizar deixa o teste sobre o comportamento
@@ -34,5 +34,7 @@ test('formata telefones angolanos de 9 e 12 dígitos e recusa o resto', () => {
 test('devolve o marcador de ausência em vez de Invalid Date', () => {
   assert.equal(formatDateTime(null), 'Sem data registada')
   assert.equal(formatDateTime('não é uma data'), 'Sem data registada')
+    assert.equal(formatDate('não é uma data'), 'Sem data registada')
+    assert.match(formatDate('2026-10-03T12:00:00Z'), /03\/10\/2026/)
   assert.equal(formatDayShort('2026-10-03'), '03/10')
 })

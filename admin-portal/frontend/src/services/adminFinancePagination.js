@@ -22,11 +22,20 @@ function normalizePage(data, validateSummary, label) {
     return { items: data.items, total: data.total, page: data.page, pageSize: data.pageSize, summary: data.summary }
 }
 
+function hasValidAmount(value) {
+    return (typeof value === 'number' || (typeof value === 'string' && value.trim() !== ''))
+        && Number.isFinite(Number(value)) && Number(value) >= 0
+}
+
 export function normalizeInvoicesPage(data) {
-    return normalizePage(data, summary => summary
+    const page = normalizePage(data, summary => summary
         && Number.isFinite(summary.receiptTotal) && summary.receiptTotal >= 0
         && Number.isSafeInteger(summary.monthlyReceiptCount) && summary.monthlyReceiptCount >= 0
         && Array.isArray(summary.invoiceTypes) && summary.invoiceTypes.every(type => typeof type === 'string'), 'faturas')
+    if (page.items.some(invoice => !hasValidAmount(invoice.amount))) {
+        throw new Error('Resposta paginada de faturas inválida.')
+    }
+    return page
 }
 
 export function normalizePaymentsPage(data) {
@@ -35,7 +44,9 @@ export function normalizePaymentsPage(data) {
         && Number.isSafeInteger(summary.confirmedCount) && summary.confirmedCount >= 0
         && Number.isFinite(summary.confirmedCashTotal) && summary.confirmedCashTotal >= 0
         && Number.isFinite(summary.cashPendingTotal) && summary.cashPendingTotal >= 0, 'pagamentos')
-    if (page.items.some(payment => typeof payment.trip_id !== 'string' || typeof payment.status !== 'string')) {
+    if (page.items.some(payment => typeof payment.trip_id !== 'string'
+        || !['pending', 'confirmed'].includes(payment.status)
+        || !hasValidAmount(payment.amount))) {
         throw new Error('Resposta paginada de pagamentos inválida.')
     }
     return page

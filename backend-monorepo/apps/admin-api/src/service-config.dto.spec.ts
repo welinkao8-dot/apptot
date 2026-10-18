@@ -60,4 +60,14 @@ describe('service config DTOs', () => {
 
     expect(dto).toEqual(Object.assign(new UpdateServiceConfigDto(), { price_per_km: 1.25 }));
   });
+
+  it('normalizes the legacy percent fee type during API validation', async () => {
+    const pipe = new ValidationPipe({ whitelist: true, transform: true });
+    const dto = await pipe.transform(
+      { platform_fee_type: ' PERCENT ' },
+      { type: 'body', metatype: UpdateServiceConfigDto },
+    );
+
+    expect(dto.platform_fee_type).toBe('percentage');
+  });
 });

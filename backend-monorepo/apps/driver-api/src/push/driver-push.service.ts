@@ -25,6 +25,13 @@ type DriverFcmTokenStore = {
   findMany(args: { where: { driver_id: string }; select: { token: true } }): Promise<Array<{ token: string }>>;
 };
 
+type DriverOfferStore = {
+  findFirst(args: {
+    where: { trip_id: string; driver_id: string; status: 'offered'; expires_at: { gt: Date } };
+    select: { trips: { select: { status: true } } };
+  }): Promise<{ trips: { status: string | null } } | null>;
+};
+
 @Injectable()
 export class DriverPushService {
   constructor(
@@ -62,6 +69,13 @@ export class DriverPushService {
 
   async sendTripOffer(driverId: string, tripId: string) {
     if (!this.messaging) return { sent: 0, skipped: true };
+
+    const offerStore = (this.prisma as unknown as { trip_driver_offers: DriverOfferStore }).trip_driver_offers;
+    const activeOffer = await offerStore.findFirst({
+      where: { trip_id: tripId, driver_id: driverId, status: 'offered', expires_at: { gt: new Date() } },
+      select: { trips: { select: { status: true } } },
+    });
+    if (!activeOffer || activeOffer.trips?.status !== 'requested') return { sent: 0, skipped: true };
 
     const devices = await this.tokenStore.findMany({
       where: { driver_id: driverId },

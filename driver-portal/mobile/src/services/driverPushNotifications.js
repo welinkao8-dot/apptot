@@ -26,3 +26,21 @@ export function isTripOfferMessage(message) {
         ? tripId
         : null;
 }
+
+export async function fetchPendingTripOffer({ tripId, api }) {
+    if (typeof tripId !== 'string' || !tripId || !api?.get) return null;
+    try {
+        const response = await api.get('/trips/pending');
+        const trips = Array.isArray(response?.data) ? response.data : [];
+        return trips.find((trip) => trip?.id === tripId) ?? null;
+    } catch {
+        return null;
+    }
+}
+
+export async function openPendingTripOffer({ tripId, api, navigation, onAccept, onReject }) {
+    const trip = await fetchPendingTripOffer({ tripId, api });
+    if (!trip || typeof navigation?.navigate !== 'function') return null;
+    navigation.navigate('RequestDetails', { trip, onAccept, onReject });
+    return trip;
+}

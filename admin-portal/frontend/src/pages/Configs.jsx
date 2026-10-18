@@ -8,11 +8,14 @@ import {
 } from 'lucide-react'
 import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
+import { formatKz, formatServiceType } from '../services/format'
+import { formatVehicleCategory } from '../services/pricingForm'
 
 
 export default function Configs({ onBack }) {
     const [serviceConfigs, setServiceConfigs] = useState([])
     const [loading, setLoading] = useState(true)
+    const [loadError, setLoadError] = useState(false)
 
     useEffect(() => {
         fetchAll()
@@ -21,9 +24,13 @@ export default function Configs({ onBack }) {
     const fetchAll = async () => {
         try {
             setLoading(true)
+            setLoadError(false)
             const servicesRes = await adminApi.get('/admin/configs')
-            setServiceConfigs(Array.isArray(servicesRes.data) ? servicesRes.data : [])
+            if (!Array.isArray(servicesRes.data)) throw new Error('Resposta inválida de serviços.')
+            setServiceConfigs(servicesRes.data)
         } catch (err) {
+            console.error('Erro ao carregar configurações:', err)
+            setLoadError(true)
             toast.error('Erro ao carregar configurações')
         } finally {
             setLoading(false)
@@ -35,7 +42,6 @@ export default function Configs({ onBack }) {
             <div className="trips-module animate-fade-in">
                 <div className="module-header-nav">
                     <div className="flex items-center gap-4">
-                        <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
                         <div className="title-area"><h2>Configurações</h2><p>A carregar...</p></div>
                     </div>
                 </div>
@@ -55,22 +61,22 @@ export default function Configs({ onBack }) {
         <div className="trips-module animate-fade-in">
             <div className="module-header-nav">
                 <div className="flex items-center gap-4">
-                    <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
                     <div className="title-area">
-                        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Settings size={22} style={{ color: '#e91e63' }} /> Configurações da Plataforma
-                        </h2>
-                        <p>Parâmetros globais ainda não configuráveis</p>
+                        <h2>Configurações da Plataforma</h2>
+                        <p>Parâmetros globais do sistema</p>
                     </div>
                 </div>
-                <button onClick={fetchAll} style={{
-                    padding: '8px 18px', borderRadius: 10, border: '1.5px solid #e2e8f0',
-                    background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                    fontSize: 13, color: '#334155', fontWeight: 600
-                }}>
-                    <RefreshCw size={14} /> Atualizar
+                <button type="button" className="tot-btn tot-btn--primary tot-btn--icon" onClick={fetchAll} disabled={loading} aria-label="Atualizar configurações" title="Atualizar">
+                    <RefreshCw size={16} className={loading ? 'is-spinning' : ''} aria-hidden="true" />
                 </button>
             </div>
+
+            {loadError && (
+                <div role="alert" style={{ marginTop: 20, padding: 14, borderRadius: 12, background: '#fff7ed', color: '#9a3412', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                    <span>Não foi possível carregar os serviços. {serviceConfigs.length ? 'A mostrar os últimos dados carregados.' : ''}</span>
+                    <button type="button" onClick={fetchAll} disabled={loading}>Tentar novamente</button>
+                </div>
+            )}
 
 
             <div role="status" style={{ marginTop: 20, padding: 14, borderRadius: 12, background: '#f8fafc', color: '#475569' }}>
@@ -108,15 +114,15 @@ export default function Configs({ onBack }) {
                                     )}
                                     <div>
                                         <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: '#0f172a' }}>{svc.name}</p>
-                                        <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>{svc.vehicle_category} · {svc.category}</p>
+                                        <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>{formatVehicleCategory(svc.vehicle_category)} · {formatServiceType(svc.category, 'Categoria não registada')}</p>
                                     </div>
                                 </div>
                                 <div style={{ textAlign: 'right' }}>
                                     <p style={{ margin: 0, fontWeight: 700, fontSize: 14, color: '#e91e63' }}>
-                                        Kz {Number(svc.base_fare).toLocaleString()} base
+                                        {formatKz(svc.base_fare)} base
                                     </p>
                                     <p style={{ margin: 0, fontSize: 12, color: '#94a3b8' }}>
-                                        +Kz {Number(svc.price_per_km).toLocaleString()}/km
+                                        +{formatKz(svc.price_per_km)}/km
                                     </p>
                                 </div>
                             </div>

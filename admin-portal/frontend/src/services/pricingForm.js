@@ -7,6 +7,18 @@ const MONEY_FIELDS = [
 ]
 
 const DECIMAL_10_2_MAX = 99999999.99
+const SERVICE_EDITABLE_FIELDS = [
+    'name', 'category', 'service_type', 'vehicle_category', 'routing_mode',
+    'description', 'image_url', 'base_fare', 'price_per_km', 'price_per_min',
+    'min_fare', 'platform_fee_type', 'platform_fee_value',
+]
+
+function normalizePlatformFeeType(value) {
+    const normalized = String(value ?? '').trim().toLowerCase()
+    if (normalized === 'percent' || normalized === 'percentage') return 'percentage'
+    if (normalized === 'fixed' || normalized === 'fixed_amount' || normalized === 'amount') return 'fixed'
+    return value
+}
 
 function moneyInCents(value) {
     const text = String(value ?? '').trim()
@@ -15,15 +27,37 @@ function moneyInCents(value) {
     return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'))
 }
 
+export function normalizeVehicleCategory(vehicleCategory) {
+    const text = String(vehicleCategory || '').trim().toLowerCase()
+    if (/moto|motorcycle|scooter|bike/i.test(text)) return 'moto'
+    if (/truck|caminh|cami[aã]o/i.test(text)) return 'truck'
+    if (/van|carrinha|furg[aã]o/i.test(text)) return 'van'
+    if (/car|autom[oó]vel|comfort|standard/i.test(text)) return 'car'
+    return text || 'car'
+}
+
+export function formatVehicleCategory(vehicleCategory) {
+    const normalized = normalizeVehicleCategory(vehicleCategory)
+    switch (normalized) {
+        case 'moto': return 'Moto'
+        case 'car': return 'Carro'
+        case 'van': return 'Carrinha'
+        case 'truck': return 'Camião'
+        default: return 'Carro'
+    }
+}
+
 function requiredRoutingMode(vehicleCategory) {
-    if (/moto|motorcycle|scooter|bike/i.test(vehicleCategory || '')) return 'scooter'
-    if (/truck|caminh|camião|camiao|van/i.test(vehicleCategory || '')) return 'truck'
-    if (/car|autom[oó]vel/i.test(vehicleCategory || '')) return 'car'
+    const normalized = normalizeVehicleCategory(vehicleCategory)
+    if (normalized === 'moto') return 'scooter'
+    if (normalized === 'truck' || normalized === 'van') return 'truck'
+    if (normalized === 'car') return 'car'
     return null
 }
 
 export function normalizePricingService(service) {
     const normalized = { ...service }
+    normalized.platform_fee_type = normalizePlatformFeeType(service.platform_fee_type)
 
     const expectedRoutingMode = requiredRoutingMode(service.vehicle_category)
     if (expectedRoutingMode && service.routing_mode !== expectedRoutingMode) {
@@ -47,11 +81,20 @@ export function normalizePricingService(service) {
         normalized[field] = amount
     }
 
-    if (service.platform_fee_type === 'percentage' && normalized.platform_fee_value > 100) {
+    if (normalized.platform_fee_type === 'percentage' && normalized.platform_fee_value > 100) {
         throw new Error('Taxa percentual não pode exceder 100%.')
     }
 
     return normalized
+}
+
+export function buildPricingServicePayload(service) {
+    const normalized = normalizePricingService(service)
+    return Object.fromEntries(
+        SERVICE_EDITABLE_FIELDS
+            .filter(field => Object.hasOwn(normalized, field))
+            .map(field => [field, normalized[field]]),
+    )
 }
 
 export function isPricingServiceDirty(original, current) {

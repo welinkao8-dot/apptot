@@ -1,20 +1,32 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { PrismaService } from '@app/database';
+import {
+  getCurrentDriverDocumentImages,
+  PrismaService,
+  readDriverDocumentRetentionDays,
+  scheduleDriverDocumentRetention,
+} from '@app/database';
 import { AdminGateway } from './admin-api.gateway';
 import { ConfigService } from '@nestjs/config';
 import { requireInternalServiceToken } from '@app/auth';
 import { assertCompatibleServiceRouting } from './service-routing';
-import { cleanupServiceImageIfUnreferenced } from './service-image-cleanup';
+import { cleanupServiceImageIfUnreferenced, getManagedServiceImageAssetId } from './service-image-cleanup';
 
 function publicDriver(driver: any) {
   if (!driver) return driver;
-  const { password, password_hash, doc_bi_frente, doc_bi_verso, doc_carta_conducao, ...safeDriver } = driver;
+  const {
+    password,
+    password_hash,
+    doc_bi_frente,
+    doc_bi_verso,
+    doc_carta_conducao,
+    ...safeDriver
+  } = driver;
   return safeDriver;
 }
 
 function publicProfile(profile: any) {
   if (!profile) return profile;
-  const { password, password_hash, doc_bi_frente, doc_bi_verso, doc_carta_conducao, ...safeProfile } = profile;
+  const { password, password_hash, ...safeProfile } = profile;
   return safeProfile;
 }
 
@@ -41,6 +53,14 @@ function assertServiceRoutingMode(value: unknown): asserts value is string {
   if (typeof value !== 'string' || !SERVICE_ROUTING_MODES.has(value)) {
     throw new BadRequestException('routing_mode deve ser car, scooter ou truck.');
   }
+}
+
+function luandaDateKey(value: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Africa/Luanda', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(value);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value ?? '';
+  return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
 @Injectable()
@@ -127,12 +147,7 @@ export class AdminApiService {
   }
 
   async getDriverDocuments(id: string) {
-    const driver = await this.prisma.drivers.findUnique({
-      where: { id: id as any },
-      select: { id: true, doc_bi_frente: true, doc_bi_verso: true, doc_carta_conducao: true },
-    });
-    if (!driver) throw new NotFoundException('Motorista não encontrado.');
-    return driver;
+    return getCurrentDriverDocumentImages(this.prisma, id);
   }
 
   async updateDriverVehicleCategory(id: string, vehicleCategory: 'car' | 'moto' | 'truck', adminId: string | null = null) {
@@ -168,6 +183,7 @@ export class AdminApiService {
         service_configs: {
           select: { name: true, vehicle_category: true, service_type: true }
         },
+        trip_payment: true,
         invoices: true
       }
     });
@@ -321,12 +337,14 @@ export class AdminApiService {
   }
 
   async approveDriver(id: string, adminId: string | null = null) {
+    const retentionDays = readDriverDocumentRetentionDays();
     return this.prisma.$transaction(async tx => {
       await tx.$queryRawUnsafe('SELECT id FROM drivers WHERE id = $1::uuid FOR UPDATE', id);
       await tx.drivers.update({
         where: { id: id as any },
         data: { status: 'active' },
       });
+      await scheduleDriverDocumentRetention(tx, id, 'active', retentionDays);
 
       const approvedProfile = await tx.profiles.update({
         where: { id },
@@ -347,6 +365,7 @@ export class AdminApiService {
   }
 
   async updateDriverStatus(id: string, status: string, adminId: string | null = null, reason?: string) {
+    const retentionDays = readDriverDocumentRetentionDays();
     const internalServiceToken = (status === 'suspended' || status === 'active')
       ? requireInternalServiceToken(this.config)
       : undefined;
@@ -366,6 +385,7 @@ export class AdminApiService {
           ...(status === 'suspended' && { is_online: false })
         },
       });
+      await scheduleDriverDocumentRetention(tx, id, status, retentionDays);
 
       await tx.profiles.update({
         where: { id },
@@ -441,7 +461,11 @@ export class AdminApiService {
     });
 
     // LOG
-    await this.createAuditLog(adminId, 'CREATE_SERVICE', 'service_config', created.id.toString(), createData);
+    const { image_url: _imageUrl, ...safeCreateData } = createData;
+    await this.createAuditLog(adminId, 'CREATE_SERVICE', 'service_config', created.id.toString(), {
+      ...safeCreateData,
+      ...(createData.image_url ? { assetId: getManagedServiceImageAssetId(createData.image_url) } : {}),
+    });
 
     // REAL-TIME BROADCAST
     this.adminGateway.sendToAdmins('pricing_updated', created);
@@ -459,8 +483,12 @@ export class AdminApiService {
         image_url: string | null;
         vehicle_category: string | null;
         routing_mode: string;
+        base_fare: unknown;
+        price_per_km: unknown;
+        price_per_min: unknown;
+        min_fare: unknown;
       }>>(
-        'SELECT "id", "image_url", "vehicle_category", "routing_mode" FROM "service_configs" WHERE "id" = $1 FOR UPDATE',
+        'SELECT "id", "image_url", "vehicle_category", "routing_mode", "base_fare", "price_per_km", "price_per_min", "min_fare" FROM "service_configs" WHERE "id" = $1 FOR UPDATE',
         Number(id),
       );
       const existing = lockedServices[0];
@@ -474,11 +502,30 @@ export class AdminApiService {
         where: { id: Number(id) },
         data: cleanData,
       });
+      const pricingKeys = ['base_fare', 'price_per_km', 'price_per_min', 'min_fare'] as const;
+      const changedPricingKeys = pricingKeys.filter(key => cleanData[key] !== undefined);
+      const { image_url: nextImageUrl, ...safeCleanData } = cleanData;
+      const details = changedPricingKeys.length > 0
+        ? {
+            before: Object.fromEntries(changedPricingKeys.map(key => [key, existing[key]])),
+            after: Object.fromEntries(changedPricingKeys.map(key => [key, cleanData[key]])),
+            ...(nextImageUrl !== undefined ? {
+              assetIdBefore: getManagedServiceImageAssetId(existing.image_url),
+              assetIdAfter: getManagedServiceImageAssetId(nextImageUrl),
+            } : {}),
+          }
+        : {
+            ...(sanitizeAuditDetails(safeCleanData) as object),
+            ...(nextImageUrl !== undefined ? {
+              assetIdBefore: getManagedServiceImageAssetId(existing.image_url),
+              assetIdAfter: getManagedServiceImageAssetId(nextImageUrl),
+            } : {}),
+          };
+      await tx.audit_logs.create({
+        data: { admin_id: adminId, action: 'UPDATE_PRICING', target: 'service_config', target_id: id.toString(), details: details as any },
+      });
       return { updated, previousImageUrl: existing.image_url };
     });
-
-    // LOG
-    await this.createAuditLog(adminId, 'UPDATE_PRICING', 'service_config', id.toString(), cleanData);
 
     if (cleanData.image_url !== undefined && result.previousImageUrl && result.previousImageUrl !== result.updated.image_url) {
       await cleanupServiceImageIfUnreferenced(result.previousImageUrl, async imageUrl => (
@@ -509,7 +556,7 @@ export class AdminApiService {
 
       const deleted = await tx.service_configs.delete({ where: { id } });
       await tx.audit_logs.create({
-        data: { admin_id: adminId, action: 'DELETE_SERVICE', target: 'service_config', target_id: id.toString(), details: {} },
+          data: { admin_id: adminId, action: 'DELETE_SERVICE', target: 'service_config', target_id: id.toString(), details: { assetId: getManagedServiceImageAssetId(lockedService[0].image_url) } },
       });
       return { ...deleted, image_url: lockedService[0].image_url };
     });
@@ -680,36 +727,42 @@ export class AdminApiService {
 
   async getAnalytics() {
     const today = new Date();
-    const last7Days: string[] = [];
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(today.getDate() - i);
-      last7Days.push(d.toISOString().split('T')[0]);
+    const [year, month, day] = luandaDateKey(today).split('-').map(Number);
+    const last7Days = Array.from({ length: 7 }, (_, index) => {
+      const date = new Date(Date.UTC(year, month - 1, day - (6 - index)));
+      return date.toISOString().slice(0, 10);
+    });
+    // Business days follow Angola's UTC+1 calendar. Start at midnight six days
+    // ago so the chart contains seven complete calendar days, including today.
+    const firstDay = new Date(`${last7Days[0]}T00:00:00+01:00`);
+
+    // Revenue counts persisted, confirmed payment records. Trip volume counts
+    // trips requested/created in each Angola calendar day, regardless of outcome.
+    const [payments, trips] = await Promise.all([
+      this.prisma.trip_payments.findMany({
+        where: { status: 'confirmed', confirmed_at: { gte: firstDay } },
+        select: { amount: true, confirmed_at: true, trips: { select: { category: true } } },
+      }),
+      this.prisma.trips.findMany({
+        where: { created_at: { gte: firstDay } },
+        select: { created_at: true },
+      }),
+    ]);
+
+    const dailyTrips = new Map(last7Days.map(date => [date, 0]));
+    for (const trip of trips) {
+      if (trip.created_at) {
+        const date = luandaDateKey(trip.created_at);
+        if (dailyTrips.has(date)) dailyTrips.set(date, (dailyTrips.get(date) ?? 0) + 1);
+      }
     }
 
-    const sevenDaysAgo = new Date();
-    sevenDaysAgo.setDate(today.getDate() - 7);
-
-    // Daily revenue and categories count only persisted, confirmed payment records.
-    const payments = await this.prisma.trip_payments.findMany({
-      where: {
-        status: 'confirmed',
-        confirmed_at: { gte: sevenDaysAgo }
-      },
-      select: {
-        amount: true,
-        confirmed_at: true,
-        trips: { select: { category: true } },
-      }
-    });
-
-    // Process daily revenue
     const dailyRevenue = last7Days.map(date => {
       const dayTotal = payments
-        .filter(payment => payment.confirmed_at && payment.confirmed_at.toISOString().split('T')[0] === date)
+        .filter(payment => payment.confirmed_at && luandaDateKey(payment.confirmed_at) === date)
         .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
 
-      return { date, revenue: dayTotal };
+      return { date, revenue: dayTotal, trips: dailyTrips.get(date) ?? 0 };
     });
 
     // Category distribution - Corrected to use 'category' field and PT labels

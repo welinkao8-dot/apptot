@@ -1,6 +1,16 @@
-import { getCorsPolicy } from './cors-policy';
+import { getCorsPolicy, isCorsOriginAllowed } from './cors-policy';
 
 describe('getCorsPolicy', () => {
+  it('exposes exact origin validation for cookie session endpoints', () => {
+    expect(isCorsOriginAllowed('https://admin.example.com', {
+      NODE_ENV: 'production', ALLOWED_ORIGINS: 'https://admin.example.com,https://app.example.com',
+    })).toBe(true);
+    expect(isCorsOriginAllowed('https://evil.example.com', {
+      NODE_ENV: 'production', ALLOWED_ORIGINS: 'https://admin.example.com,https://app.example.com',
+    })).toBe(false);
+    expect(isCorsOriginAllowed(undefined, { NODE_ENV: 'development', ALLOWED_ORIGINS: '' })).toBe(false);
+  });
+
   it('requires an explicit origin allowlist in production', () => {
     expect(() => getCorsPolicy({ NODE_ENV: 'production', ALLOWED_ORIGINS: '' })).toThrow(/ALLOWED_ORIGINS/);
   });

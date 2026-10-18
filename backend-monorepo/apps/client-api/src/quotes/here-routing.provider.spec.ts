@@ -59,6 +59,29 @@ describe('HereRoutingProvider', () => {
     expect(axios.get).toHaveBeenCalledTimes(2);
   });
 
+  it.each([400, 503])('does not retry an HTTP %i HERE response', async (status) => {
+    process.env.HERE_ROUTING_API_KEY = 'test-routing-key';
+    jest.mocked(axios.get).mockRejectedValue(Object.assign(new Error('HERE request failed'), {
+      isAxiosError: true,
+      response: { status },
+    }));
+
+    await expect(provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }))
+      .rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(axios.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('retries a transient HERE timeout once and then returns the route', async () => {
+    process.env.HERE_ROUTING_API_KEY = 'test-routing-key';
+    jest.mocked(axios.get)
+      .mockRejectedValueOnce(Object.assign(new Error('route timeout'), { isAxiosError: true, code: 'ETIMEDOUT' }))
+      .mockResolvedValueOnce({ data: { routes: [{ sections: [{ summary: { length: 5400, duration: 720 }, polyline: 'encoded-route' }] }] } } as never);
+
+    await expect(provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }))
+      .resolves.toMatchObject({ distanceMeters: 5400, durationSeconds: 720 });
+    expect(axios.get).toHaveBeenCalledTimes(2);
+  });
+
   it('fails closed when the server routing key is missing', async () => {
     delete process.env.HERE_ROUTING_API_KEY;
     await expect(provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }))
@@ -69,6 +92,18 @@ describe('HereRoutingProvider', () => {
   it('rejects an empty or malformed HERE route response', async () => {
     process.env.HERE_ROUTING_API_KEY = 'test-routing-key';
     jest.mocked(axios.get).mockResolvedValue({ data: { routes: [] } } as never);
+    await expect(provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }))
+      .rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it.each([
+    { summary: { length: Number.NaN, duration: 720 }, polyline: 'route' },
+    { summary: { length: 5400, duration: -1 }, polyline: 'route' },
+    { summary: { length: 5400, duration: 720 }, polyline: '' },
+  ])('rejects invalid HERE metrics or empty geometry: %p', async (section) => {
+    process.env.HERE_ROUTING_API_KEY = 'test-routing-key';
+    jest.mocked(axios.get).mockResolvedValue({ data: { routes: [{ sections: [section] }] } } as never);
+
     await expect(provider.getRoute({ originLat: 1, originLng: 2, destLat: 3, destLng: 4 }))
       .rejects.toBeInstanceOf(ServiceUnavailableException);
   });

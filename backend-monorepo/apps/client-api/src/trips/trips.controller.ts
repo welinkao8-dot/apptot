@@ -1,4 +1,4 @@
-import { BadRequestException, Controller, Post, Body, UseGuards, Get, Param, Query } from '@nestjs/common';
+import { BadRequestException, Controller, Post, Body, UseGuards, Get, Param, Query, ParseUUIDPipe } from '@nestjs/common';
 import { TripsService } from './trips.service';
 import { CreateTripDto } from './dto/create-trip.dto';
 import { CurrentUser, JwtAuthGuard, Roles, RolesGuard } from '@app/auth';
@@ -39,7 +39,7 @@ export class TripsController {
     }
 
     @Get(':id')
-    findOne(@Param('id') id: string, @CurrentUser() user: AuthUser) {
+    findOne(@Param('id', ParseUUIDPipe) id: string, @CurrentUser() user: AuthUser) {
         return this.tripsService.findOneForClient(id, user.sub);
     }
 

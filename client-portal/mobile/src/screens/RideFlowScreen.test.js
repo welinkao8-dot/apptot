@@ -225,6 +225,39 @@ describe('active ride restoration', () => {
     await act(async () => renderer.unmount());
     api.get.mockReset().mockResolvedValue({ data: [] });
   });
+
+  it('restores confirmed payment after reconnect when the payment event was missed', async () => {
+    const activeTrip = {
+      id: 'trip-reconnect', category: 'ride', status: 'accepted',
+      origin_lat: -8.8, origin_lng: 13.2, dest_lat: -8.9, dest_lng: 13.3,
+      dest_address: 'Destino', estimated_fare: '950.00',
+    };
+    const paidTrip = {
+      ...activeTrip, status: 'completed', final_fare: '950.00',
+      trip_payment: { status: 'confirmed', method: 'cash', amount: '950.00' },
+    };
+    socket.on.mockClear();
+    api.get.mockReset().mockResolvedValueOnce({ data: [activeTrip] });
+    let renderer;
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(require('./RideFlowScreen').default, {
+        navigation: { navigate: jest.fn() },
+        route: { params: { initialStep: 'home', pickupCoords: { lat: -8.7, lng: 13.1 } } },
+      }));
+    });
+    const onConnect = socket.on.mock.calls.find(([event]) => event === 'connect')?.[1];
+    expect(onConnect).toEqual(expect.any(Function));
+
+    api.get.mockReset()
+      .mockResolvedValueOnce({ data: [] })
+      .mockResolvedValueOnce({ data: paidTrip });
+    await act(async () => onConnect());
+
+    expect(api.get).toHaveBeenNthCalledWith(1, '/trips/active/user-1');
+    expect(api.get).toHaveBeenNthCalledWith(2, '/trips/trip-reconnect');
+    expect(renderer.root.findAll((node) => node.type === 'Text' && node.children.join('') === 'Viagem Concluída!')).toHaveLength(1);
+    await act(async () => renderer.unmount());
+  });
 });
 
 describe('map tap intent lifecycle', () => {
@@ -238,6 +271,26 @@ describe('map tap intent lifecycle', () => {
     });
     return renderer;
   };
+
+  it('does not restore suggestions when an address search is cleared before its response arrives', async () => {
+    let resolveSuggestions;
+    hereService.fetchSuggestions.mockReset().mockImplementation(() => new Promise((resolve) => { resolveSuggestions = resolve; }));
+    const renderer = await mountRideFlow('searching_address');
+    const searchInput = renderer.root.find((node) => node.type === TextInput && node.props.placeholder === 'Para onde vais?');
+
+    await act(async () => searchInput.props.onChangeText('Talatona'));
+    await act(async () => new Promise((resolve) => setTimeout(resolve, 550)));
+    expect(hereService.fetchSuggestions).toHaveBeenCalledTimes(1);
+
+    await act(async () => renderer.root.find((node) => node.type === TextInput && node.props.placeholder === 'Para onde vais?').props.onChangeText(''));
+    await act(async () => {
+      resolveSuggestions([{ id: 'stale', name: 'Rua da Baía', address: 'Rua da Baía', lat: -8.8, lng: 13.2 }]);
+      await Promise.resolve();
+    });
+
+    expect(renderer.root.findAll((node) => node.type === 'Text' && node.children.join('') === 'Rua da Baía')).toHaveLength(0);
+    await act(async () => renderer.unmount());
+  });
 
   const findTouchableForText = (root, text) => {
     let node = root.findAll((candidate) => candidate.type === 'Text' && candidate.children.join('') === text)[0];

@@ -48,9 +48,6 @@ export class AuthService {
         const {
             password_hash,
             password,
-            doc_bi_frente,
-            doc_bi_verso,
-            doc_carta_conducao,
             ...safeUser
         } = user;
         const payload = {
@@ -180,9 +177,6 @@ export class AuthService {
             } = updatedProfile;
             const {
                 password: ignoredDriverPassword,
-                doc_bi_frente,
-                doc_bi_verso,
-                doc_carta_conducao,
                 ...safeDriver
             } = updatedDriver;
             return {

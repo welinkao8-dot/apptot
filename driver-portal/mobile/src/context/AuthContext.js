@@ -14,7 +14,6 @@ export const AuthContext = createContext();
 // CONFIGURAÇÃO DA API
 // Fallback local apenas para debug; produção recebe URL pública do workflow.
 // Dispositivo físico Wi-Fi precisa do IP da LAN (ex: 10.140.244.1)
-// Para testar via cabo USB use 'adb reverse tcp:3004 tcp:3004'
 export const API_URL = mobileUrls.getMobileUrl(process.env.TOT_DRIVER_API_URL, __DEV__ ? 'http://localhost:3004' : '');
 const { LocationModule } = NativeModules;
 

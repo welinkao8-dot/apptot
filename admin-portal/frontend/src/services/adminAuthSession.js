@@ -1,4 +1,40 @@
 export const ADMIN_AUTH_EXPIRED_EVENT = 'admin:auth-expired'
+export const ADMIN_AUTH_REFRESHED_EVENT = 'admin:auth-refreshed'
+
+let adminAccessToken = null
+let restoreSessionPromise = null
+
+export function setAdminAccessToken(token) {
+  adminAccessToken = typeof token === 'string' && token.trim() ? token : null
+}
+
+export function getAdminAccessToken() {
+  return adminAccessToken
+}
+
+export function restoreAdminSession(adminApi) {
+  if (restoreSessionPromise) return restoreSessionPromise
+  restoreSessionPromise = adminApi.post('/admin/auth/refresh')
+    .then(response => {
+      const { token, user } = response?.data ?? {}
+      if (typeof token !== 'string' || !token || !user || typeof user !== 'object' || Array.isArray(user)) {
+        throw new Error('Resposta de renovação de sessão inválida.')
+      }
+      setAdminAccessToken(token)
+      return user
+    })
+    .finally(() => { restoreSessionPromise = null })
+  return restoreSessionPromise
+}
+
+export function notifyAdminSessionRefreshed(user, eventTarget = getBrowserWindow()) {
+  if (!eventTarget) return
+  const event = typeof CustomEvent === 'function'
+    ? new CustomEvent(ADMIN_AUTH_REFRESHED_EVENT, { detail: { user } })
+    : new Event(ADMIN_AUTH_REFRESHED_EVENT)
+  if (!('detail' in event)) Object.defineProperty(event, 'detail', { value: { user } })
+  eventTarget.dispatchEvent(event)
+}
 
 export function readStoredAdminUser(storage) {
   try {
@@ -12,6 +48,7 @@ export function readStoredAdminUser(storage) {
 }
 
 export function clearAdminSession(storage = getBrowserStorage(), eventTarget = getBrowserWindow()) {
+  adminAccessToken = null
   try {
     storage?.removeItem('tot_user')
     storage?.removeItem('tot_token')

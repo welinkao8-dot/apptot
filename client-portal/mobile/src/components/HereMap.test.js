@@ -101,6 +101,71 @@ describe('HereMap WebView recovery', () => {
         expect(mockInjectJavaScript.mock.calls[1][0]).not.toContain('old-route');
     });
 
+    it('uses the latest readiness callback and keeps commands buffered until each READY', async () => {
+        const firstReady = jest.fn();
+        const latestReady = jest.fn();
+        const mapRef = React.createRef();
+        let tree;
+        await act(async () => {
+            tree = TestRenderer.create(<HereMap ref={mapRef} onMapReady={firstReady} />);
+        });
+
+        mapRef.current.drawRoute('route-before-ready');
+        expect(mockInjectJavaScript).not.toHaveBeenCalled();
+
+        await act(async () => {
+            tree.update(<HereMap ref={mapRef} onMapReady={latestReady} />);
+        });
+        await act(async () => {
+            tree.root.findByType('WebView').props.onMessage({ nativeEvent: { data: '{"type":"READY"}' } });
+        });
+
+        expect(firstReady).not.toHaveBeenCalled();
+        expect(latestReady).toHaveBeenCalledTimes(1);
+        expect(mockInjectJavaScript).toHaveBeenCalledTimes(1);
+        expect(mockInjectJavaScript.mock.calls[0][0]).toContain('route-before-ready');
+
+        const webView = tree.root.findByType('WebView');
+        await act(async () => {
+            webView.props.onLoadStart();
+            tree.update(<HereMap ref={mapRef} onMapReady={firstReady} />);
+        });
+        await act(async () => {
+            tree.root.findByType('WebView').props.onMessage({ nativeEvent: { data: '{"type":"READY"}' } });
+        });
+
+        expect(firstReady).toHaveBeenCalledTimes(1);
+        expect(latestReady).toHaveBeenCalledTimes(1);
+    });
+
+    it('clears replay state and accepts new map commands after a WebView reset', async () => {
+        const mapRef = React.createRef();
+        let tree;
+        await act(async () => {
+            tree = TestRenderer.create(<HereMap ref={mapRef} />);
+        });
+        const webView = tree.root.findByType('WebView');
+        await act(async () => {
+            webView.props.onMessage({ nativeEvent: { data: '{"type":"READY"}' } });
+        });
+
+        mapRef.current.setMarkers({ lat: -8.8, lng: 13.2 }, { lat: -8.7, lng: 13.3 });
+        mapRef.current.drawRoute('old-route');
+        mapRef.current.clearMap();
+        mockInjectJavaScript.mockClear();
+
+        await act(async () => {
+            tree.root.findByType('WebView').props.onLoadStart();
+            tree.root.findByType('WebView').props.onMessage({ nativeEvent: { data: '{"type":"READY"}' } });
+        });
+
+        expect(mockInjectJavaScript).not.toHaveBeenCalled();
+        mapRef.current.setMarkers({ lat: -8.9, lng: 13.4 }, null);
+        expect(mockInjectJavaScript).toHaveBeenCalledTimes(1);
+        expect(mockInjectJavaScript.mock.calls[0][0]).toContain('setMarkers');
+        expect(mockInjectJavaScript.mock.calls[0][0]).not.toContain('old-route');
+    });
+
     it('only permits HTTPS HERE navigation and blocks mixed content and local files', async () => {
         let tree;
         await act(async () => {

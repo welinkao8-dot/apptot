@@ -27,15 +27,23 @@ test('builds server queries with trimmed search and the selected filters', () =>
 
 test('validates page envelopes and full invoice/payment summaries', () => {
     assert.deepEqual(normalizeInvoicesPage({
-        items: [{ id: 'invoice-a' }], total: 15, page: 2, pageSize: 10,
+        items: [{ id: 'invoice-a', amount: '2500' }], total: 15, page: 2, pageSize: 10,
         summary: { receiptTotal: 500, monthlyReceiptCount: 3, invoiceTypes: ['ride'] },
     }).summary, { receiptTotal: 500, monthlyReceiptCount: 3, invoiceTypes: ['ride'] })
     assert.deepEqual(normalizePaymentsPage({
-        items: [{ id: 'payment-a', trip_id: 'trip-a', status: 'pending' }], total: 20, page: 1, pageSize: 20,
+        items: [{ id: 'payment-a', trip_id: 'trip-a', status: 'pending', amount: '2500' }], total: 20, page: 1, pageSize: 20,
         summary: { pendingCount: 4, confirmedCount: 16, confirmedCashTotal: 900, cashPendingTotal: 100 },
     }).summary, { pendingCount: 4, confirmedCount: 16, confirmedCashTotal: 900, cashPendingTotal: 100 })
     assert.throws(() => normalizeInvoicesPage({ items: [], total: -1, page: 1, pageSize: 10, summary: {} }), /inválida/)
     assert.throws(() => normalizePaymentsPage({ items: [], total: 0, page: 1, pageSize: 10, summary: {} }), /inválida/)
+    assert.throws(() => normalizeInvoicesPage({
+        items: [{ id: 'invoice-a', amount: null }], total: 1, page: 1, pageSize: 10,
+        summary: { receiptTotal: 0, monthlyReceiptCount: 0, invoiceTypes: [] },
+    }), /inválida/)
+    assert.throws(() => normalizePaymentsPage({
+        items: [{ id: 'payment-a', trip_id: 'trip-a', status: 'pending', amount: 'not-money' }], total: 1, page: 1, pageSize: 10,
+        summary: { pendingCount: 1, confirmedCount: 0, confirmedCashTotal: 0, cashPendingTotal: 0 },
+    }), /inválida/)
 })
 
 test('only the newest finance request may publish a result', () => {

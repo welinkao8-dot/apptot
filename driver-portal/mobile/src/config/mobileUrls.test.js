@@ -26,6 +26,15 @@ describe('driver mobile URLs', () => {
         expect(validateReleaseUrl('https://driver-api.example.com', 'TOT_DRIVER_API_URL')).toBe('https://driver-api.example.com');
     });
 
+    test('accepts a public WSS release host for the driver socket', () => {
+        expect(validateReleaseUrl('wss://driver-socket.example.com', 'TOT_DRIVER_SOCKET_URL')).toBe('wss://driver-socket.example.com');
+    });
+
+    test('rejects insecure or local driver socket release URLs', () => {
+        expect(() => validateReleaseUrl('http://driver-socket.example.com', 'TOT_DRIVER_SOCKET_URL')).toThrow(/TOT_DRIVER_SOCKET_URL/);
+        expect(() => validateReleaseUrl('wss://localhost:3004', 'TOT_DRIVER_SOCKET_URL')).toThrow(/TOT_DRIVER_SOCKET_URL/);
+    });
+
     test.each(['https://driver-api.example.com.', 'https://localhost%2eexample.com/'])('rejects ambiguous release hostname %s', (url) => {
         expect(() => validateReleaseUrl(url, 'TOT_DRIVER_API_URL')).toThrow(/public domain/);
     });
@@ -36,6 +45,8 @@ describe('driver mobile URLs', () => {
         expect(buildConfig).toMatch(/gradle\.taskGraph\.whenReady/);
         expect(buildConfig).toMatch(/taskGraph\.allTasks\.any/);
         expect(buildConfig).not.toMatch(/gradle\.startParameter\.taskNames/);
+        expect(buildConfig).toMatch(/validateReleaseUrl\('TOT_DRIVER_API_URL'\)/);
+        expect(buildConfig).toMatch(/validateReleaseUrl\('TOT_DRIVER_SOCKET_URL'\)/);
     });
 
     test('embeds configured API endpoints in the JavaScript bundle', () => {
@@ -55,6 +66,18 @@ describe('driver mobile URLs', () => {
         }
     });
 
+    test('embeds the independently configured driver socket endpoint in the JavaScript bundle', () => {
+        const result = babel.transformSync('process.env.TOT_DRIVER_SOCKET_URL', {
+            configFile: false,
+            babelrc: false,
+            plugins: [[inlineMobileEnvironment, {
+                keys: ['TOT_DRIVER_API_URL', 'TOT_DRIVER_SOCKET_URL'],
+                values: { TOT_DRIVER_SOCKET_URL: 'wss://driver-socket.example.com' },
+            }]],
+        });
+        expect(result.code).toBe('"wss://driver-socket.example.com";');
+    });
+
     test('production Babel configuration rejects missing release endpoint', () => {
         const configPath = path.resolve(__dirname, '../../babel.config.js');
         expect(() => execFileSync(process.execPath, ['-e', `require(${JSON.stringify(configPath)})`], {
@@ -66,7 +89,38 @@ describe('driver mobile URLs', () => {
     test('production Babel configuration accepts a configured HTTPS endpoint', () => {
         const configPath = path.resolve(__dirname, '../../babel.config.js');
         expect(() => execFileSync(process.execPath, ['-e', `require(${JSON.stringify(configPath)})`], {
-            env: { ...process.env, NODE_ENV: 'production', TOT_DRIVER_API_URL: 'https://driver-api.example.com' },
+            env: {
+                ...process.env,
+                NODE_ENV: 'production',
+                TOT_DRIVER_API_URL: 'https://driver-api.example.com',
+                TOT_DRIVER_SOCKET_URL: 'https://driver-socket.example.com',
+            },
+            stdio: 'pipe',
+        })).not.toThrow();
+    });
+
+    test('production Babel configuration requires a secure driver socket endpoint', () => {
+        const configPath = path.resolve(__dirname, '../../babel.config.js');
+        expect(() => execFileSync(process.execPath, ['-e', `require(${JSON.stringify(configPath)})`], {
+            env: {
+                ...process.env,
+                NODE_ENV: 'production',
+                TOT_DRIVER_API_URL: 'https://driver-api.example.com',
+                TOT_DRIVER_SOCKET_URL: '',
+            },
+            stdio: 'pipe',
+        })).toThrow(/TOT_DRIVER_SOCKET_URL/);
+    });
+
+    test('production Babel configuration accepts a WSS driver socket endpoint', () => {
+        const configPath = path.resolve(__dirname, '../../babel.config.js');
+        expect(() => execFileSync(process.execPath, ['-e', `require(${JSON.stringify(configPath)})`], {
+            env: {
+                ...process.env,
+                NODE_ENV: 'production',
+                TOT_DRIVER_API_URL: 'https://driver-api.example.com',
+                TOT_DRIVER_SOCKET_URL: 'wss://driver-socket.example.com',
+            },
             stdio: 'pipe',
         })).not.toThrow();
     });
@@ -75,6 +129,8 @@ describe('driver mobile URLs', () => {
         const workflow = fs.readFileSync(path.resolve(__dirname, '../../../../.github/workflows/mobile-test-apks.yml'), 'utf8');
         expect(workflow).toMatch(/TOT_DRIVER_API_URL:\s*\$\{\{ vars\.TOT_DRIVER_API_URL \}\}/);
         expect(workflow).toMatch(/validateReleaseUrl\(process\.env\.TOT_DRIVER_API_URL, ["']TOT_DRIVER_API_URL["']\)/);
+        expect(workflow).toMatch(/TOT_DRIVER_SOCKET_URL:\s*\$\{\{ vars\.TOT_DRIVER_SOCKET_URL \}\}/);
+        expect(workflow).toMatch(/validateReleaseUrl\(process\.env\.TOT_DRIVER_SOCKET_URL, ["']TOT_DRIVER_SOCKET_URL["']\)/);
         const driverJob = workflow.split('  build-driver-apk:')[1].split('\n  build-')[0];
         expect(driverJob).not.toMatch(/^\s{6}MAPBOX_DOWNLOADS_TOKEN:/m);
         expect(driverJob).toMatch(/ORG_GRADLE_PROJECT_MAPBOX_DOWNLOADS_TOKEN:\s*\$\{\{ secrets\.MAPBOX_DOWNLOADS_TOKEN \}\}/);

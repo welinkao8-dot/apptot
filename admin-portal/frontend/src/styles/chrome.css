@@ -252,6 +252,11 @@
 /* --------------------------------------------------------------------------
    Cabeçalho de página e de módulo
    -------------------------------------------------------------------------- */
+.admin-primary-nav {
+    position: relative;
+    z-index: 60;
+}
+
 .page-header,
 .module-header-nav {
     display: flex;

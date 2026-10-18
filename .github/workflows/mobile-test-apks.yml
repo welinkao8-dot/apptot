@@ -58,6 +58,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       TOT_DRIVER_API_URL: ${{ vars.TOT_DRIVER_API_URL }}
+      TOT_DRIVER_SOCKET_URL: ${{ vars.TOT_DRIVER_SOCKET_URL }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -82,7 +83,7 @@ jobs:
       - name: Validate driver test APK configuration
         working-directory: driver-portal/mobile
         run: |
-          node -e 'const { validateReleaseUrl } = require("./src/config/mobileUrls"); validateReleaseUrl(process.env.TOT_DRIVER_API_URL, "TOT_DRIVER_API_URL");'
+          node -e 'const { validateReleaseUrl } = require("./src/config/mobileUrls"); validateReleaseUrl(process.env.TOT_DRIVER_API_URL, "TOT_DRIVER_API_URL"); validateReleaseUrl(process.env.TOT_DRIVER_SOCKET_URL, "TOT_DRIVER_SOCKET_URL");'
 
       - name: Build driver debug APK
         working-directory: driver-portal/mobile/android

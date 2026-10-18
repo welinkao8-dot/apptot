@@ -3,6 +3,7 @@ import { ArrowLeft, RefreshCw, Wallet, CheckCircle2, Clock3, Search } from 'luci
 import adminApi from '../services/adminApi'
 import toast from 'react-hot-toast'
 import { buildPaymentsQuery, createRequestSequence, formatSummaryValue, loadFinancePage, normalizePaymentsPage } from '../services/adminFinancePagination'
+import { formatDateTime, formatKz, formatPaymentMethod } from '../services/format'
 
 
 const STATUS = {
@@ -60,20 +61,19 @@ export default function Payments({ onBack }) {
         <div className="trips-module animate-fade-in">
             <div className="module-header-nav">
                 <div className="flex items-center gap-4">
-                    <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
                     <div className="title-area"><h2>Conciliação de pagamentos</h2><p>Estado persistido das cobranças em numerário · atualização a cada 30 segundos</p></div>
                 </div>
-                <button className="btn-approve-big" onClick={fetchPayments} disabled={loading}><RefreshCw size={16} /> Atualizar</button>
+                <button className="tot-btn tot-btn--primary tot-btn--icon" onClick={fetchPayments} disabled={loading} aria-label="Atualizar pagamentos" title="Atualizar"><RefreshCw size={16} className={loading ? 'is-spinning' : ''} aria-hidden="true" /></button>
             </div>
 
             <div className="admin-stats-grid" style={{ marginTop: 24 }}>
                 <div className="admin-stat-card"><div className="stat-icon amber"><Clock3 size={22} /></div><div className="stat-info"><span className="label">Pendentes</span><span className="value">{formatSummaryValue(summary, 'pendingCount', loading)}</span></div></div>
                 <div className="admin-stat-card"><div className="stat-icon emerald"><CheckCircle2 size={22} /></div><div className="stat-info"><span className="label">Confirmados</span><span className="value">{formatSummaryValue(summary, 'confirmedCount', loading)}</span></div></div>
-                <div className="admin-stat-card"><div className="stat-icon pink"><Wallet size={22} /></div><div className="stat-info"><span className="label">Cash confirmado</span><span className="value">{formatSummaryValue(summary, 'confirmedCashTotal', loading, value => `Kz ${value.toLocaleString('pt-AO')}`)}</span></div></div>
+                <div className="admin-stat-card"><div className="stat-icon pink"><Wallet size={22} /></div><div className="stat-info"><span className="label">Cash confirmado</span><span className="value">{formatSummaryValue(summary, 'confirmedCashTotal', loading, formatKz)}</span></div></div>
             </div>
 
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', margin: '20px 0' }}>
-                <div className="search-bar-premium" style={{ maxWidth: 460 }}><Search size={18} /><input maxLength={120} value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar por viagem, cliente ou motorista" /></div>
+            <div className="header-actions" style={{ margin: '20px 0' }}>
+                <div className="tot-search" style={{ maxWidth: 460 }}><Search size={18} /><input maxLength={120} value={search} onChange={event => setSearch(event.target.value)} placeholder="Buscar por viagem, cliente ou motorista" /></div>
                 <select className="filter-select-premium" value={statusFilter} onChange={event => setStatusFilter(event.target.value)}>
                     <option value="all">Todos os estados</option>
                     <option value="pending">Pendentes</option>
@@ -89,14 +89,14 @@ export default function Payments({ onBack }) {
                         {filtered.map(payment => {
                             const status = STATUS[payment.status] || { label: payment.status, color: '#475569', background: '#f1f5f9' }
                             return <tr key={payment.id} style={{ borderTop: '1px solid #f1f5f9' }}>
-                                <td style={{ padding: 14 }}>#{(payment.trips?.id || payment.trip_id).slice(0, 8).toUpperCase()}</td>
+                                <td style={{ padding: 14 }}>#{String(payment.trips?.id || payment.trip_id || '').slice(0, 8).toUpperCase() || '—'}</td>
                                 <td style={{ padding: 14 }}>{payment.trips?.profiles_trips_client_idToprofiles?.full_name || '—'}</td>
                                 <td style={{ padding: 14 }}>{payment.trips?.profiles_trips_driver_idToprofiles?.full_name || '—'}</td>
-                                <td style={{ padding: 14, fontWeight: 700 }}>Kz {Number.isFinite(Number(payment.amount)) ? Number(payment.amount).toLocaleString('pt-AO') : '—'}</td>
-                                <td style={{ padding: 14 }}>{payment.method === 'cash' ? 'Numerário' : payment.method}</td>
+                                <td style={{ padding: 14, fontWeight: 700 }}>{Number.isFinite(Number(payment.amount)) ? formatKz(payment.amount) : '—'}</td>
+                                <td style={{ padding: 14 }}>{formatPaymentMethod(payment.method)}</td>
                                 <td style={{ padding: 14 }}><span style={{ color: status.color, background: status.background, padding: '5px 9px', borderRadius: 20 }}>{status.label}</span></td>
                                 <td style={{ padding: 14 }}>{payment.profiles?.full_name || '—'}</td>
-                                <td style={{ padding: 14 }}>{payment.confirmed_at ? new Date(payment.confirmed_at).toLocaleString('pt-AO') : '—'}</td>
+                                <td style={{ padding: 14 }}>{payment.confirmed_at ? formatDateTime(payment.confirmed_at) : '—'}</td>
                             </tr>
                         })}
                         {!loading && loadError && <tr><td colSpan="8" style={{ padding: 28, textAlign: 'center', color: '#b91c1c' }}>

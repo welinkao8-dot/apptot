@@ -36,11 +36,11 @@
     --tot-muted-2: #6b7686;        /*  4,60:1 — absorve #64748b, #657187, #687891, #6b7280 */
     --tot-faint: #8a97a8;          /* SOBREVIVE APENAS COMO ÍCONE/ORNAMENTO. Nunca texto. */
 
-    --tot-canvas: #f4f5f7;         /* absorve #f5f6f8, #f5f7fb, #f7f8fa, #fafbfc, #f1f5f9 */
+    --tot-canvas: #f0f2f5;
     --tot-surface: #ffffff;
     --tot-surface-2: #fafbfc;      /* cabeçalhos de tabela, faixas */
-    --tot-line: #e4e7ec;           /* absorve #e5e9f0, #e5eaf1, #e7ebf1, #edf0f4, #eceef1, #e1e7ef */
-    --tot-line-strong: #d3d8e0;    /* absorve #d8dee7, #cbd5e1, #c9d2dd */
+    --tot-line: rgba(226, 232, 240, 0.8);
+    --tot-line-strong: #cbd5e1;
 
     /* ------------------------------------------------------------------
        Estado — o único lugar onde a cor representa significado.
@@ -98,18 +98,18 @@
     --tot-space-10: 40px;
 
     /* ------------------------------------------------------------------
-       Raio — quatro passos, alinhados com a escala já documentada do repo.
+       Raio — alinhado com a nova linguagem visual Quixotic (cantos amplos arredondados).
        ------------------------------------------------------------------ */
-    --tot-radius-sm: 4px;
-    --tot-radius-md: 8px;
-    --tot-radius-lg: 16px;
+    --tot-radius-sm: 10px;
+    --tot-radius-md: 18px;
+    --tot-radius-lg: 28px;
     --tot-radius-full: 9999px;
 
     /* ------------------------------------------------------------------
-       Elevação — uma sombra para o console inteiro, uma para sobreposições.
+       Elevação — sombra sutil e limpa.
        ------------------------------------------------------------------ */
-    --tot-shadow-card: 0 1px 3px rgba(20, 31, 51, .06), 0 8px 24px rgba(20, 31, 51, .04);
-    --tot-shadow-overlay: 0 12px 26px rgba(18, 31, 53, .12), 0 32px 64px rgba(18, 31, 53, .16);
+    --tot-shadow-card: 0 4px 20px -4px rgba(0, 0, 0, 0.05);
+    --tot-shadow-overlay: 0 16px 40px -8px rgba(0, 0, 0, 0.12);
 
     /* ------------------------------------------------------------------
        Estrutura

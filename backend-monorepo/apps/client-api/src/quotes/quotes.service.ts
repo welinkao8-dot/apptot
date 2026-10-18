@@ -4,6 +4,8 @@ import { Prisma, trip_quotes } from '@prisma/client';
 import { CreateQuoteDto } from './quote.dto';
 import { HereRoutingProvider, HereTransportMode } from './here-routing.provider';
 
+const MAX_PERSISTED_FARE = 99_999_999.99;
+
 @Injectable()
 export class QuotesService {
   constructor(private readonly prisma: PrismaService, private readonly router: HereRoutingProvider) {}
@@ -30,6 +32,13 @@ export class QuotesService {
     });
     if (services.length === 0) throw new NotFoundException('Nenhum serviço disponível para esta categoria.');
 
+    for (const service of services) {
+      const prices = [service.base_fare, service.price_per_km, service.price_per_min, service.min_fare].map(Number);
+      if (prices.some((price) => !Number.isFinite(price) || price < 0 || price > MAX_PERSISTED_FARE)) {
+        throw new BadRequestException('A configuração de preços do serviço é inválida.');
+      }
+    }
+
     const routingModes = services.map((service) => this.routingModeFor(service.routing_mode, service.vehicle_category));
     const uniqueModes = [...new Set(routingModes)];
     const routeResults = await Promise.allSettled(uniqueModes.map(async (mode) => ({
@@ -40,6 +49,15 @@ export class QuotesService {
     for (const result of routeResults) {
       if (result.status === 'fulfilled') routeByMode.set(result.value.mode, result.value.route);
     }
+    const unavailableServices = services.flatMap((service, index) => {
+      const routingMode = routingModes[index];
+      return routeByMode.has(routingMode) ? [] : [{
+        serviceConfigId: service.id,
+        serviceName: service.name,
+        routingMode,
+        reason: 'route_unavailable' as const,
+      }];
+    });
     if (routeByMode.size === 0) {
       throw new ServiceUnavailableException('Não foi possível calcular uma rota para os serviços disponíveis. Tente novamente.');
     }
@@ -54,7 +72,9 @@ export class QuotesService {
         + Number(service.price_per_km) * distanceKm
         + Number(service.price_per_min) * durationMinutes;
       const fare = Math.max(Number(service.min_fare), Math.ceil(rawFare * 100) / 100);
-      if (!Number.isFinite(fare) || fare <= 0) throw new BadRequestException('A configuração de preços não produz uma tarifa válida.');
+      if (!Number.isFinite(fare) || fare <= 0 || fare > MAX_PERSISTED_FARE) {
+        throw new BadRequestException('A configuração de preços produz uma tarifa fora do limite suportado.');
+      }
 
       return [{
         service,
@@ -117,6 +137,7 @@ export class QuotesService {
         estimatedFare: quote.estimated_fare.toString(),
         expiresAt: quote.expires_at,
         routePolyline: routeByMode.get(quoteDrafts[index].routingMode)?.polyline,
+        unavailableServices,
       };
     });
   }

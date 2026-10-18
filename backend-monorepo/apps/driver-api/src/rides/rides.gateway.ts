@@ -8,7 +8,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
-import { Inject, OnModuleInit, Optional } from '@nestjs/common';
+import { HttpException, Inject, OnModuleInit, Optional, ValidationPipe } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { TripsService } from '../trips/trips.service';
 import { isImplausibleLocationJump } from './location-validation';
@@ -16,12 +16,30 @@ import { CreateTripDto } from '../trips/dto/create-trip.dto';
 import { PaymentsService } from '../payments/payments.service';
 import { getCorsPolicy } from '@app/auth';
 import { DriverPushService } from '../push/driver-push.service';
+import { UpdateDriverLocationDto } from '../trips/dto/update-driver-location.dto';
+import {
+  ConfirmCashPaymentSocketDto,
+  FinishTripSocketDto,
+  ToggleDriverAvailabilityDto,
+  TripIdSocketDto,
+  TripProgressSocketDto,
+} from './dto/socket-event.dto';
 
 type ActorRole = 'client' | 'driver';
 type SocketActor = { id: string; role: ActorRole };
 type ConnectedUser = SocketActor & { socketIds: Set<string>; isOnline: boolean };
 export type DriverLocationFix = { lat: number; lng: number; accuracy?: number; timestamp?: number; heading?: number };
 export class InvalidDriverLocationError extends Error {}
+
+const socketPayloadValidationPipe = new ValidationPipe({
+  transform: true,
+  whitelist: true,
+  forbidNonWhitelisted: true,
+});
+
+async function validateSocketPayload<T>(payload: unknown, metatype: new () => T): Promise<T> {
+  return socketPayloadValidationPipe.transform(payload, { type: 'body', metatype }) as Promise<T>;
+}
 
 @WebSocketGateway({
   cors: getCorsPolicy(),
@@ -124,10 +142,11 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('toggle_online')
   async handleToggleOnline(
-    @MessageBody() data: { isOnline: boolean },
+    @MessageBody() data: ToggleDriverAvailabilityDto,
     @ConnectedSocket() client: Socket,
   ) {
     try {
+      data = await validateSocketPayload(data, ToggleDriverAvailabilityDto);
       const actor = this.requireRole(client, 'driver');
       if (typeof data?.isOnline !== 'boolean') throw new Error('Invalid availability value');
       await this.tripsService.updateDriverStatus(actor.id, data.isOnline);
@@ -146,6 +165,7 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
     @ConnectedSocket() client: Socket,
   ) {
     try {
+      data = await validateSocketPayload(data, UpdateDriverLocationDto);
       const actor = this.requireRole(client, 'driver');
       return await this.processDriverLocation(actor.id, data);
     } catch (error) {
@@ -199,8 +219,9 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   }
 
   @SubscribeMessage('request_trip')
-  async handleRequestTrip(@MessageBody() dto: CreateTripDto, @ConnectedSocket() client: Socket) {
+  async handleRequestTrip(@MessageBody() body: CreateTripDto, @ConnectedSocket() client: Socket) {
     try {
+      const dto = await validateSocketPayload(body, CreateTripDto);
       const actor = this.requireRole(client, 'client');
       const trip = await this.tripsService.create(dto, actor.id);
       const formattedTrip = this.tripsService.formatTrip(trip);
@@ -216,10 +237,11 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('accept_trip')
   async handleAcceptTrip(
-    @MessageBody() data: { tripId: string },
+    @MessageBody() body: TripIdSocketDto,
     @ConnectedSocket() client: Socket,
   ) {
     try {
+      const data = await validateSocketPayload(body, TripIdSocketDto);
       const actor = this.requireRole(client, 'driver');
       // The service remains authoritative; this read only avoids replaying notifications after a lost ACK.
       const currentTrip = await this.tripsService.findOne(data.tripId);
@@ -240,8 +262,9 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   }
 
   @SubscribeMessage('decline_trip')
-  async handleDeclineTrip(@MessageBody() data: { tripId: string }, @ConnectedSocket() client: Socket) {
+  async handleDeclineTrip(@MessageBody() body: TripIdSocketDto, @ConnectedSocket() client: Socket) {
     try {
+      const data = await validateSocketPayload(body, TripIdSocketDto);
       const actor = this.requireRole(client, 'driver');
       await this.tripsService.declineOffer(data.tripId, actor.id);
       await this.dispatchTrip(data.tripId);
@@ -252,8 +275,9 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   }
 
   @SubscribeMessage('cancel_trip')
-  async handleCancelTrip(@MessageBody() data: { tripId: string }, @ConnectedSocket() client: Socket) {
+  async handleCancelTrip(@MessageBody() body: TripIdSocketDto, @ConnectedSocket() client: Socket) {
     try {
+      const data = await validateSocketPayload(body, TripIdSocketDto);
       const actor = this.requireActor(client);
       const trip = await this.tripsService.findOne(data.tripId);
       if (!trip) throw new Error('Trip not found');
@@ -283,8 +307,9 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   }
 
   @SubscribeMessage('start_ride')
-  async handleStartRide(@MessageBody() data: { tripId: string }, @ConnectedSocket() client: Socket) {
+  async handleStartRide(@MessageBody() body: TripIdSocketDto, @ConnectedSocket() client: Socket) {
     try {
+      const data = await validateSocketPayload(body, TripIdSocketDto);
       const trip = await this.driverTrip(client, data.tripId, 'accepted');
       await this.tripsService.start(data.tripId, trip.driver_id);
       this.server.to(this.room('client', trip.client_id)).emit('ride_started', { tripId: data.tripId });
@@ -296,10 +321,11 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('finish_ride')
   async handleFinishRide(
-      @MessageBody() data: { tripId: string; finalFare?: string },
+      @MessageBody() body: FinishTripSocketDto,
     @ConnectedSocket() client: Socket,
   ) {
     try {
+      const data = await validateSocketPayload(body, FinishTripSocketDto);
       const trip = await this.driverTrip(client, data.tripId, 'ongoing');
       const completedTrip = await this.tripsService.finish(data.tripId, trip.driver_id);
       this.server.to(this.room('client', trip.client_id)).emit('ride_finished', {
@@ -314,10 +340,11 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('confirm_cash_payment')
   async handleConfirmCashPayment(
-    @MessageBody() data: { tripId: string; amount: string | number },
+    @MessageBody() body: ConfirmCashPaymentSocketDto,
     @ConnectedSocket() client: Socket,
   ) {
     try {
+      const data = await validateSocketPayload(body, ConfirmCashPaymentSocketDto);
       const actor = this.requireRole(client, 'driver');
       const trip = await this.tripsService.findOneForDriver(data.tripId, actor.id);
       const payment = await this.paymentsService.confirmCashPayment(data.tripId, actor.id, data.amount);
@@ -334,10 +361,11 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
 
   @SubscribeMessage('trip_progress')
   async handleTripProgress(
-      @MessageBody() data: { tripId: string; coords?: { lat?: number; lng?: number }; timestamp?: number },
+      @MessageBody() body: TripProgressSocketDto,
     @ConnectedSocket() client: Socket,
   ) {
     try {
+      const data = await validateSocketPayload(body, TripProgressSocketDto);
       const actor = this.requireRole(client, 'driver');
       await this.driverTrip(client, data.tripId, 'ongoing');
       return await this.processDriverLocation(actor.id, {
@@ -424,6 +452,17 @@ export class RidesGateway implements OnGatewayConnection, OnGatewayDisconnect, O
   }
 
   private failure(error: unknown) {
+    if (error instanceof HttpException) {
+      const response = error.getResponse();
+      const message = typeof response === 'string'
+        ? response
+        : Array.isArray((response as { message?: unknown[] }).message)
+          ? ((response as { message: unknown[] }).message).join(' ')
+          : typeof (response as { message?: unknown }).message === 'string'
+            ? (response as { message: string }).message
+            : error.message;
+      return { success: false, error: message };
+    }
     return { success: false, error: error instanceof Error ? error.message : 'Request failed' };
   }
 }

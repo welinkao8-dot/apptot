@@ -110,6 +110,11 @@ export default function DeliveryFlowScreen({ navigation, route }) {
     const serviceSheetHeightRef = useRef(360);
 
     const mapRef = useRef(null);
+    const tripIdRef = useRef(tripId);
+    const setCurrentTripId = (id) => {
+        tripIdRef.current = id;
+        setTripId(id);
+    };
     const radarAnim = useRef(new Animated.Value(0)).current;
     const quoteRequestIdRef = useRef(0);
     const quoteContextRef = useRef(null);
@@ -235,7 +240,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
                     pickupCoordsRef.current = origin;
                     setPickupAddress(trip.origin_address?.trim() || formatCoordinateLabel(origin));
                 }
-                setTripId(trip.id);
+                setCurrentTripId(trip.id);
                 setStep(trip.status === 'requested' ? 'requesting' :
                     trip.status === 'completed' ? 'waiting_payment' : trip.status);
                 setDestination({
@@ -279,10 +284,24 @@ export default function DeliveryFlowScreen({ navigation, route }) {
         if (!user?.id) return false;
         try {
             const res = await api.get(`/trips/active/${user.id}`);
-            const activeTrips = Array.isArray(res.data) ? res.data : (res.data ? [res.data] : []);
+            const activeData = res?.data;
+            const activeTrips = Array.isArray(activeData) ? activeData : (activeData ? [activeData] : []);
             const delivery = activeTrips.find(trip => trip?.category === 'delivery'
                 && ['requested', 'accepted', 'ongoing', 'completed'].includes(trip.status));
-            return delivery?.id ? await hydrateFromTrip(delivery.id) : false;
+            if (delivery?.id) return await hydrateFromTrip(delivery.id);
+
+            const currentTripId = tripIdRef.current;
+            if (!currentTripId) return false;
+            const persisted = (await api.get(`/trips/${currentTripId}`)).data;
+            if (persisted?.status === 'completed' && persisted.trip_payment?.status === 'confirmed') {
+                setCurrentTripId(persisted.id);
+                const fare = Number(persisted.final_fare ?? persisted.estimated_fare ?? persisted.trip_payment.amount);
+                if (Number.isFinite(fare)) setCurrentFare(fare);
+                setStep('finished');
+                return true;
+            }
+            if (persisted?.status === 'cancelled') resetFlow();
+            return false;
         } catch (error) {
             console.warn('Could not restore active delivery:', toSafeErrorLog(error));
             return false;
@@ -356,9 +375,13 @@ export default function DeliveryFlowScreen({ navigation, route }) {
 
     // --- Socket Listeners (Stabilized) ---
     useEffect(() => {
+        const onConnect = () => {
+            socket.emit('join');
+            void checkActiveDelivery();
+        };
         const onTripCreated = (data) => {
             console.log('📦 [DeliveryFlow] Trip created:', data.tripId);
-            setTripId(data.tripId);
+            setCurrentTripId(data.tripId);
             setStep('requesting');
             // Room join is usually handled in useEffect or upon login, but ensuring here
             socket.emit('join');
@@ -388,6 +411,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
             resetFlow();
         };
 
+        socket.on('connect', onConnect);
         socket.on('trip_created', onTripCreated);
         socket.on('trip_accepted', onTripAccepted);
         socket.on('ride_started', onRideStarted);
@@ -398,6 +422,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
         socket.on('trip_timeout', onTripTimeout);
 
         return () => {
+            socket.off('connect', onConnect);
             socket.off('trip_created', onTripCreated);
             socket.off('trip_accepted', onTripAccepted);
             socket.off('ride_started', onRideStarted);
@@ -417,7 +442,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
         setLoading(false);
         setDeliveryInfo({ recipientName: '', recipientPhone: '', packageDescription: '' });
         setStep('home');
-        setTripId(null);
+        setCurrentTripId(null);
         setAcceptedDriver(null);
         setDriverLocationUpdatedAt(null);
         setDestination(null);
@@ -594,7 +619,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
             socket.timeout(10000).emit('request_trip', payload, async (timeoutError, response) => {
                 if (requestId !== deliverySubmitRequestIdRef.current) return;
                 if (!timeoutError && response?.success && response.tripId) {
-                    setTripId(response.tripId);
+                    setCurrentTripId(response.tripId);
                     setStep('requesting');
                     finishRequest();
                     return;
@@ -604,7 +629,7 @@ export default function DeliveryFlowScreen({ navigation, route }) {
                     if (requestId !== deliverySubmitRequestIdRef.current) return;
                     const committed = (Array.isArray(active.data) ? active.data : [active.data]).find((trip) => trip?.quote_id === payload.quoteId || trip?.id === response?.tripId);
                     if (committed) {
-                        setTripId(committed.id);
+                        setCurrentTripId(committed.id);
                         setStep('requesting');
                     } else {
                         Toast.show({ type: 'error', text1: 'Pedido não confirmado', text2: response?.error || 'Verifique a ligação e tente novamente.' });

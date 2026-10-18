@@ -7,6 +7,7 @@ jest.mock('fs/promises', () => ({ ...jest.requireActual('fs/promises'), unlink: 
 
 function withTransaction<T extends object>(prisma: T) {
   if (!('$queryRawUnsafe' in prisma)) Object.assign(prisma, { $queryRawUnsafe: jest.fn().mockResolvedValue([]) });
+  if (!('driver_documents' in prisma)) Object.assign(prisma, { driver_documents: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) } });
   return Object.assign(prisma, {
     $transaction: jest.fn((operation: (transaction: T) => unknown) => operation(prisma)),
   });
@@ -15,6 +16,18 @@ function withTransaction<T extends object>(prisma: T) {
 describe('AdminApiService', () => {
   beforeEach(() => jest.mocked(unlink).mockClear());
 
+  it('loads persisted payment confirmation with trip details for receipt eligibility', async () => {
+    const tripId = '48f3bec5-0000-4000-8000-000000000001';
+    const findUnique = jest.fn().mockResolvedValue({ id: tripId, trip_payment: { status: 'confirmed' } });
+    const service = new AdminApiService({ trips: { findUnique } } as never, { sendToAdmins: jest.fn() } as never, {} as never);
+
+    await service.getTripById(tripId);
+
+    expect(findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: tripId },
+      include: expect.objectContaining({ trip_payment: true }),
+    }));
+  });
   it('cleans an unreferenced app-managed image after a service image is replaced', async () => {
     const imageUrl = 'http://localhost:3000/uploads/services/11111111-1111-4111-8111-111111111111.webp';
     const prisma = withTransaction({
@@ -30,7 +43,7 @@ describe('AdminApiService', () => {
     await service.updateServiceConfig(7, { image_url: 'http://localhost:3000/uploads/services/new.png' });
 
     expect(prisma.$queryRawUnsafe).toHaveBeenCalledWith(
-      'SELECT "id", "image_url", "vehicle_category", "routing_mode" FROM "service_configs" WHERE "id" = $1 FOR UPDATE',
+      'SELECT "id", "image_url", "vehicle_category", "routing_mode", "base_fare", "price_per_km", "price_per_min", "min_fare" FROM "service_configs" WHERE "id" = $1 FOR UPDATE',
       7,
     );
     expect(prisma.$queryRawUnsafe.mock.invocationCallOrder[0]).toBeLessThan(prisma.service_configs.update.mock.invocationCallOrder[0]);
@@ -130,7 +143,7 @@ describe('AdminApiService', () => {
     );
     expect(prisma.$queryRaw.mock.invocationCallOrder[0]).toBeLessThan(prisma.trips.count.mock.invocationCallOrder[0]);
     expect(prisma.audit_logs.create).toHaveBeenCalledWith({ data: {
-      admin_id: 'admin-profile-id', action: 'DELETE_SERVICE', target: 'service_config', target_id: '7', details: {},
+      admin_id: 'admin-profile-id', action: 'DELETE_SERVICE', target: 'service_config', target_id: '7', details: { assetId: null },
     } });
   });
 
@@ -167,14 +180,27 @@ describe('AdminApiService', () => {
   });
 
   it('returns only a driver’s verification documents for the protected review screen', async () => {
-    const documents = { doc_bi_frente: 'data:image/jpeg;base64,front', doc_bi_verso: 'data:image/png;base64,back', doc_carta_conducao: 'data:image/jpeg;base64,license' };
-    const findUnique = jest.fn().mockResolvedValue({ id: 'driver-a', ...documents });
-    const service = new AdminApiService({ drivers: { findUnique } } as never, {} as never, {} as never);
+    const findUnique = jest.fn().mockResolvedValue({ id: 'driver-a' });
+    const findMany = jest.fn().mockResolvedValue([
+      { document_type: 'bi_frente', content: Buffer.from('front'), mime_type: 'image/jpeg' },
+      { document_type: 'bi_verso', content: Buffer.from('back'), mime_type: 'image/png' },
+      { document_type: 'carta', content: Buffer.from('license'), mime_type: 'image/jpeg' },
+    ]);
+    const service = new AdminApiService({ drivers: { findUnique }, driver_documents: { findMany } } as never, {} as never, {} as never);
 
-    await expect(service.getDriverDocuments('driver-a')).resolves.toEqual({ id: 'driver-a', ...documents });
+    await expect(service.getDriverDocuments('driver-a')).resolves.toEqual({
+      id: 'driver-a',
+      doc_bi_frente: `data:image/jpeg;base64,${Buffer.from('front').toString('base64')}`,
+      doc_bi_verso: `data:image/png;base64,${Buffer.from('back').toString('base64')}`,
+      doc_carta_conducao: `data:image/jpeg;base64,${Buffer.from('license').toString('base64')}`,
+    });
     expect(findUnique).toHaveBeenCalledWith({
       where: { id: 'driver-a' },
-      select: { id: true, doc_bi_frente: true, doc_bi_verso: true, doc_carta_conducao: true },
+      select: { id: true },
+    });
+    expect(findMany).toHaveBeenCalledWith({
+      where: { driver_id: 'driver-a', superseded_at: null, deleted_at: null, content: { not: null } },
+      select: { document_type: true, content: true, mime_type: true },
     });
   });
 
@@ -333,12 +359,12 @@ describe('AdminApiService', () => {
     expect(auditCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ admin_id: 'admin-profile-id' }) });
   });
 
-  it('records the authenticated admin when pricing is updated', async () => {
+  it('records the authenticated admin and before/after pricing values in the update transaction', async () => {
     const update = jest.fn().mockResolvedValue({ id: 9, base_fare: 600 });
     const auditCreate = jest.fn().mockResolvedValue({});
     const service = new AdminApiService(
       withTransaction({
-        $queryRawUnsafe: jest.fn().mockResolvedValue([{ id: 9, image_url: null, vehicle_category: 'car', routing_mode: 'car' }]),
+        $queryRawUnsafe: jest.fn().mockResolvedValue([{ id: 9, image_url: null, vehicle_category: 'car', routing_mode: 'car', base_fare: 500, price_per_km: 100, price_per_min: 50, min_fare: 700 }]),
         service_configs: { update }, audit_logs: { create: auditCreate },
       }) as never,
       { sendToAdmins: jest.fn() } as never,
@@ -347,7 +373,10 @@ describe('AdminApiService', () => {
 
     await service.updateServiceConfig(9, { base_fare: 600 }, 'admin-profile-id');
 
-    expect(auditCreate).toHaveBeenCalledWith({ data: expect.objectContaining({ admin_id: 'admin-profile-id' }) });
+    expect(auditCreate).toHaveBeenCalledWith({ data: expect.objectContaining({
+      admin_id: 'admin-profile-id', action: 'UPDATE_PRICING',
+      details: { before: { base_fare: 500 }, after: { base_fare: 600 } },
+    }) });
   });
 
   it('rejects an unsupported route mode before changing a service', async () => {
@@ -403,6 +432,32 @@ describe('AdminApiService', () => {
     expect(prisma.trips.aggregate).not.toHaveBeenCalled();
     expect(aggregate.mock.calls.every(([query]) => query.where.status === 'confirmed')).toBe(true);
     expect(aggregate).toHaveBeenNthCalledWith(2, expect.objectContaining({ where: expect.objectContaining({ confirmed_at: { gte: expect.any(Date) } }) }));
+  });
+
+  it('returns seven complete Angola calendar days with confirmed revenue and trip volume', async () => {
+    const now = new Date();
+    const paymentFindMany = jest.fn().mockResolvedValue([
+      { amount: '1250', confirmed_at: now, trips: { category: 'ride' } },
+    ]);
+    const tripFindMany = jest.fn().mockResolvedValue([{ created_at: now }, { created_at: now }]);
+    const service = new AdminApiService({
+      trip_payments: { findMany: paymentFindMany },
+      trips: { findMany: tripFindMany },
+    } as never, {} as never, {} as never);
+
+    const result = await service.getAnalytics();
+
+    expect(result.dailyRevenue).toHaveLength(7);
+    expect(result.dailyRevenue.at(-1)).toEqual(expect.objectContaining({ revenue: 1250, trips: 2 }));
+    expect(result.dailyRevenue.every(day => typeof day.date === 'string' && Number.isFinite(day.trips))).toBe(true);
+    expect(paymentFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ status: 'confirmed', confirmed_at: { gte: expect.any(Date) } }),
+    }));
+    expect(tripFindMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { created_at: { gte: expect.any(Date) } },
+      select: { created_at: true },
+    }));
+    expect(paymentFindMany.mock.calls[0][0].where.confirmed_at.gte).toEqual(tripFindMany.mock.calls[0][0].where.created_at.gte);
   });
 
   it('returns one bounded admin trip page with its total and payment settlement state', async () => {
@@ -647,6 +702,7 @@ describe('AdminApiService', () => {
     const tx = {
       $queryRawUnsafe: jest.fn().mockResolvedValue([]),
       drivers: { update: jest.fn(async ({ data }: any) => { driverStatus = data.status; }) },
+      driver_documents: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       profiles: { update: jest.fn(async () => { throw new Error('profile unavailable'); }) },
       audit_logs: { create: jest.fn() },
     };
@@ -664,6 +720,7 @@ describe('AdminApiService', () => {
       drivers: tx.drivers,
       profiles: tx.profiles,
       audit_logs: tx.audit_logs,
+      driver_documents: tx.driver_documents,
     };
     const service = new AdminApiService(prisma as never, {} as never, {} as never);
 
@@ -679,6 +736,7 @@ describe('AdminApiService', () => {
     const tx = {
       $queryRawUnsafe: jest.fn().mockResolvedValue([]),
       drivers: { update: jest.fn(async ({ data }: any) => { driverStatus = data.status; }) },
+      driver_documents: { updateMany: jest.fn().mockResolvedValue({ count: 0 }) },
       profiles: { update: jest.fn(async () => { throw new Error('profile unavailable'); }) },
       audit_logs: { create: auditCreate },
     };
@@ -697,6 +755,7 @@ describe('AdminApiService', () => {
       drivers: tx.drivers,
       profiles: tx.profiles,
       audit_logs: { create: jest.fn().mockResolvedValue({}) },
+      driver_documents: tx.driver_documents,
     };
     const service = new AdminApiService(prisma as never, { sendToAdmins } as never, {
       get: jest.fn(key => key === 'INTERNAL_SERVICE_TOKEN' ? 'service-token' : 'http://driver-api:3004'),

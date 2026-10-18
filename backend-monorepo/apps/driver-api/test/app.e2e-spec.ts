@@ -7,9 +7,13 @@ import { DriverApiModule } from './../src/driver-api.module';
 import { RidesGateway } from './../src/rides/rides.gateway';
 
 describe('DriverApiController (e2e)', () => {
+  const assignedTripRouteId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+  const otherTripRouteId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
+  const internalDriverId = '550e8400-e29b-41d4-a716-446655440000';
   let app: INestApplication;
   let jwt: JwtService;
   let findAuthProfile: jest.Mock;
+  let notifyDriverAccountStatus: jest.Mock;
   const trip = { id: 'trip-b', client_id: 'client-a', driver_id: 'driver-b' };
   const assignedTrip = {
     id: 'trip-a', client_id: 'client-a', driver_id: 'driver-a',
@@ -30,6 +34,7 @@ describe('DriverApiController (e2e)', () => {
   beforeAll(() => {
     process.env.JWT_SECRET = 'task-3-e2e-secret';
     process.env.INTERNAL_SERVICE_TOKEN = 'task-4-internal-service-token';
+    process.env.API_RATE_LIMIT_LIMIT = '10';
     jest.useFakeTimers();
   });
 
@@ -42,6 +47,7 @@ describe('DriverApiController (e2e)', () => {
         $queryRawUnsafe: jest.fn().mockResolvedValue([{ '?column?': 1 }]),
         profiles: {
           findFirst: (findAuthProfile = jest.fn().mockResolvedValue(null)),
+          update: jest.fn(),
         },
         drivers: { findUnique: jest.fn().mockResolvedValue(null) },
         $transaction: jest.fn((callback) => callback({
@@ -52,18 +58,21 @@ describe('DriverApiController (e2e)', () => {
           },
           trips: {
             findFirst: jest.fn().mockResolvedValue(null),
-            findUnique: jest.fn().mockResolvedValue(null),
+          findUnique: jest.fn().mockResolvedValue(null),
             create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
           },
         })),
         trips: {
           findMany: jest.fn().mockResolvedValue([]),
-          findUnique: jest.fn().mockImplementation(({ where }) => Promise.resolve(where.id === 'trip-a' ? assignedTrip : trip)),
+          findUnique: jest.fn().mockImplementation(({ where }) => Promise.resolve(where.id === assignedTripRouteId ? assignedTrip : trip)),
           create: jest.fn().mockImplementation(({ data }) => Promise.resolve(data)),
+        },
+        trip_payments: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'payment-a', trip_id: 'trip-a', amount: '950.00', method: 'cash', status: 'pending' }),
         },
       })
       .overrideProvider(RidesGateway)
-      .useValue({ notifyDriverAccountStatus: jest.fn() })
+      .useValue({ notifyDriverAccountStatus: (notifyDriverAccountStatus = jest.fn()) })
       .compile();
 
     app = moduleFixture.createNestApplication();
@@ -75,6 +84,14 @@ describe('DriverApiController (e2e)', () => {
   afterEach(async () => {
     await app.close();
     jest.clearAllTimers();
+  });
+
+  it('returns 429 after the configured request budget is exhausted', async () => {
+    let response;
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      response = await request(app.getHttpServer()).get('/');
+    }
+    expect(response?.status).toBe(429);
   });
 
   it('reports database readiness on the unauthenticated health route', () => {
@@ -121,6 +138,30 @@ describe('DriverApiController (e2e)', () => {
     expect(findAuthProfile).not.toHaveBeenCalled();
   });
 
+  it('rejects unknown profile fields before invoking driver persistence', async () => {
+    const token = jwt.sign({ sub: 'driver-a', role: 'driver' });
+    const prisma = app.get<PrismaService>(PrismaService);
+    await request(app.getHttpServer()).post('/auth/update-profile')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ full_name: 'Ana', userId: 'driver-b' })
+      .expect(400);
+    expect(prisma.profiles.update).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    '/trips/history/driver-a?limit=5items',
+    '/trips/history/driver-a?limit=0',
+    '/trips/history/driver-a?status=pending',
+    '/trips/history/driver-a?month=13&year=2026',
+    '/trips/history/driver-a?year=2026',
+    '/trips/history/driver-a?unexpected=value',
+  ])('rejects malformed driver history filters: %s', async (path) => {
+    const token = jwt.sign({ sub: 'driver-a', role: 'driver' });
+    const prisma = app.get<PrismaService>(PrismaService);
+    await request(app.getHttpServer()).get(path).set('Authorization', `Bearer ${token}`).expect(400);
+    expect(prisma.trips.findMany).not.toHaveBeenCalled();
+  });
+
   it('rejects a client token on a driver pending-trip route', () => {
     const token = jwt.sign({ sub: 'client-a', role: 'client' });
     return request(app.getHttpServer())
@@ -141,15 +182,55 @@ describe('DriverApiController (e2e)', () => {
   it('rejects a driver reading a trip assigned to another driver', () => {
     const token = jwt.sign({ sub: 'driver-a', role: 'driver' });
     return request(app.getHttpServer())
-      .get('/trips/trip-b')
+      .get(`/trips/${otherTripRouteId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(403);
+  });
+
+  it('allows only the assigned driver to read trip payment details', async () => {
+    const assignedToken = jwt.sign({ sub: 'driver-a', role: 'driver' });
+    const otherDriverToken = jwt.sign({ sub: 'driver-c', role: 'driver' });
+    const prisma = app.get<PrismaService>(PrismaService);
+
+    await request(app.getHttpServer()).get(`/trips/${assignedTripRouteId}/payment`)
+      .set('Authorization', `Bearer ${assignedToken}`)
+      .expect(200)
+      .expect({ id: 'payment-a', trip_id: 'trip-a', amount: '950.00', method: 'cash', status: 'pending' });
+    await request(app.getHttpServer()).get(`/trips/${otherTripRouteId}/payment`)
+      .set('Authorization', `Bearer ${otherDriverToken}`)
+      .expect(403);
+    await request(app.getHttpServer()).get('/trips/not-a-uuid/payment')
+      .set('Authorization', `Bearer ${assignedToken}`)
+      .expect(400);
+    await request(app.getHttpServer()).get(`/trips/${assignedTripRouteId}/payment`).expect(401);
+
+    expect(prisma.trip_payments.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects invalid document image signatures before opening a database transaction', async () => {
+    const token = jwt.sign({ sub: 'driver-a', role: 'driver' });
+    const prisma = app.get<PrismaService>(PrismaService);
+    const invalidImage = 'data:image/jpeg;base64,AAAA';
+
+    await request(app.getHttpServer()).post('/auth/update-docs')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ bi_frente: invalidImage, bi_verso: invalidImage, carta: invalidImage })
+      .expect(400);
+
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed trip id before querying the database', async () => {
+    const token = jwt.sign({ sub: 'driver-a', role: 'driver' });
+    const prisma = app.get<PrismaService>(PrismaService);
+    await request(app.getHttpServer()).get('/trips/not-a-uuid').set('Authorization', `Bearer ${token}`).expect(400);
+    expect(prisma.trips.findUnique).not.toHaveBeenCalled();
   });
 
   it('does not expose passwords or documents in an assigned trip response', () => {
     const token = jwt.sign({ sub: 'driver-a', role: 'driver' });
     return request(app.getHttpServer())
-      .get('/trips/trip-a')
+      .get(`/trips/${assignedTripRouteId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200)
       .expect((response) => {
@@ -185,9 +266,20 @@ describe('DriverApiController (e2e)', () => {
     return request(app.getHttpServer())
       .post('/notify-driver-status')
       .set('x-internal-service-token', 'task-4-internal-service-token')
-      .send({ driverId: 'driver-a', status: 'active' })
+      .send({ driverId: internalDriverId, status: 'active' })
       .expect(201)
-      .expect({ success: true });
+      .expect({ success: true })
+      .then(() => expect(notifyDriverAccountStatus).toHaveBeenCalledWith(internalDriverId, 'active'));
+  });
+
+  it('rejects a malformed driver ID in an internal status notification before emitting it', async () => {
+    await request(app.getHttpServer())
+      .post('/notify-driver-status')
+      .set('x-internal-service-token', 'task-4-internal-service-token')
+      .send({ driverId: 'driver-a', status: 'active' })
+      .expect(400);
+
+    expect(notifyDriverAccountStatus).not.toHaveBeenCalled();
   });
 
   it('creates a trip from a quote for the authenticated client', () => {

@@ -1,10 +1,12 @@
 jest.mock('../context/AuthContext', () => ({ useAuth: () => ({ user: { id: 'client-1' } }) }));
 jest.mock('../services/api', () => ({ __esModule: true, default: { get: jest.fn() } }));
+jest.mock('../services/operationalReceiptExporter', () => ({ shareOperationalReceipt: jest.fn() }));
 
 import React from 'react';
 import TestRenderer, { act } from 'react-test-renderer';
 import { FlatList, Text, TouchableOpacity } from 'react-native';
 import api from '../services/api';
+import { shareOperationalReceipt } from '../services/operationalReceiptExporter';
 import HistoryScreen from './HistoryScreen';
 
 const makeTrip = (id, status = 'completed') => ({
@@ -36,6 +38,7 @@ describe('HistoryScreen request lifecycle', () => {
 
   beforeEach(() => {
     api.get.mockReset();
+    shareOperationalReceipt.mockReset();
     jest.spyOn(console, 'error').mockImplementation(() => {});
   });
 
@@ -98,6 +101,40 @@ describe('HistoryScreen request lifecycle', () => {
     });
 
     expect(renderer.root.findAll((node) => node.type === Text && node.props.children === 'Falha ao carregar')).toHaveLength(1);
+  });
+
+  it('exports the selected trip from the operational receipt modal', async () => {
+    const trip = { ...makeTrip('receipt-trip'), trip_payment: { status: 'pending' } };
+    const confirmedTrip = {
+      ...trip,
+      trip_payment: { status: 'confirmed', amount: '1000.00', confirmed_at: '2026-01-01T11:00:00.000Z' },
+    };
+    api.get.mockResolvedValueOnce({ data: [trip] }).mockResolvedValueOnce({ data: confirmedTrip });
+    shareOperationalReceipt.mockResolvedValueOnce({});
+
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HistoryScreen, { navigation: { goBack: jest.fn() } }));
+    });
+    await flush();
+    await act(async () => findTouchableForText(renderer.root, 'Resumo').props.onPress());
+    await act(async () => findTouchableForText(renderer.root, 'Guardar').props.onPress());
+
+    expect(api.get).toHaveBeenNthCalledWith(2, '/trips/receipt-trip');
+    expect(shareOperationalReceipt).toHaveBeenCalledWith(confirmedTrip);
+  });
+
+  it('does not create a receipt when the server still reports pending payment', async () => {
+    const trip = { ...makeTrip('pending-receipt'), trip_payment: { status: 'pending' } };
+    api.get.mockResolvedValueOnce({ data: [trip] }).mockResolvedValueOnce({ data: trip });
+
+    await act(async () => {
+      renderer = TestRenderer.create(React.createElement(HistoryScreen, { navigation: { goBack: jest.fn() } }));
+    });
+    await flush();
+    await act(async () => findTouchableForText(renderer.root, 'Resumo').props.onPress());
+    await act(async () => findTouchableForText(renderer.root, 'Guardar').props.onPress());
+
+    expect(shareOperationalReceipt).not.toHaveBeenCalled();
   });
 });
 

@@ -13,6 +13,7 @@ describe('NotifyDriverStatusDto', () => {
   it.each([
     { driverId: '', status: 'suspended' },
     { driverId: 'd'.repeat(65), status: 'suspended' },
+    { driverId: 'driver-a', status: 'active' },
     { driverId: '550e8400-e29b-41d4-a716-446655440000', status: 'pending' },
     { driverId: '550e8400-e29b-41d4-a716-446655440000', status: 'active', extra: true },
   ])('rejects invalid status notification body %p', async (body) => {

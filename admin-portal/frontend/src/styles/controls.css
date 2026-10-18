@@ -11,20 +11,21 @@
    -------------------------------------------------------------------------- */
 .tot-btn {
     display: inline-flex;
-    min-height: 40px;
+    min-height: 38px;
     align-items: center;
     justify-content: center;
     gap: var(--tot-space-2);
     padding: 0 var(--tot-space-4);
     color: var(--tot-ink);
     background: var(--tot-surface);
-    border: 1px solid var(--tot-line-strong);
-    border-radius: var(--tot-radius-md);
-    font-size: var(--tot-text-md);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-full);
+    font-size: var(--tot-text-sm);
     font-weight: var(--tot-weight-semibold);
     white-space: nowrap;
     cursor: pointer;
-    transition: background-color .14s ease, border-color .14s ease, color .14s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    transition: all .15s ease;
 }
 
 .tot-btn:hover {
@@ -128,15 +129,17 @@
 .tot-search {
     display: flex;
     min-width: 0;
-    flex: 1 1 240px;
+    flex: 0 1 340px;
+    width: min(340px, 100%);
     min-height: 40px;
     align-items: center;
     gap: var(--tot-space-2);
-    padding: 0 var(--tot-space-3);
+    padding: 0 var(--tot-space-4);
     color: var(--tot-muted);
     background: var(--tot-surface);
-    border: 1px solid var(--tot-line-strong);
-    border-radius: var(--tot-radius-md);
+    border: 1px solid var(--tot-line);
+    border-radius: var(--tot-radius-full);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .tot-search svg {
@@ -161,12 +164,63 @@
     box-shadow: 0 0 0 3px var(--tot-focus-ring);
 }
 
+/* Filtros nativos das listas: substituem regras que pertenciam ao CSS legado. */
+.filter-select-premium {
+    min-width: 150px;
+    min-height: 40px;
+    padding: 0 var(--tot-space-3);
+    color: var(--tot-ink-2);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-full);
+    font: inherit;
+    font-size: var(--tot-text-sm);
+    cursor: pointer;
+}
+
+.filter-select-premium:focus-visible,
+.tot-filter-input:focus-visible {
+    border-color: var(--tot-brand-ink);
+    outline: 3px solid var(--tot-focus-ring);
+    outline-offset: 1px;
+}
+
+.tot-filter-input {
+    width: min(100%, 180px);
+    min-width: 130px;
+    min-height: 40px;
+    padding: 0 var(--tot-space-3);
+    color: var(--tot-ink);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-full);
+    font: inherit;
+    font-size: var(--tot-text-sm);
+}
+
+.tot-filter-input::placeholder {
+    color: var(--tot-muted-2);
+    opacity: 1;
+}
+
 .filter-group {
     display: flex;
     min-width: 0;
-    flex-wrap: wrap;
+    min-height: 40px;
     align-items: center;
     gap: var(--tot-space-2);
+    padding: 0 var(--tot-space-3);
+    color: var(--tot-muted);
+    background: var(--tot-surface);
+    border: 1px solid var(--tot-line-strong);
+    border-radius: var(--tot-radius-full);
+}
+
+.filter-group .filter-select-premium {
+    min-height: 38px;
+    padding: 0;
+    background: transparent;
+    border: 0;
 }
 
 .tot-select {
@@ -299,6 +353,7 @@
 @media (max-width: 900px) {
     .header-actions .tot-search {
         flex: 1 1 100%;
+        width: 100%;
     }
 
     .filter-group {

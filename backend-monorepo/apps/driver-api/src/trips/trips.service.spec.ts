@@ -458,7 +458,7 @@ describe('TripsService trip lifecycle', () => {
     expect(tx.trips.update).toHaveBeenCalledWith({ where: { id: 'trip-a' }, data: { final_fare: '1250.00' } });
   });
 
-  it('creates a pending cash payment separately from the invoice when the trip finishes', async () => {
+  it('creates only a pending cash payment when the trip finishes, before issuing a receipt', async () => {
     const tx = {
       trips: {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
@@ -471,10 +471,40 @@ describe('TripsService trip lifecycle', () => {
     const service = new TripsService({ $transaction: jest.fn(callback => callback(tx)) } as never);
 
     await service.finish('trip-a', 'driver-a');
-    expect(tx.invoices.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ amount: '1250.00' }) }));
+    expect(tx.invoices.create).not.toHaveBeenCalled();
     expect(tx.trip_payments.create).toHaveBeenCalledWith({
       data: { trip_id: 'trip-a', method: 'cash', amount: '1250.00', status: 'pending' },
     });
+  });
+
+  it('refuses to create an operational receipt before the server confirms payment', async () => {
+    const trip = { id: 'trip-a', client_id: 'client-a', status: 'completed', category: 'ride', trip_payment: { status: 'pending' } };
+    const prisma = {
+      trips: { findUnique: jest.fn().mockResolvedValue(trip) },
+      invoices: { findFirst: jest.fn(), create: jest.fn() },
+    };
+    const service = new TripsService(prisma as never);
+
+    await expect(service.createInvoice('trip-a')).rejects.toThrow('O recibo só pode ser criado após a confirmação do pagamento.');
+    expect(prisma.invoices.create).not.toHaveBeenCalled();
+  });
+
+  it('creates the ride or delivery receipt using the confirmed server payment amount', async () => {
+    const trip = {
+      id: 'trip-a', client_id: 'client-a', status: 'completed', category: 'delivery',
+      trip_payment: { status: 'confirmed', confirmed_at: new Date(), amount: '925.00' },
+    };
+    const prisma = {
+      trips: { findUnique: jest.fn().mockResolvedValue(trip) },
+      invoices: { findFirst: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({ id: 'receipt-a' }) },
+    };
+    const service = new TripsService(prisma as never);
+
+    await service.createInvoice('trip-a');
+
+    expect(prisma.invoices.create).toHaveBeenCalledWith({ data: {
+      trip_id: 'trip-a', user_id: 'client-a', amount: '925.00', invoice_type: 'delivery_receipt',
+    } });
   });
 
   it('returns the existing completed trip instead of creating a duplicate payment after a lost finish ACK', async () => {

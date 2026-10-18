@@ -3,10 +3,12 @@ import { DriverApiModule } from './driver-api.module';
 import { ValidationPipe } from '@nestjs/common';
 import * as bodyParser from 'body-parser';
 import { getCorsPolicy } from '@app/auth';
+import { getTrustedProxyHops } from '../../../libs/rate-limit/src/rate-limit.module';
 
 async function bootstrap() {
   // Disable default bodyParser to avoid limit issues
   const app = await NestFactory.create(DriverApiModule, { bodyParser: false });
+  app.getHttpAdapter().getInstance().set('trust proxy', getTrustedProxyHops());
 
   // Document images arrive as base64 JSON and receive a bounded, route-specific limit.
   app.use('/auth/update-docs', bodyParser.json({ limit: '38mb' }));

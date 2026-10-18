@@ -104,6 +104,11 @@ export default function RideFlowScreen({ navigation, route }) {
     const [locationLoading, setLocationLoading] = useState(false);
 
     const mapRef = useRef(null);
+    const tripIdRef = useRef(tripId);
+    const setCurrentTripId = (id) => {
+        tripIdRef.current = id;
+        setTripId(id);
+    };
     const pickupCoordsRef = useRef(pickupCoords);
     const mapReadyRef = useRef(mapReady);
     const quoteRequestIdRef = useRef(0);
@@ -192,9 +197,6 @@ export default function RideFlowScreen({ navigation, route }) {
             void locatePickup();
         }
 
-        // Resume check
-        checkActiveRide();
-
         // Ensure socket is alive
         setSocketToken(token);
         if (!socket.connected) {
@@ -207,7 +209,7 @@ export default function RideFlowScreen({ navigation, route }) {
         try {
             console.log('🔍 [RideFlow] Verificando corrida ativa no servidor para usuário:', user.id);
             const res = await api.get(`/trips/active/${user.id}`);
-            const activeTrips = res.data;
+            const activeTrips = res?.data;
 
             // Extract the ride from the array (if it's an array)
             const trip = Array.isArray(activeTrips) ? activeTrips.find(t => t.category === 'ride') : activeTrips;
@@ -230,7 +232,7 @@ export default function RideFlowScreen({ navigation, route }) {
                     lng: parseFloat(trip.dest_lng)
                 };
 
-                setTripId(trip.id);
+                setCurrentTripId(trip.id);
                 setActiveRoutePolyline(trip.route_polyline || null);
                 setStep(uiStep);
                 setDestination(dest);
@@ -259,6 +261,18 @@ export default function RideFlowScreen({ navigation, route }) {
                 }
             } else {
                 console.log('ℹ️ [RideFlow] Nenhuma corrida ativa no servidor.');
+                const currentTripId = tripIdRef.current;
+                if (!currentTripId) return;
+
+                const persisted = (await api.get(`/trips/${currentTripId}`)).data;
+                if (persisted?.status === 'completed' && persisted.trip_payment?.status === 'confirmed') {
+                    setCurrentTripId(persisted.id);
+                    const fare = Number(persisted.final_fare ?? persisted.estimated_fare ?? persisted.trip_payment.amount);
+                    if (Number.isFinite(fare)) setCurrentFare(fare);
+                    setStep('finished');
+                } else if (persisted?.status === 'cancelled') {
+                    resetFlow();
+                }
             }
         } catch (error) {
             console.error('❌ [RideFlow] Erro ao verificar corrida ativa:', toSafeErrorLog(error));
@@ -382,6 +396,7 @@ export default function RideFlowScreen({ navigation, route }) {
             console.log('📡 [RideFlow] Socket Conectado - Emitindo join');
             if (!user) return; // Guard against null user after logout
             socket.emit('join');
+            void checkActiveRide();
         };
 
         // If socket is already connected when component mounts or restores, join immediately
@@ -391,7 +406,7 @@ export default function RideFlowScreen({ navigation, route }) {
 
         const onTripCreated = (data) => {
             console.log('✅ [RideFlow] Trip criada via socket:', data.tripId);
-            setTripId(data.tripId);
+            setCurrentTripId(data.tripId);
             setStep('requesting');
         };
 
@@ -680,7 +695,7 @@ export default function RideFlowScreen({ navigation, route }) {
             socket.timeout(10000).emit('request_trip', payload, async (timeoutError, response) => {
                 if (!isCurrentRequest()) return;
                 if (!timeoutError && response?.success && response.tripId) {
-                    setTripId(response.tripId);
+                    setCurrentTripId(response.tripId);
                     setStep('requesting');
                     finishRequest();
                     return;
@@ -690,7 +705,7 @@ export default function RideFlowScreen({ navigation, route }) {
                     if (!isCurrentRequest()) return;
                     const committed = (Array.isArray(active.data) ? active.data : [active.data]).find((trip) => trip?.quote_id === payload.quoteId || trip?.id === response?.tripId);
                     if (committed) {
-                        setTripId(committed.id);
+                        setCurrentTripId(committed.id);
                         setStep('requesting');
                     } else {
                         setStep('service_selection');
@@ -720,7 +735,7 @@ export default function RideFlowScreen({ navigation, route }) {
         invalidateTripSubmission();
         invalidateQuoteSelection();
         setStep('home');
-        setTripId(null);
+        setCurrentTripId(null);
         setAcceptedDriver(null);
         setDriverLocationUpdatedAt(null);
         setDestination(null);

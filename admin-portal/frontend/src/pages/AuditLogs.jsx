@@ -13,6 +13,7 @@ import {
 } from 'lucide-react'
 import adminApi from '../services/adminApi'
 import { buildAuditLogsQuery, createAuditLogRequestSequence, loadAuditLogsPage } from '../services/auditLogsPage'
+import { formatDateTime } from '../services/format'
 
 
 const ACTION_COLORS = {
@@ -33,12 +34,13 @@ const TARGET_ICONS = {
 }
 
 function getActionMeta(action) {
-    if (ACTION_COLORS[action]) return ACTION_COLORS[action]
-    if (action.includes('ACTIVE')) return { bg: '#dcfce7', text: '#15803d', label: action }
-    if (action.includes('SUSPEND') || action.includes('DELETE')) return { bg: '#fee2e2', text: '#dc2626', label: action }
-    if (action.includes('CREATE')) return { bg: '#dbeafe', text: '#1d4ed8', label: action }
-    if (action.includes('UPDATE')) return { bg: '#ede9fe', text: '#6d28d9', label: action }
-    return { bg: '#f1f5f9', text: '#475569', label: action }
+    const safeAction = typeof action === 'string' ? action : ''
+    if (ACTION_COLORS[safeAction]) return ACTION_COLORS[safeAction]
+    if (safeAction.includes('ACTIVE')) return { bg: '#dcfce7', text: '#15803d', label: safeAction || 'Ação sem nome' }
+    if (safeAction.includes('SUSPEND') || safeAction.includes('DELETE')) return { bg: '#fee2e2', text: '#dc2626', label: safeAction || 'Ação sem nome' }
+    if (safeAction.includes('CREATE')) return { bg: '#dbeafe', text: '#1d4ed8', label: safeAction || 'Ação sem nome' }
+    if (safeAction.includes('UPDATE')) return { bg: '#ede9fe', text: '#6d28d9', label: safeAction || 'Ação sem nome' }
+    return { bg: '#f1f5f9', text: '#475569', label: safeAction || 'Ação sem nome' }
 }
 
 export default function AuditLogs({ onBack }) {
@@ -88,44 +90,40 @@ export default function AuditLogs({ onBack }) {
         <div className="trips-module animate-fade-in">
             <div className="module-header-nav">
                 <div className="flex items-center gap-4">
-                    <button className="btn-back-square" onClick={onBack}><ArrowLeft size={20} /></button>
                     <div className="title-area">
-                        <h2 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <Shield size={22} style={{ color: '#e91e63' }} /> Audit Logs
-                        </h2>
+                        <h2>Registo de Auditoria</h2>
                         <p>{total} registos encontrados</p>
                     </div>
                 </div>
                 <div className="header-actions" style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <div className="search-bar-premium">
+                    <div className="tot-search">
                         <Search size={18} />
                         <input
                             type="text"
+                            maxLength={120}
                             placeholder="Pesquisar ação, ID ou admin..."
                             value={searchTerm}
                             onChange={e => resetFilters(setSearchTerm, e.target.value)}
                         />
                     </div>
                     <input
+                        className="tot-filter-input"
                         type="text"
+                        maxLength={255}
                         placeholder="Filtrar ação"
                         value={filterAction}
                         onChange={e => resetFilters(setFilterAction, e.target.value)}
-                        style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: '#fff', fontSize: 13, color: '#334155' }}
                     />
                     <input
+                        className="tot-filter-input"
                         type="text"
+                        maxLength={255}
                         placeholder="Filtrar alvo"
                         value={filterTarget}
                         onChange={e => resetFilters(setFilterTarget, e.target.value)}
-                        style={{ padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0', background: '#fff', fontSize: 13, color: '#334155' }}
                     />
-                    <button onClick={() => setRefreshVersion(version => version + 1)} style={{
-                        padding: '8px 14px', borderRadius: 10, border: '1.5px solid #e2e8f0',
-                        background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6,
-                        fontSize: 13, color: '#334155'
-                    }}>
-                        <RefreshCw size={14} /> {loading ? 'A atualizar' : 'Atualizar'}
+                    <button className="tot-btn tot-btn--primary tot-btn--icon" onClick={() => setRefreshVersion(version => version + 1)} disabled={loading} aria-label="Atualizar registo de auditoria" title="Atualizar">
+                        <RefreshCw size={16} className={loading ? 'is-spinning' : ''} aria-hidden="true" />
                     </button>
                 </div>
             </div>
@@ -206,10 +204,7 @@ export default function AuditLogs({ onBack }) {
                                         display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0
                                     }}>
                                         <Clock size={12} />
-                                        {new Date(log.created_at).toLocaleString('pt-AO', {
-                                            day: '2-digit', month: '2-digit', year: '2-digit',
-                                            hour: '2-digit', minute: '2-digit'
-                                        })}
+                                        {formatDateTime(log.created_at)}
                                     </span>
 
                                     {hasDetails && (

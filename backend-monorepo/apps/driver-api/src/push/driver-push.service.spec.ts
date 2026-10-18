@@ -51,6 +51,7 @@ describe('DriverPushService', () => {
   it('sends a privacy-safe offer notification only to that driver device', async () => {
     const token = 'fcm-token-12345678901234567890';
     const prisma = {
+      trip_driver_offers: { findFirst: jest.fn().mockResolvedValue({ trip_id: 'trip-a', trips: { status: 'requested' } }) },
       driver_fcm_tokens: { findMany: jest.fn().mockResolvedValue([{ token }]) },
     };
     const messaging = { sendEachForMulticast: jest.fn().mockResolvedValue({ responses: [{ success: true }] }) };
@@ -64,6 +65,22 @@ describe('DriverPushService', () => {
       android: { priority: 'high', ttl: 15_000, notification: { channelId: 'trip_offers' } },
     });
     expect(JSON.stringify(messaging.sendEachForMulticast.mock.calls[0][0])).not.toContain('pickupAddress');
+    expect(prisma.trip_driver_offers.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ trip_id: 'trip-a', driver_id: 'driver-a', status: 'offered', expires_at: { gt: expect.any(Date) } }),
+    }));
+  });
+
+  it('skips a push after the driver offer has been claimed or expired', async () => {
+    const prisma = {
+      trip_driver_offers: { findFirst: jest.fn().mockResolvedValue(null) },
+      driver_fcm_tokens: { findMany: jest.fn() },
+    };
+    const messaging = { sendEachForMulticast: jest.fn() };
+    const service = new DriverPushService(prisma as never, messaging as never);
+
+    await expect(service.sendTripOffer('driver-a', 'trip-a')).resolves.toEqual({ sent: 0, skipped: true });
+    expect(prisma.driver_fcm_tokens.findMany).not.toHaveBeenCalled();
+    expect(messaging.sendEachForMulticast).not.toHaveBeenCalled();
   });
 
   it('skips delivery when FCM is not configured', async () => {
@@ -76,6 +93,7 @@ describe('DriverPushService', () => {
   it('removes an invalid FCM token after the provider rejects it', async () => {
     const invalidToken = 'invalid-fcm-token-123456789012345';
     const prisma = {
+      trip_driver_offers: { findFirst: jest.fn().mockResolvedValue({ trips: { status: 'requested' } }) },
       driver_fcm_tokens: {
         findMany: jest.fn().mockResolvedValue([{ token: invalidToken }]),
         deleteMany: jest.fn().mockResolvedValue({ count: 1 }),

@@ -6,6 +6,7 @@ import { AuthModule } from './auth/auth.module';
 import { TripsModule } from './trips/trips.module';
 import { DatabaseModule } from '@app/database';
 import { RidesGateway } from './rides/rides.gateway';
+import { ApiRateLimitModule } from '../../../libs/rate-limit/src/rate-limit.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { RidesGateway } from './rides/rides.gateway';
     DatabaseModule,
     AuthModule,
     TripsModule,
+    ApiRateLimitModule,
   ],
   controllers: [DriverApiController],
   providers: [DriverApiService],

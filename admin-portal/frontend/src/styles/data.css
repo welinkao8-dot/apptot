@@ -167,11 +167,12 @@
    neutra e o rótulo de #851044 sobre rosa a cinzento legível (5,83:1).
    -------------------------------------------------------------------------- */
 .admin-record-list {
+    min-width: 0;
     overflow: hidden;
     background: var(--tot-surface);
-    border: 1px solid var(--tot-line);
-    border-radius: var(--tot-radius-lg);
-    box-shadow: var(--tot-shadow-card);
+    border: 1px solid #eef2f6;
+    border-radius: 24px;
+    box-shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.04), 0 4px 12px -2px rgba(0, 0, 0, 0.02);
 }
 
 .clients-record-list,
@@ -196,23 +197,23 @@
 }
 
 .admin-record-list-head {
-    min-height: 38px;
-    padding: 0 var(--tot-space-4);
-    background: var(--tot-surface-2);
-    border-bottom: 1px solid var(--tot-line);
-    color: var(--tot-muted);
-    font-size: var(--tot-text-xs);
-    font-weight: var(--tot-weight-semibold);
-    letter-spacing: .06em;
+    min-height: 46px;
+    padding: 0 24px;
+    background: #f8fafc;
+    border-bottom: 1.5px solid #f1f5f9;
+    color: #64748b;
+    font-size: .7rem;
+    font-weight: 800;
+    letter-spacing: .08em;
     text-transform: uppercase;
 }
 
 .admin-record-row {
-    min-height: 48px;
-    padding: var(--tot-space-2) var(--tot-space-4);
+    min-height: 76px;
+    padding: 14px 24px;
     background: var(--tot-surface);
-    border-bottom: 1px solid var(--tot-line);
-    transition: background-color .14s ease;
+    border-bottom: 1px solid #f1f5f9;
+    transition: background-color .15s ease, box-shadow .15s ease;
 }
 
 .admin-record-row:last-child {
@@ -220,22 +221,27 @@
 }
 
 .admin-record-row:hover {
-    background: var(--tot-surface-2);
+    background: #fdf2f8;
 }
 
 .clients-record-head,
 .clients-record-row {
-    grid-template-columns: minmax(200px, 1.8fr) minmax(104px, .8fr) minmax(104px, .8fr) minmax(190px, auto);
+    grid-template-columns: minmax(260px, 2fr) minmax(130px, .9fr) minmax(140px, 1fr) minmax(210px, 1.2fr);
 }
 
 .drivers-record-head,
 .drivers-record-row {
-    grid-template-columns: minmax(200px, 1.8fr) minmax(96px, .65fr) minmax(112px, .75fr) minmax(190px, auto);
+    grid-template-columns: minmax(260px, 2fr) minmax(130px, .9fr) minmax(140px, 1fr) minmax(210px, 1.2fr);
 }
 
 .trips-record-head,
 .trip-record-row {
-    grid-template-columns: minmax(260px, 1fr) minmax(104px, 150px) minmax(96px, 130px) minmax(120px, auto);
+    grid-template-columns: minmax(210px, .95fr) minmax(0, 1.35fr) minmax(0, 1.25fr) 112px 126px 124px;
+}
+
+.trip-address-column {
+    display: block;
+    min-width: 0;
 }
 
 /* Célula principal: avatar + identificação. */
@@ -247,18 +253,21 @@
 }
 
 .avatar-box {
-    display: grid;
-    width: 36px;
-    height: 36px;
-    flex: 0 0 36px;
-    place-items: center;
-    color: var(--tot-brand-ink-soft);
-    background: var(--tot-brand-soft);
-    border-radius: var(--tot-radius-full);
-    font-size: var(--tot-text-xs);
-    font-weight: var(--tot-weight-bold);
-    letter-spacing: .02em;
+    display: flex;
+    width: 42px;
+    height: 42px;
+    flex: 0 0 42px;
+    align-items: center;
+    justify-content: center;
+    color: #be185d;
+    background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);
+    border: 1.5px solid rgba(233, 30, 99, .18);
+    border-radius: 14px;
+    font-size: .78rem;
+    font-weight: 800;
+    letter-spacing: .03em;
     text-transform: uppercase;
+    box-shadow: 0 2px 8px rgba(233, 30, 99, .06);
 }
 
 .info-group {
@@ -266,17 +275,19 @@
 }
 
 .info-group h3 {
-    color: var(--tot-ink);
-    font-size: var(--tot-text-md);
-    font-weight: var(--tot-weight-semibold);
+    color: #0f172a;
+    font-size: .92rem;
+    font-weight: 800;
     line-height: var(--tot-leading-snug);
     overflow-wrap: anywhere;
+    margin: 0;
 }
 
 .info-group p {
-    margin-top: 1px;
-    color: var(--tot-muted);
-    font-size: var(--tot-text-sm);
+    margin-top: 2px;
+    color: #64748b;
+    font-size: .78rem;
+    font-weight: 500;
     font-variant-numeric: tabular-nums;
     line-height: var(--tot-leading-snug);
     overflow-wrap: anywhere;
@@ -317,10 +328,31 @@
 }
 
 .driver-presence-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     justify-self: start;
-    color: var(--tot-ink-2);
-    font-size: var(--tot-text-sm);
-    font-weight: var(--tot-weight-medium);
+    color: #64748b;
+    font-size: .82rem;
+    font-weight: 600;
+}
+
+.status-indicator-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #cbd5e1;
+    flex-shrink: 0;
+}
+.status-indicator-dot.online {
+    background: #10b981;
+    box-shadow: 0 0 0 3px rgba(16, 185, 129, .2);
+    animation: pulse-dot 2s ease-in-out infinite;
+}
+@keyframes pulse-dot {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(16, 185, 129, .2); }
+    50% { box-shadow: 0 0 0 5px rgba(16, 185, 129, .1); }
 }
 
 .trip-record-fare {
@@ -333,25 +365,30 @@
 }
 
 /* --------------------------------------------------------------------------
-   AÇÕES DE LINHA
-   Antes: sete blocos magenta cheios por ecrã (`.btn-pill-sm.primary` a 100px),
-   e o mesmo botão em rosa-pálido noutra lista. Agora: uma ligação de texto por
-   linha, revelada no hover/foco, e ícones para o resto. Em ecrãs estreitos
-   ficam sempre visíveis, porque não há hover no toque.
+   AÇÕES DE LINHA — Premium pill buttons, always visible.
    -------------------------------------------------------------------------- */
 .record-actions {
     display: flex;
     min-width: 0;
     align-items: center;
     justify-content: flex-end;
-    gap: var(--tot-space-2);
-    opacity: 0;
-    transition: opacity .14s ease;
+    gap: 8px;
+    opacity: 1;
 }
 
 .admin-record-row:hover .record-actions,
 .admin-record-row:focus-within .record-actions {
     opacity: 1;
+}
+
+.actions-inline {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+    margin: 0;
 }
 
 .record-action {
@@ -399,11 +436,62 @@
     background: var(--tot-brand-soft);
     border-color: var(--tot-brand-soft);
 }
-/* Linha em curso: a única linha do painel que se destaca, e destaca-se
-   com o verde do estado, não com a cor da marca. */
+
+/* Premium pill action buttons */
+.btn-action-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 14px;
+    min-height: 34px;
+    border-radius: 9999px;
+    font-size: .77rem;
+    font-weight: 750;
+    color: #e91e63;
+    background: #fdf2f8;
+    border: 1px solid #fbcfe8;
+    box-shadow: 0 1px 2px rgba(233, 30, 99, .05);
+    transition: all .15s ease-in-out;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.btn-action-primary:hover {
+    background: linear-gradient(135deg, #e91e63 0%, #c2185b 100%);
+    color: #fff !important;
+    border-color: transparent;
+    box-shadow: 0 4px 14px rgba(233, 30, 99, .28);
+    transform: translateY(-1px);
+}
+
+.btn-action-secondary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 14px;
+    min-height: 34px;
+    border-radius: 9999px;
+    font-size: .77rem;
+    font-weight: 750;
+    color: #475569;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, .03);
+    transition: all .15s ease-in-out;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.btn-action-secondary:hover {
+    background: #f8fafc;
+    color: #0f172a;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+}
+
+/* Linha em curso: subtle mint tint instead of harsh green inset. */
 .trip-record-row.is-live {
-    background: var(--tot-live-bg);
-    box-shadow: inset 3px 0 var(--tot-live);
+    background: #f0fdf4;
 }
 
 .trip-record-row.is-live:last-child {
@@ -411,7 +499,7 @@
 }
 
 .trip-record-row.is-live:hover {
-    background: var(--tot-live-bg);
+    background: #ecfdf5;
 }
 
 /* --------------------------------------------------------------------------
@@ -549,14 +637,15 @@
 .badge-status {
     display: inline-flex;
     align-items: center;
-    gap: var(--tot-space-1);
-    padding: 3px var(--tot-space-2);
+    gap: 4px;
+    padding: 4px 12px;
     border: 1px solid transparent;
-    border-radius: var(--tot-radius-full);
-    font-size: var(--tot-text-xs);
-    font-weight: var(--tot-weight-semibold);
+    border-radius: 9999px;
+    font-size: .72rem;
+    font-weight: 700;
     line-height: 1.4;
     white-space: nowrap;
+    letter-spacing: .02em;
 }
 
 /* Modificadores de estado. A marca não aparece em nenhum deles: "cancelada"
@@ -593,22 +682,25 @@
 
 .status-pill--active,
 .status-pill-mini.active {
-    color: var(--tot-active);
-    background: var(--tot-active-bg);
+    color: #047857;
+    background: #ecfdf5;
+    border-color: #a7f3d0;
 }
 
 .status-pill--suspended,
 .status-pill-mini.suspended,
 .status-pill--rejected,
 .status-pill-mini.rejected {
-    color: var(--tot-suspended);
-    background: var(--tot-suspended-bg);
+    color: #b91c1c;
+    background: #fef2f2;
+    border-color: #fecaca;
 }
 
 .status-pill--pending,
 .status-pill-mini.pending {
-    color: var(--tot-pending);
-    background: var(--tot-pending-bg);
+    color: #b45309;
+    background: #fffbeb;
+    border-color: #fde68a;
 }
 
 .status-pill--neutral,
@@ -1244,17 +1336,21 @@
     .trip-record-row {
         grid-template-columns: minmax(0, 1fr) auto;
         grid-template-areas:
-            'route route'
+            'client client'
+            'origin origin'
+            'destination destination'
             'state fare'
             'actions actions';
         row-gap: var(--tot-space-2);
         padding: var(--tot-space-3) var(--tot-space-4);
     }
 
-    .trip-record-row .card-left-section { grid-area: route; align-items: flex-start; }
+    .trip-record-row .card-left-section { grid-area: client; align-items: flex-start; }
+    .trip-record-row .trip-origin-column { grid-area: origin; }
+    .trip-record-row .trip-destination-column { grid-area: destination; }
     .trip-record-row .trip-record-state { grid-area: state; }
     .trip-record-row .trip-record-fare { grid-area: fare; justify-self: end; }
-    .trip-record-row .trip-list-actions { display: contents; }
+    .trip-record-row .actions-inline { grid-area: actions; justify-content: flex-start; }
     .trip-record-row .record-actions { grid-area: actions; justify-content: flex-start; }
 
     .tot-dashboard-category-body {

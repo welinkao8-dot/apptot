@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { LocationsService } from './locations.service';
 
 jest.mock('axios', () => ({
@@ -76,7 +76,7 @@ describe('LocationsService', () => {
     process.env.HERE_API_KEY = 'server-only-key';
     jest.mocked(axios.get).mockResolvedValue({ data: { items: [{ address: { label: 'Talatona, Luanda' } }] } } as never);
     await expect(service.reverseGeocode(-8.9, 13.2)).resolves.toBe('Talatona, Luanda');
-    await expect(service.reverseGeocode(91, 13.2)).resolves.toBeNull();
+    await expect(service.reverseGeocode(91, 13.2)).rejects.toBeInstanceOf(BadRequestException);
     expect(axios.get).toHaveBeenCalledTimes(1);
   });
 

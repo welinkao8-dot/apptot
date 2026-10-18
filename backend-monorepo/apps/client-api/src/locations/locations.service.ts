@@ -1,4 +1,4 @@
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
 import axios from 'axios';
 
 const HERE_GEOCODE_URL = 'https://geocode.search.hereapi.com/v1';
@@ -11,6 +11,9 @@ export class LocationsService {
   async autosuggest(query: string, lat?: number, lng?: number) {
     const normalizedQuery = typeof query === 'string' ? query.trim().slice(0, 120) : '';
     if (normalizedQuery.length < 3) return [];
+    if ((lat === undefined) !== (lng === undefined) || (lat !== undefined && !this.validCenter(lat, lng))) {
+      throw new BadRequestException('As coordenadas da pesquisa são inválidas.');
+    }
 
     const apiKey = this.getApiKey();
     const center = this.validCenter(lat, lng) ? { lat, lng } : DEFAULT_SEARCH_CENTER;
@@ -38,7 +41,7 @@ export class LocationsService {
   }
 
   async reverseGeocode(lat: number, lng: number) {
-    if (!this.validCenter(lat, lng)) return null;
+    if (!this.validCenter(lat, lng)) throw new BadRequestException('As coordenadas do mapa são inválidas.');
 
     const apiKey = this.getApiKey();
     try {

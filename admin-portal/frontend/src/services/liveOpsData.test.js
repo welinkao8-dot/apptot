@@ -5,6 +5,7 @@ import { resolveLiveOpsResults } from './liveOpsData.js';
 const emptyPrevious = {
   drivers: [],
   activeTrips: [],
+  activeTripsTotal: 0,
   lastUpdated: { drivers: null, trips: null },
 };
 
@@ -18,6 +19,7 @@ test('updates each LiveOps resource independently and keeps only active trips', 
 
   assert.deepEqual(result.drivers, [{ id: 'd1' }]);
   assert.deepEqual(result.activeTrips, [trip('active', 'ongoing')]);
+  assert.equal(result.activeTripsTotal, 2);
   assert.deepEqual(result.errors, { drivers: null, trips: null });
   assert.deepEqual(result.lastUpdated, { drivers: '2026-10-15T10:00:00.000Z', trips: '2026-10-15T10:00:00.000Z' });
 });
@@ -26,6 +28,7 @@ test('a failed resource preserves its last good data and timestamp while another
   const previous = {
     drivers: [{ id: 'old-driver' }],
     activeTrips: [trip('old-trip', 'accepted')],
+    activeTripsTotal: 1,
     lastUpdated: { drivers: '2026-10-15T09:00:00.000Z', trips: '2026-10-15T09:00:00.000Z' },
   };
   const result = resolveLiveOpsResults([
@@ -35,6 +38,7 @@ test('a failed resource preserves its last good data and timestamp while another
 
   assert.deepEqual(result.drivers, previous.drivers);
   assert.deepEqual(result.activeTrips, []);
+  assert.equal(result.activeTripsTotal, 0);
   assert.equal(result.errors.drivers, 'Falha ao carregar motoristas. Tente novamente.');
   assert.equal(result.errors.trips, null);
   assert.equal(result.lastUpdated.drivers, previous.lastUpdated.drivers);
@@ -49,7 +53,18 @@ test('malformed successful responses are errors, not empty lists', () => {
 
   assert.deepEqual(result.drivers, []);
   assert.deepEqual(result.activeTrips, []);
+  assert.equal(result.activeTripsTotal, 0);
   assert.equal(result.errors.drivers, 'Resposta inválida ao carregar motoristas.');
   assert.equal(result.errors.trips, 'Resposta inválida ao carregar corridas.');
   assert.deepEqual(result.lastUpdated, emptyPrevious.lastUpdated);
+});
+
+test('accepts the paginated live-trip response and reports its server total', () => {
+  const result = resolveLiveOpsResults([
+    { status: 'fulfilled', value: { data: [] } },
+    { status: 'fulfilled', value: { data: { items: [trip('active', 'ongoing')], total: 125, page: 1, pageSize: 100 } } },
+  ], emptyPrevious, new Date('2026-10-15T10:00:00Z'));
+
+  assert.deepEqual(result.activeTrips, [trip('active', 'ongoing')]);
+  assert.equal(result.activeTripsTotal, 125);
 });

@@ -9,7 +9,7 @@ import { AuthModule as DriverAuthModule } from '../../../apps/driver-api/src/aut
 const configuredSecret = 'task-2-configured-secret-for-tests-only';
 
 describe.each([
-  ['admin', AdminAuthModule, 86400],
+  ['admin', AdminAuthModule, 900],
   ['client', ClientAuthModule, 5184000],
   ['driver', DriverAuthModule, 5184000],
 ] as const)('%s JWT configuration', (role, authModule, lifetime) => {

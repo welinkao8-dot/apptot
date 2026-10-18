@@ -3,7 +3,9 @@ export function buildTripsQuery({ page, pageSize, status, search }) {
 }
 
 export function normalizeTripsPage(data) {
-    if (!data || !Array.isArray(data.items)
+    if (!data || !Array.isArray(data.items) || data.items.some(trip =>
+        !trip || typeof trip !== 'object' || typeof trip.id !== 'string' || typeof trip.status !== 'string'
+    )
         || !Number.isSafeInteger(data.total) || data.total < 0
         || !Number.isSafeInteger(data.page) || data.page < 1
         || !Number.isSafeInteger(data.pageSize) || data.pageSize < 1) {
